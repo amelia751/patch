@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# Agent tooling (local-only, never committed)
+# ---------------------------------------------------------------------------
+.cursor/
+.claude/
+.fleet/
+.codex/
+/fleet
+CLAUDE.local.md
+AGENTS.local.md
+
+# ---------------------------------------------------------------------------
+# Secrets and credentials
+# ---------------------------------------------------------------------------
+.secrets/
+.env
+.env.*
+!.env.example
+*-service-account*.json
+*service_account*.json
+*credentials*.json
+!**/package-lock.json
+application_default_credentials.json
+*.pem
+*.p12
+*.key
+!**/*.pub
+gha-creds-*.json
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Node / web
+# ---------------------------------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+.pnpm-store/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Infra / local tooling
+# ---------------------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfvars
+crash.log
+.DS_Store
+*.log
+.idea/
+.vscode/
+*.swp
+*~
+
+# ---------------------------------------------------------------------------
+# Demo / sandbox artifacts (generated; not source)
+# ---------------------------------------------------------------------------
+/artifacts/
+/sandbox-workspaces/
+/tmp-patchapi/
