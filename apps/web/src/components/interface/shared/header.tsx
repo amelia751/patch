@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
 import { useAuth } from "@/lib/auth-context";
+import { UserAvatar } from "@/components/interface/shared/user-avatar";
 import mockInfo from "./mock-aws/mock-info.json";
 import {
   DropdownMenu,
@@ -272,19 +273,7 @@ function UserAccountMenu() {
         <DropdownMenuTrigger asChild>
           <button className="flex items-center space-x-2 px-2 py-1.5 rounded-md hover:bg-[var(--bg-tertiary)] transition-colors">
             <div className="h-6 w-6 flex-shrink-0 rounded-full overflow-hidden">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={displayName}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                  <span className="text-[10px] font-medium text-white">
-                    {displayName.split(' ').map(n => n[0]).join('')}
-                  </span>
-                </div>
-              )}
+              <UserAvatar src={avatarUrl} name={displayName} />
             </div>
             <span className="text-xs font-medium text-[var(--text-primary)] truncate">
               {displayName}
@@ -296,15 +285,7 @@ function UserAccountMenu() {
           {/* User Info */}
           <div className="flex items-center space-x-2 p-2">
             <div className="h-8 w-8 rounded-full overflow-hidden flex-shrink-0">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt={displayName} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                  <span className="text-xs font-medium text-white">
-                    {displayName.split(' ').map(n => n[0]).join('')}
-                  </span>
-                </div>
-              )}
+              <UserAvatar src={avatarUrl} name={displayName} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-[var(--text-primary)] truncate">

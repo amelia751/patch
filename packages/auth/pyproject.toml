@@ -33,3 +33,4 @@ only-include = ["__init__.py"]
 "config.py" = "packages/auth/config.py"
 "errors.py" = "packages/auth/errors.py"
 "identity_platform.py" = "packages/auth/identity_platform.py"
+"google_oauth.py" = "packages/auth/google_oauth.py"

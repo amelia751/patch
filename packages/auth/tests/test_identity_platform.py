@@ -284,6 +284,19 @@ def test_api_key_falls_back_to_the_web_config(tmp_path: Path) -> None:
     assert config.auth_domain == "p.firebaseapp.com"
 
 
+def test_google_oauth_reads_the_console_web_download(tmp_path: Path) -> None:
+    (tmp_path / ".secrets").mkdir()
+    (tmp_path / ".secrets/google-oauth.json").write_text(
+        '{"web":{"client_id":"id.apps.googleusercontent.com","client_secret":"s"}}'
+    )
+
+    config = load_config({"GCP_PROJECT": "p"}, base_dir=tmp_path)
+
+    assert config.google_client_id == "id.apps.googleusercontent.com"
+    assert config.google_client_secret == "s"
+    assert config.google_oauth_configured() is True
+
+
 def test_malformed_web_config_reports_unconfigured_rather_than_raising(tmp_path: Path) -> None:
     """A half-written file should not take down every sign-in with a traceback."""
     (tmp_path / ".secrets").mkdir()

@@ -103,9 +103,9 @@ def create_app(
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(allowed_origins),
-            allow_credentials=False,
-            allow_methods=["GET", "POST"],
-            allow_headers=["content-type"],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["content-type", "authorization"],
         )
 
     app.include_router(health.router)

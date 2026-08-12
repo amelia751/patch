@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from patchapi_control_api.app import create_app
 from patchapi_control_api.ports import ReadinessProbe
 
+from packages.state.auth_routes import router as auth_router
 from packages.state.config import cors_origins, database_url
 from packages.state.dashboard import PostgresDashboardReader
 from packages.state.pool import StateUnavailableError, create_pool, ping
@@ -58,6 +59,14 @@ def build_app() -> FastAPI:
         app.state.dashboard_reader = PostgresDashboardReader(pool)
         app.state.postgres_pool = pool
         try:
+            from packages.auth.google_oauth import ensure_google_idp
+
+            await ensure_google_idp()
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("google IdP enable skipped: %s", exc)
+        try:
             yield
         finally:
             app.state.run_state_reader = None
@@ -66,6 +75,7 @@ def build_app() -> FastAPI:
             await pool.close()
 
     app = create_app(allowed_origins=cors_origins())
+    app.include_router(auth_router)
     app.state.readiness_probes = (
         *app.state.readiness_probes,
         ReadinessProbe(name=POSTGRES_PROBE, check=_postgres_probe(app)),

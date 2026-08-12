@@ -8,6 +8,7 @@ requires-python = ">=3.12,<3.13"
 # read would stall the event loop that serves every other request.
 dependencies = [
     "asyncpg>=0.30,<0.31",
+    "patchapi-auth",
     "patchapi-control-api",
     "patchapi-schemas",
     "uvicorn>=0.30,<0.40",
@@ -27,6 +28,7 @@ dev = [
 [tool.uv.sources]
 patchapi-schemas = { workspace = true }
 patchapi-control-api = { workspace = true }
+patchapi-auth = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -41,8 +43,11 @@ only-include = ["__init__.py"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "__init__.py" = "packages/state/__init__.py"
+"auth_routes.py" = "packages/state/auth_routes.py"
 "config.py" = "packages/state/config.py"
 "dashboard.py" = "packages/state/dashboard.py"
 "pool.py" = "packages/state/pool.py"
 "runs.py" = "packages/state/runs.py"
 "serve.py" = "packages/state/serve.py"
+"session.py" = "packages/state/session.py"
+"users.py" = "packages/state/users.py"

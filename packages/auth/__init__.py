@@ -28,6 +28,10 @@ _EXPORTS: Final[dict[str, str]] = {
     "IdentityPlatformService": "identity_platform",
     "get_identity_service": "identity_platform",
     "reset_identity_service": "identity_platform",
+    "GoogleProfile": "google_oauth",
+    "authorization_url": "google_oauth",
+    "ensure_google_idp": "google_oauth",
+    "exchange_code": "google_oauth",
 }
 
 
@@ -47,8 +51,12 @@ __all__ = [
     "AuthTokens",
     "AuthUnavailableError",
     "AuthUser",
+    "GoogleProfile",
     "IdentityPlatformConfig",
     "IdentityPlatformService",
+    "authorization_url",
+    "ensure_google_idp",
+    "exchange_code",
     "get_identity_service",
     "load_config",
     "reset_identity_service",

@@ -33,9 +33,17 @@ ENV_CONFIG_FILE: Final[str] = "PATCHAPI_IDENTITY_CONFIG"
 ENV_PROJECT: Final[str] = "GCP_PROJECT"
 ENV_CREDENTIALS: Final[str] = "GOOGLE_APPLICATION_CREDENTIALS"
 ENV_ACTION_URL: Final[str] = "PATCHAPI_IDENTITY_ACTION_URL"
+ENV_GOOGLE_OAUTH: Final[str] = "PATCHAPI_GOOGLE_OAUTH"
+ENV_GOOGLE_CLIENT_ID: Final[str] = "PATCHAPI_GOOGLE_OAUTH_CLIENT_ID"
+ENV_GOOGLE_CLIENT_SECRET: Final[str] = "PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET"
+ENV_GOOGLE_REDIRECT: Final[str] = "PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI"
+ENV_FRONTEND_ORIGIN: Final[str] = "PATCHAPI_FRONTEND_ORIGIN"
 
 DEFAULT_API_KEY_FILE: Final[str] = ".secrets/identity_platform_api_key.txt"
 DEFAULT_CONFIG_FILE: Final[str] = ".secrets/identity-platform.json"
+DEFAULT_GOOGLE_OAUTH_FILE: Final[str] = ".secrets/google-oauth.json"
+DEFAULT_GOOGLE_REDIRECT: Final[str] = "http://localhost:8080/api/auth/google/callback"
+DEFAULT_FRONTEND_ORIGIN: Final[str] = "http://localhost:3000"
 
 # Where Google's verification and reset emails send the browser back to. The
 # host must also be listed in the project's authorized domains, or Identity
@@ -64,11 +72,19 @@ class IdentityPlatformConfig:
     auth_domain: str | None = None
     credentials_path: Path | None = None
     action_url: str = DEFAULT_ACTION_URL
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = DEFAULT_GOOGLE_REDIRECT
+    frontend_origin: str = DEFAULT_FRONTEND_ORIGIN
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
     def is_configured(self) -> bool:
         """Whether a live call can be attempted at all."""
         return bool(self.api_key and self.project)
+
+    def google_oauth_configured(self) -> bool:
+        """Whether Continue with Google can start an authorization-code flow."""
+        return bool(self.google_client_id and self.google_client_secret)
 
     def require_api_key(self) -> str:
         if not self.api_key:
@@ -155,10 +171,32 @@ def load_config(
 
     raw_credentials = env.get(ENV_CREDENTIALS, "").strip()
 
+    google_file = _read_web_config(
+        _resolve(env.get(ENV_GOOGLE_OAUTH, "").strip() or DEFAULT_GOOGLE_OAUTH_FILE)
+    )
+    # Google's console download nests credentials under `web`.
+    google_web = google_file.get("web") if isinstance(google_file.get("web"), dict) else {}
+    google_client_id = (
+        env.get(ENV_GOOGLE_CLIENT_ID, "").strip()
+        or (google_file.get("client_id") or google_file.get("clientId") or "").strip()
+        or (google_web.get("client_id") or "").strip()
+        or None
+    )
+    google_client_secret = (
+        env.get(ENV_GOOGLE_CLIENT_SECRET, "").strip()
+        or (google_file.get("client_secret") or google_file.get("clientSecret") or "").strip()
+        or (google_web.get("client_secret") or "").strip()
+        or None
+    )
+
     return IdentityPlatformConfig(
         api_key=api_key,
         project=project,
         auth_domain=auth_domain,
         credentials_path=_resolve(raw_credentials) if raw_credentials else None,
         action_url=env.get(ENV_ACTION_URL, "").strip() or DEFAULT_ACTION_URL,
+        google_client_id=google_client_id,
+        google_client_secret=google_client_secret,
+        google_redirect_uri=env.get(ENV_GOOGLE_REDIRECT, "").strip() or DEFAULT_GOOGLE_REDIRECT,
+        frontend_origin=env.get(ENV_FRONTEND_ORIGIN, "").strip() or DEFAULT_FRONTEND_ORIGIN,
     )
