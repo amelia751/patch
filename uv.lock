@@ -6,6 +6,7 @@ requires-python = "==3.12.*"
 members = [
     "patchapi",
     "patchapi-agents",
+    "patchapi-auth",
     "patchapi-control-api",
     "patchapi-db",
     "patchapi-events",
@@ -519,6 +520,33 @@ requires-dist = [
     { name = "patchapi-repo-scan", editable = "packages/repo_scan" },
     { name = "patchapi-schemas", editable = "packages/schemas" },
     { name = "pydantic", specifier = ">=2.9,<3" },
+]
+
+[[package]]
+name = "patchapi-auth"
+version = "0.1.0"
+source = { editable = "packages/auth" }
+dependencies = [
+    { name = "google-auth" },
+    { name = "httpx" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "google-auth", specifier = ">=2.35,<3" },
+    { name = "httpx", specifier = ">=0.27,<0.29" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3,<9" },
+    { name = "pytest-asyncio", specifier = ">=1.0,<2" },
 ]
 
 [[package]]

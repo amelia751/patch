@@ -1,0 +1,35 @@
+[project]
+name = "patchapi-auth"
+version = "0.1.0"
+description = "Google Cloud Identity Platform authentication for the PatchAPI control plane."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# httpx rather than requests: the control plane is ASGI, and a blocking sign-in
+# would stall the event loop serving every other request.
+dependencies = [
+    "httpx>=0.27,<0.29",
+    "google-auth>=2.35,<3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=1.0,<2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Flat modules, matching the other `packages/` members: the in-tree checkout is
+# itself `packages.auth`, so a `src/` layout would be shadowed by this directory
+# once the repo root is on `sys.path`. The wheel re-adds the prefix, and every
+# module is listed so a new file cannot ship unnoticed.
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/auth/__init__.py"
+"config.py" = "packages/auth/config.py"
+"errors.py" = "packages/auth/errors.py"
+"identity_platform.py" = "packages/auth/identity_platform.py"

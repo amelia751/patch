@@ -26,6 +26,7 @@ members = [
     "packages/memory",
     "packages/observability",
     "packages/state",
+    "packages/auth",
     "services/control_api",
     "services/github_tools",
     "services/repo_indexer",
