@@ -36,9 +36,9 @@ fails closed: `/readyz` reports `not_ready` and the route that needs it returns
 503 naming the missing dependency. It never answers from a cache or invents a
 run status.
 
-`patchapi_control_api.asgi:app` is the unwired ASGI target used by the container
-entry point; a deployment replaces it with its own `create_app` call once the
-event transport and Postgres reader exist.
+`patchapi_control_api.asgi:app` is the unwired ASGI target used by local
+probes. The container entry point is `patchapi-serve` (packages/state), which
+wires Postgres and `/api/auth/*` before serving.
 
 ## Idempotency
 

@@ -1,0 +1,140 @@
+# Deploy the dashboard and the wired control plane to named Cloud Run
+# services on every push to main. The service names are the URL: do not
+# rename `patchapi-web` or `patchapi-api` or the links change.
+#
+# One-time GCP bootstrap (WIF, Artifact Registry, reserved services):
+#   ./scripts/bootstrap_cloud_run.sh
+name: Deploy Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cloud-run-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: patch-505223
+  PROJECT_NUMBER: "913371146929"
+  REGION: us-central1
+  AR_REPO: patchapi
+  WEB_SERVICE: patchapi-web
+  API_SERVICE: patchapi-api
+  WEB_SA: patchapi-web@patch-505223.iam.gserviceaccount.com
+  API_SA: patchapi-api@patch-505223.iam.gserviceaccount.com
+  # Stable Cloud Run URLs (name + project number + region). Confirmed by
+  # scripts/bootstrap_cloud_run.sh; changing any of the three changes the URL.
+  WEB_URL: https://patchapi-web-913371146929.us-central1.run.app
+  API_URL: https://patchapi-api-913371146929.us-central1.run.app
+  WEB_URL_CLASSIC: https://patchapi-web-uhkx74fgmq-uc.a.run.app
+
+jobs:
+  web:
+    name: patchapi-web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/913371146929/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: patchapi-github-deploy@patch-505223.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Auth Docker to Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push dashboard
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/web:${{ github.sha }}
+        run: |
+          FIREBASE_API_KEY="$(gcloud secrets versions access latest --secret=patchapi-identity-api-key)"
+          docker build \
+            -f apps/web/Dockerfile \
+            --build-arg "NEXT_PUBLIC_API_URL=${API_URL}" \
+            --build-arg "PATCHAPI_API_URL=${API_URL}" \
+            --build-arg "NEXT_PUBLIC_FIREBASE_API_KEY=${FIREBASE_API_KEY}" \
+            --build-arg "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=patch-505223.firebaseapp.com" \
+            -t "${IMAGE}" \
+            apps/web
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy dashboard
+        run: |
+          gcloud run deploy "${WEB_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --service-account="${WEB_SA}" \
+            --allow-unauthenticated \
+            --ingress=all \
+            --port=8080 \
+            --memory=1Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --set-env-vars="NODE_ENV=production,PATCHAPI_API_URL=${API_URL},NEXT_PUBLIC_API_URL=${API_URL}"
+
+  api:
+    name: patchapi-api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/913371146929/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: patchapi-github-deploy@patch-505223.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Skip until DATABASE_URL is a real DSN
+        id: db
+        run: |
+          dsn="$(gcloud secrets versions access latest --secret=patchapi-database-url 2>/dev/null || true)"
+          if printf '%s' "${dsn}" | grep -q '^postgres'; then
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+            echo "patchapi-database-url is not a Postgres DSN yet; leaving the reserved API service in place."
+          fi
+
+      - name: Auth Docker to Artifact Registry
+        if: steps.db.outputs.ready == 'true'
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push control plane
+        if: steps.db.outputs.ready == 'true'
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/api:${{ github.sha }}
+        run: |
+          docker build -f services/control_api/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy control plane
+        if: steps.db.outputs.ready == 'true'
+        run: |
+          gcloud run deploy "${API_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --service-account="${API_SA}" \
+            --allow-unauthenticated \
+            --ingress=all \
+            --port=8080 \
+            --memory=512Mi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|PATCHAPI_ENV=cloud|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action" \
+            --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
+            --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest"

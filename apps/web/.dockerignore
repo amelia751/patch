@@ -1,0 +1,10 @@
+node_modules
+.next
+e2e
+tests
+playwright.config.ts
+*.md
+.env
+.env.*
+!.env.example
+.git

@@ -7,6 +7,7 @@
 .gemini/
 .codex/
 /fleet
+.local/
 CLAUDE.local.md
 AGENTS.local.md
 GEMINI.local.md

@@ -30,20 +30,15 @@ that a reader would mistake for "we looked and found nothing".
 
 ## Connecting
 
-`DATABASE_URL` is the only required setting:
+`DATABASE_URL` is the only required setting. Local development uses Cloud SQL
+through the Auth Proxy (same instance as Cloud Run):
 
 ```bash
-export DATABASE_URL='postgresql://patchapi:patchapi_local_dev@127.0.0.1:55432/patchapi'
+./scripts/run_cloud_sql_proxy.sh
+./scripts/serve_control_api.sh
 ```
 
-That matches the defaults in `db/docker-compose.yml`. Bring the database up and
-load the schema and demo rows with:
-
-```bash
-docker compose -f db/docker-compose.yml up -d
-uv run patchapi-db migrate
-uv run patchapi-db seed
-```
+`db/docker-compose.yml` remains for offline `./scripts/verify_db.sh` only.
 
 ## Tests
 

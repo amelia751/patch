@@ -20,16 +20,25 @@ yet. They come back as additive migrations when that product surface is wired.
 
 ## Running it
 
+Day-to-day local work uses **Cloud SQL** (`patchapi-console`), the same
+instance Cloud Run uses. Docker Compose is the offline verifier only.
+
 ```bash
-docker compose -f db/docker-compose.yml up -d
+./scripts/run_cloud_sql_proxy.sh          # 127.0.0.1:5433 → Cloud SQL
+./scripts/serve_control_api.sh            # loads .secrets/database-url-proxy.txt
+PYTHONPATH=db/src uv run python -m patchapi_db migrate
+PYTHONPATH=db/src uv run python -m patchapi_db status
+```
 
-export PYTHONPATH=db/src                # the runner is stdlib-only; no install needed
-uv run python -m patchapi_db migrate    # apply pending migrations
-uv run python -m patchapi_db seed       # (re-)apply demo seed data
-uv run python -m patchapi_db status     # exits 1 if anything is pending
-uv run python -m patchapi_db sql        # run a SQL script from stdin
+```bash
+docker compose -f db/docker-compose.yml up -d   # offline verify_db.sh only
+export PYTHONPATH=db/src
+uv run python -m patchapi_db migrate
+uv run python -m patchapi_db seed
+uv run python -m patchapi_db status
+uv run python -m patchapi_db sql
 
-./scripts/verify_db.sh                  # the full dynamic check
+./scripts/verify_db.sh
 ```
 
 `uv run --package patchapi-db python -m patchapi_db …` works too, and installs
