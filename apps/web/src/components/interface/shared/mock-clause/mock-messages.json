@@ -1,0 +1,29 @@
+[
+  {
+    "id": "msg-1",
+    "author": "agent",
+    "content": "Starting the DevOps pipeline to deploy the Clause backend infrastructure on GCP.\n\n**Infrastructure to provision:**\n- Cloud Storage buckets for documents\n- Firestore for metadata\n- Document AI processor for OCR\n- Elasticsearch index for hybrid search\n\nProvisioning resources now...",
+    "timestamp": "3 min ago",
+    "activities": "__CLAUSE_ACTIVITIES__"
+  },
+  {
+    "id": "msg-2",
+    "author": "agent",
+    "content": "Infrastructure provisioned. Generating the backend codebase and deploying to Cloud Run...",
+    "timestamp": "2 min ago",
+    "activities": "__CLAUSE_CODEBASE_ACTIVITIES__"
+  },
+  {
+    "id": "msg-3",
+    "author": "agent",
+    "content": "Backend deployed and tested successfully! Now integrating with the frontend...\n\nCreating typed API SDK and updating components to use real backend API.",
+    "timestamp": "1 min ago",
+    "activities": "__CLAUSE_FRONTEND_ACTIVITIES__"
+  },
+  {
+    "id": "msg-4",
+    "author": "agent",
+    "content": "✅ **DevOps Pipeline Complete**\n\nYour Clause backend is now fully deployed and integrated with the frontend:\n\n**Deployed Resources:**\n- Cloud Run: `clause-api` (https://clause-api-1005432364863.us-central1.run.app)\n- GCS Buckets: `clause-raw-artful`, `clause-processed-artful`\n- Firestore: `projects/artful-journey-486915-a8/databases/(default)`\n- Document AI: `projects/1005432364863/locations/us/processors/33319aaf8ffed055`\n- Elasticsearch: `clause-documents` index (768-dim vectors)\n\n**Generated Codebase:**\n- FastAPI backend with 12 files\n- Vertex AI service (text-embedding-004 + Gemini 2.0 Flash)\n- Elasticsearch hybrid search service (BM25 + kNN + RRF)\n- Document processing pipeline\n\n**Frontend Integration:**\n- API SDK in `lib/api.ts` with typed functions\n- ChatInterface connected to Q&A endpoint\n- TableReview connected to batch analysis\n- Frontend running on port 3002\n\n**Repository Updates:**\n- Backend pushed to `github.com:jetrun-sh/clause-backend.git`\n- Frontend pushed to `github.com:jetrun-sh/clause-frontend.git`\n\n**Tested Pipeline:**\n- Document upload → OCR → Indexing → Q&A with citations\n- End-to-end latency: ~2s\n\nYou can view the generated code in the **Codebase** tab and deployed resources in the **Resources** tab.",
+    "timestamp": "Just now"
+  }
+]

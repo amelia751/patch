@@ -1,0 +1,222 @@
+[
+  {
+    "id": "1",
+    "threadNumber": 1,
+    "title": "Analyzing netflix-clone",
+    "status": "open",
+    "createdAt": "Just now",
+    "updatedAt": "Just now",
+    "messageCount": 1,
+    "activityCount": 6,
+    "preview": "Analyzed repository and designed serverless architecture with 8 services, 13 endpoints, and 4 tables."
+  },
+  {
+    "id": "2",
+    "threadNumber": 2,
+    "title": "Implement user authentication flow",
+    "status": "needs_input",
+    "createdAt": "1 hour ago",
+    "updatedAt": "45 min ago",
+    "messageCount": 12,
+    "activityCount": 7,
+    "preview": "Set up Cognito user pool with email verification and JWT token validation."
+  },
+  {
+    "id": "3",
+    "threadNumber": 3,
+    "title": "Configure CloudFront CDN",
+    "status": "open",
+    "createdAt": "3 hours ago",
+    "updatedAt": "3 hours ago",
+    "messageCount": 1,
+    "activityCount": 0,
+    "preview": "Need to set up CloudFront distribution for content delivery."
+  },
+  {
+    "id": "4",
+    "threadNumber": 4,
+    "title": "Set up DynamoDB tables",
+    "status": "closed",
+    "createdAt": "Yesterday",
+    "updatedAt": "Yesterday",
+    "messageCount": 6,
+    "activityCount": 4,
+    "preview": "Created movies, users, and watchlist tables with appropriate indexes."
+  },
+  {
+    "id": "5",
+    "threadNumber": 5,
+    "title": "Add API rate limiting",
+    "status": "open",
+    "createdAt": "2 days ago",
+    "updatedAt": "2 days ago",
+    "messageCount": 3,
+    "activityCount": 0,
+    "preview": "Need to implement rate limiting for API endpoints."
+  },
+  {
+    "id": "6",
+    "threadNumber": 6,
+    "title": "Setup CI/CD pipeline",
+    "status": "in_progress",
+    "createdAt": "2 days ago",
+    "updatedAt": "1 day ago",
+    "messageCount": 15,
+    "activityCount": 8,
+    "preview": "Configuring GitHub Actions for automated testing and deployment."
+  },
+  {
+    "id": "7",
+    "threadNumber": 7,
+    "title": "Optimize database queries",
+    "status": "closed",
+    "createdAt": "3 days ago",
+    "updatedAt": "3 days ago",
+    "messageCount": 7,
+    "activityCount": 5,
+    "preview": "Improved query performance with proper indexing."
+  },
+  {
+    "id": "8",
+    "threadNumber": 8,
+    "title": "Add image upload functionality",
+    "status": "needs_input",
+    "createdAt": "3 days ago",
+    "updatedAt": "2 days ago",
+    "messageCount": 9,
+    "activityCount": 4,
+    "preview": "Need confirmation on image size limits and storage."
+  },
+  {
+    "id": "9",
+    "threadNumber": 9,
+    "title": "Implement email notifications",
+    "status": "open",
+    "createdAt": "4 days ago",
+    "updatedAt": "4 days ago",
+    "messageCount": 2,
+    "activityCount": 0,
+    "preview": "Setup email service for user notifications."
+  },
+  {
+    "id": "10",
+    "threadNumber": 10,
+    "title": "Create admin dashboard",
+    "status": "in_progress",
+    "createdAt": "4 days ago",
+    "updatedAt": "3 days ago",
+    "messageCount": 11,
+    "activityCount": 6,
+    "preview": "Building administrative interface for content management."
+  },
+  {
+    "id": "11",
+    "threadNumber": 11,
+    "title": "Fix payment gateway integration",
+    "status": "closed",
+    "createdAt": "5 days ago",
+    "updatedAt": "5 days ago",
+    "messageCount": 8,
+    "activityCount": 4,
+    "preview": "Resolved Stripe webhook issues."
+  },
+  {
+    "id": "12",
+    "threadNumber": 12,
+    "title": "Add search functionality",
+    "status": "open",
+    "createdAt": "5 days ago",
+    "updatedAt": "5 days ago",
+    "messageCount": 1,
+    "activityCount": 0,
+    "preview": "Implement full-text search with Elasticsearch."
+  },
+  {
+    "id": "13",
+    "threadNumber": 13,
+    "title": "Setup monitoring and alerts",
+    "status": "in_progress",
+    "createdAt": "6 days ago",
+    "updatedAt": "5 days ago",
+    "messageCount": 10,
+    "activityCount": 5,
+    "preview": "Configuring CloudWatch and DataDog integration."
+  },
+  {
+    "id": "14",
+    "threadNumber": 14,
+    "title": "Implement caching layer",
+    "status": "closed",
+    "createdAt": "6 days ago",
+    "updatedAt": "6 days ago",
+    "messageCount": 6,
+    "activityCount": 3,
+    "preview": "Added Redis for session and data caching."
+  },
+  {
+    "id": "15",
+    "threadNumber": 15,
+    "title": "Create mobile responsive design",
+    "status": "needs_input",
+    "createdAt": "1 week ago",
+    "updatedAt": "6 days ago",
+    "messageCount": 13,
+    "activityCount": 7,
+    "preview": "Need design approval for mobile breakpoints."
+  },
+  {
+    "id": "16",
+    "threadNumber": 16,
+    "title": "Add WebSocket support",
+    "status": "open",
+    "createdAt": "1 week ago",
+    "updatedAt": "1 week ago",
+    "messageCount": 2,
+    "activityCount": 0,
+    "preview": "Real-time updates for user activities."
+  },
+  {
+    "id": "17",
+    "threadNumber": 17,
+    "title": "Implement content recommendation engine",
+    "status": "in_progress",
+    "createdAt": "1 week ago",
+    "updatedAt": "5 days ago",
+    "messageCount": 14,
+    "activityCount": 9,
+    "preview": "Building ML-based recommendation system."
+  },
+  {
+    "id": "18",
+    "threadNumber": 18,
+    "title": "Setup backup and disaster recovery",
+    "status": "closed",
+    "createdAt": "2 weeks ago",
+    "updatedAt": "2 weeks ago",
+    "messageCount": 5,
+    "activityCount": 3,
+    "preview": "Configured automated backups and recovery procedures."
+  },
+  {
+    "id": "19",
+    "threadNumber": 19,
+    "title": "Add multi-language support",
+    "status": "open",
+    "createdAt": "2 weeks ago",
+    "updatedAt": "2 weeks ago",
+    "messageCount": 3,
+    "activityCount": 0,
+    "preview": "Internationalization for global users."
+  },
+  {
+    "id": "20",
+    "threadNumber": 20,
+    "title": "Optimize bundle size",
+    "status": "closed",
+    "createdAt": "2 weeks ago",
+    "updatedAt": "2 weeks ago",
+    "messageCount": 7,
+    "activityCount": 4,
+    "preview": "Reduced JavaScript bundle size by 40%."
+  }
+]

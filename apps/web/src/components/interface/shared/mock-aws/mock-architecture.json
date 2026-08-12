@@ -1,0 +1,1145 @@
+{
+  "project": {
+    "id": "proj_ecommerce_001",
+    "name": "E-Commerce Platform",
+    "description": "AI-powered e-commerce platform with intelligent customer support and personalized recommendations",
+    "created_at": "2025-01-10T12:00:00Z",
+    "active_version_id": "v1",
+    "cloud_provider": "aws",
+    "versions": [
+      {
+        "id": "v1",
+        "label": "MVP Serverless",
+        "description": "Initial serverless architecture with core e-commerce features",
+        "created_at": "2025-01-10T12:00:00Z",
+        "parent_version_id": null,
+        "status": "deployed",
+        "design": {
+          "architecture_type": "serverless",
+          "cloud_provider": "aws",
+          "graph": {
+            "nodes": [
+              {
+                "id": "api-gateway",
+                "service": "API Gateway",
+                "label": "ecomm-api-prod",
+                "resource_name": "ecomm-api-prod",
+                "logical_id": "EcommApiGateway",
+                "description": "RESTful API endpoint for client requests",
+                "config": {
+                  "stage": "prod",
+                  "throttling": { "rateLimit": 1000, "burstLimit": 500 }
+                }
+              },
+              {
+                "id": "auth-lambda",
+                "service": "Lambda",
+                "label": "ecomm-auth-fn",
+                "resource_name": "ecomm-auth-fn",
+                "logical_id": "EcommAuthFunction",
+                "description": "User authentication and JWT token generation",
+                "config": {
+                  "runtime": "nodejs20.x",
+                  "memory": 256,
+                  "timeout": 30
+                }
+              },
+              {
+                "id": "product-lambda",
+                "service": "Lambda",
+                "label": "ecomm-products-fn",
+                "resource_name": "ecomm-products-fn",
+                "logical_id": "EcommProductsFunction",
+                "description": "Product catalog CRUD operations",
+                "config": {
+                  "runtime": "nodejs20.x",
+                  "memory": 512,
+                  "timeout": 30
+                }
+              },
+              {
+                "id": "order-lambda",
+                "service": "Lambda",
+                "label": "ecomm-orders-fn",
+                "resource_name": "ecomm-orders-fn",
+                "logical_id": "EcommOrdersFunction",
+                "description": "Order processing and fulfillment",
+                "config": {
+                  "runtime": "nodejs20.x",
+                  "memory": 512,
+                  "timeout": 60
+                }
+              },
+              {
+                "id": "cognito",
+                "service": "Cognito",
+                "label": "ecomm-users-pool",
+                "resource_name": "ecomm-users-pool",
+                "logical_id": "EcommUserPool",
+                "description": "User authentication and management",
+                "config": {
+                  "tokenExpiry": "1 hour",
+                  "refreshTokenExpiry": "30 days",
+                  "mfa": "optional",
+                  "passwordPolicy": { 
+                    "minLength": 12, 
+                    "requireUppercase": true,
+                    "requireNumbers": true,
+                    "requireSpecialChars": true
+                  }
+                }
+              },
+              {
+                "id": "db-main",
+                "service": "Aurora",
+                "label": "ecomm-db-prod",
+                "resource_name": "ecomm-db-prod",
+                "logical_id": "EcommDatabase",
+                "description": "PostgreSQL 15 - Aurora Serverless v2",
+                "config": {
+                  "engine": "aurora-postgresql",
+                  "version": "15.4",
+                  "minACU": 0.5,
+                  "maxACU": 4
+                }
+              },
+              {
+                "id": "s3-images",
+                "service": "S3",
+                "label": "ecomm-product-images-prod",
+                "resource_name": "ecomm-product-images-prod",
+                "logical_id": "EcommProductImagesBucket",
+                "description": "Product images and static assets",
+                "config": {
+                  "versioning": true,
+                  "encryption": "AES256",
+                  "lifecycle": { "expireNoncurrentDays": 90 }
+                }
+              },
+              {
+                "id": "cloudwatch",
+                "service": "CloudWatch",
+                "label": "ecomm-logs",
+                "resource_name": "/aws/ecomm",
+                "logical_id": "EcommLogGroup",
+                "description": "Centralized logs and metrics",
+                "config": {
+                  "retention": 30
+                }
+              },
+              {
+                "id": "stripe",
+                "service": "Stripe",
+                "label": "Payment Processing",
+                "description": "Process payments and subscriptions",
+                "config": {
+                  "webhooks": ["payment.succeeded", "payment.failed", "subscription.updated"]
+                }
+              },
+              {
+                "id": "resend",
+                "service": "Resend",
+                "label": "Transactional Email",
+                "description": "Send order confirmations and notifications",
+                "config": {
+                  "templates": ["welcome", "order_confirmation", "shipping_update"]
+                }
+              },
+              {
+                "id": "slack",
+                "service": "Slack",
+                "label": "Team Notifications",
+                "description": "Alert team on high-value orders and issues",
+                "config": {
+                  "channels": ["#orders", "#alerts", "#vip-customers"]
+                }
+              },
+              {
+                "id": "sentry",
+                "service": "Sentry",
+                "label": "Error Tracking",
+                "description": "Monitor errors and performance",
+                "config": {
+                  "sampleRate": 1.0,
+                  "tracesSampleRate": 0.1
+                }
+              }
+            ],
+            "edges": [
+              { "from": "api-gateway", "to": "auth-lambda", "label": "/auth/*" },
+              { "from": "api-gateway", "to": "product-lambda", "label": "/products/*" },
+              { "from": "api-gateway", "to": "order-lambda", "label": "/orders/*" },
+              { "from": "auth-lambda", "to": "cognito", "label": "JWT auth" },
+              { "from": "auth-lambda", "to": "db-main", "label": "ecomm.users", "database": "ecomm-db-prod", "tables": ["users"] },
+              { "from": "auth-lambda", "to": "resend", "label": "welcome email" },
+              { "from": "product-lambda", "to": "db-main", "label": "ecomm.products", "database": "ecomm-db-prod", "tables": ["products"] },
+              { "from": "product-lambda", "to": "s3-images", "label": "images/*" },
+              { "from": "order-lambda", "to": "db-main", "label": "ecomm.orders", "database": "ecomm-db-prod", "tables": ["orders", "order_items"] },
+              { "from": "order-lambda", "to": "stripe", "label": "process payment" },
+              { "from": "order-lambda", "to": "resend", "label": "order confirmation" },
+              { "from": "order-lambda", "to": "slack", "label": "notify #orders" },
+              { "from": "auth-lambda", "to": "cloudwatch", "label": "logs" },
+              { "from": "product-lambda", "to": "cloudwatch", "label": "logs" },
+              { "from": "order-lambda", "to": "cloudwatch", "label": "logs" },
+              { "from": "auth-lambda", "to": "sentry", "label": "errors" },
+              { "from": "product-lambda", "to": "sentry", "label": "errors" },
+              { "from": "order-lambda", "to": "sentry", "label": "errors" }
+            ]
+          },
+          "api": {
+            "roles": [
+              {
+                "name": "customer",
+                "description": "Regular authenticated user",
+                "permissions": [
+                  { "resource": "products", "actions": ["read"], "scope": "all" },
+                  { "resource": "orders", "actions": ["create", "read"], "scope": "own" }
+                ]
+              },
+              {
+                "name": "admin",
+                "description": "Full system access",
+                "permissions": [
+                  { "resource": "*", "actions": ["*"], "scope": "all" }
+                ]
+              }
+            ],
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/auth/register",
+                "description": "Register a new user account",
+                "handler_service": "auth_service",
+                "handler_method": "register",
+                "auth": { "required": false },
+                "database_tables": ["users"],
+                "services": ["Cognito"]
+              },
+              {
+                "method": "POST",
+                "path": "/auth/login",
+                "description": "Authenticate user and return JWT token",
+                "handler_service": "auth_service",
+                "handler_method": "login",
+                "auth": { "required": false },
+                "database_tables": ["users"],
+                "services": ["Cognito"]
+              },
+              {
+                "method": "GET",
+                "path": "/products",
+                "description": "List all products with pagination",
+                "handler_service": "product_service",
+                "handler_method": "listProducts",
+                "auth": { "required": false },
+                "database_tables": ["products"]
+              },
+              {
+                "method": "GET",
+                "path": "/products/search",
+                "description": "Search products with AI",
+                "handler_service": "product_service",
+                "handler_method": "searchProducts",
+                "auth": { "required": false },
+                "database_tables": ["products"],
+                "services": ["OpenSearch", "Bedrock"]
+              },
+              {
+                "method": "GET",
+                "path": "/orders",
+                "description": "List user's orders",
+                "handler_service": "order_service",
+                "handler_method": "listOrders",
+                "auth": { "required": true, "roles": ["customer", "admin"] },
+                "database_tables": ["orders", "order_items"]
+              },
+              {
+                "method": "POST",
+                "path": "/orders",
+                "description": "Create a new order",
+                "handler_service": "order_service",
+                "handler_method": "createOrder",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["orders", "order_items", "products"]
+              },
+              {
+                "method": "GET",
+                "path": "/products/:id",
+                "description": "Get product details",
+                "handler_service": "product_service",
+                "handler_method": "getProduct",
+                "auth": { "required": false },
+                "database_tables": ["products"]
+              },
+              {
+                "method": "PUT",
+                "path": "/products/:id",
+                "description": "Update product (admin only)",
+                "handler_service": "product_service",
+                "handler_method": "updateProduct",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"],
+                "services": ["S3"]
+              },
+              {
+                "method": "POST",
+                "path": "/products/:id/image",
+                "description": "Upload product image",
+                "handler_service": "product_service",
+                "handler_method": "uploadImage",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"],
+                "services": ["S3"]
+              },
+              {
+                "method": "GET",
+                "path": "/cart",
+                "description": "Get user's shopping cart",
+                "handler_service": "cart_service",
+                "handler_method": "getCart",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["carts", "cart_items"]
+              },
+              {
+                "method": "POST",
+                "path": "/cart/items",
+                "description": "Add item to cart",
+                "handler_service": "cart_service",
+                "handler_method": "addItem",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["cart_items", "products"]
+              },
+              {
+                "method": "PATCH",
+                "path": "/cart/items/:id",
+                "description": "Update item quantity",
+                "handler_service": "cart_service",
+                "handler_method": "updateQuantity",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["cart_items"]
+              },
+              {
+                "method": "DELETE",
+                "path": "/cart/items/:id",
+                "description": "Remove item from cart",
+                "handler_service": "cart_service",
+                "handler_method": "removeItem",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["cart_items"]
+              },
+              {
+                "method": "PATCH",
+                "path": "/products/:id/stock",
+                "description": "Update product stock",
+                "handler_service": "product_service",
+                "handler_method": "updateStock",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"]
+              },
+              {
+                "method": "DELETE",
+                "path": "/products/:id",
+                "description": "Delete product (admin only)",
+                "handler_service": "product_service",
+                "handler_method": "deleteProduct",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"],
+                "services": ["S3"]
+              }
+            ]
+          },
+          "databases": [
+            {
+              "id": "primary",
+              "engine": "Aurora PostgreSQL Serverless v2",
+              "instance_name": "ecomm-db-prod",
+              "version": "15.4",
+              "rationale": "ACID transactions for orders and user data",
+              "schema": {
+                "name": "ecomm",
+                "tables": [
+                  {
+                    "logical_id": "users_table",
+                    "name": "ecomm.users",
+                    "description": "User accounts and profiles",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "email", "type": "VARCHAR(255)", "unique": true, "index": true, "pii": true },
+                      { "name": "username", "type": "VARCHAR(50)", "unique": true, "pii": true },
+                      { "name": "password_hash", "type": "VARCHAR(255)" },
+                      { "name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()" },
+                      { "name": "updated_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_users_email", "idx_users_username"]
+                  },
+                  {
+                    "logical_id": "orders_table",
+                    "name": "ecomm.orders",
+                    "description": "Customer orders and transactions",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "order_number", "type": "VARCHAR(20)", "unique": true },
+                      { "name": "user_id", "type": "UUID", "fk": true, "references": "ecomm.users(id)" },
+                      { "name": "status", "type": "VARCHAR(20)", "default": "'pending'" },
+                      { "name": "total_cents", "type": "INTEGER" },
+                      { "name": "stripe_payment_id", "type": "VARCHAR(100)" },
+                      { "name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_orders_user_id", "idx_orders_status", "idx_orders_created_at"],
+                    "relationships": [
+                      { "column": "user_id", "references_table": "ecomm.users", "references_column": "id", "on_delete": "CASCADE" }
+                    ]
+                  },
+                  {
+                    "logical_id": "order_items_table",
+                    "name": "ecomm.order_items",
+                    "description": "Line items within orders",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "order_id", "type": "UUID", "fk": true, "references": "ecomm.orders(id)" },
+                      { "name": "product_id", "type": "UUID", "fk": true, "references": "ecomm.products(id)" },
+                      { "name": "quantity", "type": "INTEGER" },
+                      { "name": "unit_price_cents", "type": "INTEGER" }
+                    ],
+                    "indexes": ["idx_order_items_order_id"],
+                    "relationships": [
+                      { "column": "order_id", "references_table": "ecomm.orders", "references_column": "id", "on_delete": "CASCADE" },
+                      { "column": "product_id", "references_table": "ecomm.products", "references_column": "id", "on_delete": "RESTRICT" }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cache",
+              "engine": "DynamoDB",
+              "instance_name": "ecomm-products-cache",
+              "rationale": "Fast read access for product catalog and sessions",
+              "tables": [
+                {
+                  "logical_id": "products_cache",
+                  "name": "ecomm-products",
+                  "description": "Product catalog cache for fast reads",
+                  "keySchema": {
+                    "partitionKey": { "name": "PK", "type": "S", "description": "PRODUCT#<product_id>" },
+                    "sortKey": { "name": "SK", "type": "S", "description": "METADATA or CATEGORY#<category>" }
+                  },
+                  "attributes": [
+                    { "name": "id", "type": "S" },
+                    { "name": "name", "type": "S" },
+                    { "name": "price_cents", "type": "N" },
+                    { "name": "category", "type": "S" },
+                    { "name": "stock", "type": "N" },
+                    { "name": "image_url", "type": "S" },
+                    { "name": "ttl", "type": "N" }
+                  ],
+                  "gsi": [
+                    {
+                      "name": "GSI1",
+                      "partitionKey": "category",
+                      "sortKey": "price_cents",
+                      "description": "Query products by category sorted by price"
+                    }
+                  ],
+                  "billingMode": "PAY_PER_REQUEST"
+                },
+                {
+                  "logical_id": "sessions_table",
+                  "name": "ecomm-sessions",
+                  "description": "User session and cart data",
+                  "keySchema": {
+                    "partitionKey": { "name": "PK", "type": "S", "description": "SESSION#<session_id>" },
+                    "sortKey": { "name": "SK", "type": "S", "description": "USER or CART#<item_id>" }
+                  },
+                  "attributes": [
+                    { "name": "user_id", "type": "S", "pii": true },
+                    { "name": "cart_items", "type": "L" },
+                    { "name": "created_at", "type": "S" },
+                    { "name": "expires_at", "type": "N" }
+                  ],
+                  "ttl": { "attributeName": "expires_at", "enabled": true },
+                  "billingMode": "PAY_PER_REQUEST"
+                }
+              ]
+            }
+          ],
+          "workflows": [
+            {
+              "id": "wf-user-onboarding",
+              "name": "User Onboarding",
+              "description": "Welcome new users and guide them through setup",
+              "status": "active",
+              "trigger": {
+                "type": "event",
+                "event": "user.signup",
+                "source": "auth-lambda"
+              },
+              "steps": [
+                {
+                  "id": "step-1",
+                  "type": "action",
+                  "name": "Send Welcome Email",
+                  "action": "send_email",
+                  "integration": "Resend",
+                  "config": { "template": "welcome_email" }
+                },
+                {
+                  "id": "step-2",
+                  "type": "action",
+                  "name": "Create CRM Contact",
+                  "action": "create_contact",
+                  "integration": "HubSpot",
+                  "config": { "list": "new_users" }
+                },
+                {
+                  "id": "step-3",
+                  "type": "delay",
+                  "name": "Wait 24 hours",
+                  "duration": "24h"
+                },
+                {
+                  "id": "step-4",
+                  "type": "condition",
+                  "name": "Check Profile Complete",
+                  "condition": "user.profile_completed == false",
+                  "true_next": "step-5",
+                  "false_next": "end"
+                },
+                {
+                  "id": "step-5",
+                  "type": "action",
+                  "name": "Send Reminder",
+                  "action": "send_email",
+                  "integration": "Resend",
+                  "config": { "template": "complete_profile_reminder" }
+                }
+              ]
+            },
+            {
+              "id": "wf-order-fulfillment",
+              "name": "Order Fulfillment",
+              "description": "Process and fulfill customer orders",
+              "status": "active",
+              "trigger": {
+                "type": "event",
+                "event": "order.created",
+                "source": "order-lambda"
+              },
+              "steps": [
+                {
+                  "id": "step-1",
+                  "type": "action",
+                  "name": "Notify Team",
+                  "action": "send_message",
+                  "integration": "Slack",
+                  "config": { "channel": "#orders", "message": "New order {{order.id}}" }
+                },
+                {
+                  "id": "step-2",
+                  "type": "action",
+                  "name": "Log to Sentry",
+                  "action": "capture_event",
+                  "integration": "Sentry",
+                  "config": { "level": "info", "message": "Order processed" }
+                },
+                {
+                  "id": "step-3",
+                  "type": "action",
+                  "name": "Update Inventory",
+                  "action": "db_update",
+                  "integration": "Supabase",
+                  "config": { "table": "products", "operation": "decrement_stock" }
+                },
+                {
+                  "id": "step-4",
+                  "type": "condition",
+                  "name": "High Value Order?",
+                  "condition": "order.total > 10000",
+                  "true_next": "step-5",
+                  "false_next": "step-6"
+                },
+                {
+                  "id": "step-5",
+                  "type": "action",
+                  "name": "VIP Alert",
+                  "action": "send_message",
+                  "integration": "Discord",
+                  "config": { "channel": "#vip-orders" }
+                },
+                {
+                  "id": "step-6",
+                  "type": "action",
+                  "name": "Confirmation Email",
+                  "action": "send_email",
+                  "integration": "Resend",
+                  "config": { "template": "order_confirmation" }
+                }
+              ]
+            },
+            {
+              "id": "wf-payment-failed",
+              "name": "Payment Recovery",
+              "description": "Handle failed payments and retry",
+              "status": "active",
+              "trigger": {
+                "type": "webhook",
+                "event": "payment.failed",
+                "source": "Stripe"
+              },
+              "steps": [
+                {
+                  "id": "step-1",
+                  "type": "action",
+                  "name": "Log Payment Failure",
+                  "action": "capture_event",
+                  "integration": "Datadog",
+                  "config": { "metric": "payment.failed" }
+                },
+                {
+                  "id": "step-2",
+                  "type": "action",
+                  "name": "Send Payment Failed Email",
+                  "action": "send_email",
+                  "integration": "Resend",
+                  "config": { "template": "payment_failed" }
+                },
+                {
+                  "id": "step-3",
+                  "type": "delay",
+                  "name": "Wait 3 days",
+                  "duration": "72h"
+                },
+                {
+                  "id": "step-4",
+                  "type": "action",
+                  "name": "Retry Payment",
+                  "action": "api_call",
+                  "integration": "Stripe",
+                  "config": { "endpoint": "retry_payment" }
+                },
+                {
+                  "id": "step-5",
+                  "type": "condition",
+                  "name": "Retry Successful?",
+                  "condition": "payment.status == 'succeeded'",
+                  "true_next": "step-6",
+                  "false_next": "step-7"
+                },
+                {
+                  "id": "step-6",
+                  "type": "action",
+                  "name": "Notify Success",
+                  "action": "send_message",
+                  "integration": "Slack",
+                  "config": { "channel": "#payments", "message": "Payment recovered!" }
+                },
+                {
+                  "id": "step-7",
+                  "type": "action",
+                  "name": "Cancel Subscription",
+                  "action": "api_call",
+                  "integration": "Stripe",
+                  "config": { "endpoint": "cancel_subscription" }
+                }
+              ]
+            },
+            {
+              "id": "wf-abandoned-cart",
+              "name": "Abandoned Cart Recovery",
+              "description": "Recover abandoned shopping carts",
+              "status": "draft",
+              "trigger": {
+                "type": "schedule",
+                "cron": "0 */6 * * *",
+                "source": "EventBridge"
+              },
+              "steps": [
+                {
+                  "id": "step-1",
+                  "type": "action",
+                  "name": "Find Abandoned Carts",
+                  "action": "db_query",
+                  "integration": "PostgreSQL",
+                  "config": { "query": "SELECT * FROM carts WHERE updated_at < NOW() - INTERVAL '24 hours'" }
+                },
+                {
+                  "id": "step-2",
+                  "type": "loop",
+                  "name": "For Each Cart",
+                  "iterator": "cart",
+                  "steps": [
+                    {
+                      "id": "step-2a",
+                      "type": "action",
+                      "name": "Track Event",
+                      "action": "track",
+                      "integration": "PostHog",
+                      "config": { "event": "abandoned_cart_reminder_sent" }
+                    },
+                    {
+                      "id": "step-2b",
+                      "type": "action",
+                      "name": "Send Reminder",
+                      "action": "send_email",
+                      "integration": "Resend",
+                      "config": { "template": "abandoned_cart", "to": "{{cart.user.email}}" }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "risks": {
+            "assumptions": [
+              { "category": "Scale", "assumption": "Traffic under 10K requests/day initially", "impact": "May need to revise database scaling" },
+              { "category": "Cost", "assumption": "Serverless model is cost-effective for variable traffic", "impact": "Switch to containers if traffic becomes steady" }
+            ],
+            "identifiedRisks": [
+              { "risk": "Single region deployment", "severity": "medium", "mitigation": "Enable multi-region failover for DR" },
+              { "risk": "Lambda cold starts affecting user experience", "severity": "low", "mitigation": "Use provisioned concurrency for critical functions" }
+            ]
+          }
+        },
+        "environments": {
+          "dev": {
+            "present_nodes": ["api-gateway", "auth-lambda", "product-lambda", "order-lambda", "cognito", "db-main", "s3-images", "cloudwatch", "stripe", "resend", "sentry"],
+            "overrides": {
+              "auth_service": { "memory": "256MB", "timeout": "30s" },
+              "product_service": { "memory": "512MB", "timeout": "30s" },
+              "order_service": { "memory": "512MB", "timeout": "60s" },
+              "main_database": { "instanceClass": "db.t3.micro", "multiAZ": false }
+            },
+            "extra_nodes": [],
+            "extra_edges": []
+          },
+          "staging": {
+            "present_nodes": ["api-gateway", "auth-lambda", "product-lambda", "order-lambda", "cognito", "db-main", "s3-images", "cloudwatch", "stripe", "resend", "slack", "sentry"],
+            "overrides": {
+              "auth_service": { "memory": "512MB", "timeout": "30s" },
+              "product_service": { "memory": "1024MB", "timeout": "30s" },
+              "order_service": { "memory": "2048MB", "timeout": "60s" },
+              "main_database": { "instanceClass": "db.t3.small", "multiAZ": true }
+            },
+            "extra_nodes": [],
+            "extra_edges": []
+          },
+          "prod": {
+            "present_nodes": ["api-gateway", "auth-lambda", "product-lambda", "order-lambda", "cognito", "db-main", "s3-images", "cloudwatch", "stripe", "resend", "slack", "sentry"],
+            "overrides": {
+              "auth_service": { "memory": "512MB", "timeout": "30s", "concurrency": 100 },
+              "product_service": { "memory": "1024MB", "timeout": "30s", "concurrency": 200 },
+              "order_service": { "memory": "2048MB", "timeout": "60s", "concurrency": 150 },
+              "main_database": { "instanceClass": "db.t3.medium", "multiAZ": true, "backupRetention": 30 }
+            },
+            "extra_nodes": [
+              {
+                "id": "waf",
+                "service": "WAF",
+                "label": "Web Firewall",
+                "logical_id": "web_firewall",
+                "description": "DDoS protection and request filtering"
+              },
+              {
+                "id": "cloudfront",
+                "service": "CloudFront",
+                "label": "CDN",
+                "logical_id": "cdn",
+                "description": "Content delivery and edge caching"
+              }
+            ],
+            "extra_edges": [
+              { "from": "cloudfront", "to": "waf", "label": "filter" },
+              { "from": "waf", "to": "api-gateway", "label": "forward" }
+            ]
+          }
+        },
+        "diff_from_parent": null
+      },
+      {
+        "id": "v2",
+        "label": "Add AI Assistant",
+        "description": "Enhanced with AWS Bedrock AI agent for customer support",
+        "created_at": "2025-01-15T09:00:00Z",
+        "parent_version_id": "v1",
+        "status": "draft",
+        "design": {
+          "architecture_type": "serverless",
+          "cloud_provider": "aws",
+          "graph": {
+            "nodes": [
+              {
+                "id": "api-gateway",
+                "service": "API Gateway",
+                "label": "Main API",
+                "logical_id": "main_api",
+                "description": "RESTful API endpoint for client requests"
+              },
+              {
+                "id": "auth-lambda",
+                "service": "Lambda",
+                "label": "Auth Service",
+                "logical_id": "auth_service",
+                "description": "User authentication and JWT token generation"
+              },
+              {
+                "id": "product-lambda",
+                "service": "Lambda",
+                "label": "Product Service",
+                "logical_id": "product_service",
+                "description": "Product catalog management"
+              },
+              {
+                "id": "order-lambda",
+                "service": "Lambda",
+                "label": "Order Service",
+                "logical_id": "order_service",
+                "description": "Order processing and fulfillment"
+              },
+              {
+                "id": "agent-orchestrator-lambda",
+                "service": "Lambda",
+                "label": "AI Agent Core",
+                "logical_id": "agent_orchestrator",
+                "description": "Orchestrates AI agent interactions"
+              },
+              {
+                "id": "bedrock",
+                "service": "Bedrock",
+                "label": "AWS Bedrock",
+                "logical_id": "bedrock_service",
+                "description": "Foundation models for AI conversations"
+              },
+              {
+                "id": "opensearch",
+                "service": "OpenSearch",
+                "label": "Vector Store",
+                "logical_id": "vector_store",
+                "description": "Vector database for semantic search"
+              },
+              {
+                "id": "cognito",
+                "service": "Cognito",
+                "label": "User Pool",
+                "logical_id": "user_pool",
+                "description": "User authentication and management"
+              },
+              {
+                "id": "db-main",
+                "service": "RDS",
+                "label": "Main Database",
+                "logical_id": "main_database",
+                "description": "PostgreSQL primary relational store"
+              },
+              {
+                "id": "s3-images",
+                "service": "S3",
+                "label": "Product Images",
+                "logical_id": "product_images",
+                "description": "Static asset storage for product images"
+              },
+              {
+                "id": "s3-knowledge-base",
+                "service": "S3",
+                "label": "Knowledge Base",
+                "logical_id": "knowledge_base",
+                "description": "Document repository for AI agent knowledge"
+              },
+              {
+                "id": "cloudwatch",
+                "service": "CloudWatch",
+                "label": "Monitoring",
+                "logical_id": "monitoring",
+                "description": "Logs and metrics collection"
+              }
+            ],
+            "edges": [
+              { "from": "api-gateway", "to": "auth-lambda", "label": "/auth/*" },
+              { "from": "api-gateway", "to": "product-lambda", "label": "/products/*" },
+              { "from": "api-gateway", "to": "order-lambda", "label": "/orders/*" },
+              { "from": "api-gateway", "to": "agent-orchestrator-lambda", "label": "/chat/*" },
+              { "from": "auth-lambda", "to": "cognito", "label": "JWT auth" },
+              { "from": "auth-lambda", "to": "db-main", "label": "main.users", "database": "main-db", "tables": ["users"] },
+              { "from": "product-lambda", "to": "db-main", "label": "main.products", "database": "main-db", "tables": ["products"] },
+              { "from": "product-lambda", "to": "s3-images", "label": "images/*" },
+              { "from": "order-lambda", "to": "db-main", "label": "main.orders", "database": "main-db", "tables": ["orders", "order_items"] },
+              { "from": "agent-orchestrator-lambda", "to": "bedrock", "label": "invoke model" },
+              { "from": "agent-orchestrator-lambda", "to": "opensearch", "label": "semantic search" },
+              { "from": "agent-orchestrator-lambda", "to": "db-main", "label": "store sessions" },
+              { "from": "s3-knowledge-base", "to": "opensearch", "label": "index documents" },
+              { "from": "auth-lambda", "to": "cloudwatch", "label": "logs" },
+              { "from": "product-lambda", "to": "cloudwatch", "label": "logs" },
+              { "from": "order-lambda", "to": "cloudwatch", "label": "logs" },
+              { "from": "agent-orchestrator-lambda", "to": "cloudwatch", "label": "logs" }
+            ]
+          },
+          "api": {
+            "roles": [
+              {
+                "name": "customer",
+                "description": "Regular authenticated user",
+                "permissions": [
+                  { "resource": "products", "actions": ["read"], "scope": "all" },
+                  { "resource": "orders", "actions": ["create", "read"], "scope": "own" },
+                  { "resource": "ai_chat", "actions": ["create", "read"], "scope": "own" }
+                ]
+              },
+              {
+                "name": "admin",
+                "description": "Full system access",
+                "permissions": [
+                  { "resource": "*", "actions": ["*"], "scope": "all" }
+                ]
+              }
+            ],
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/auth/register",
+                "description": "Register a new user account",
+                "handler_service": "auth_service",
+                "handler_method": "register",
+                "auth": { "required": false },
+                "database_tables": ["users_table"]
+              },
+              {
+                "method": "POST",
+                "path": "/auth/login",
+                "description": "Authenticate user and return JWT token",
+                "handler_service": "auth_service",
+                "handler_method": "login",
+                "auth": { "required": false },
+                "database_tables": ["users_table"]
+              },
+              {
+                "method": "GET",
+                "path": "/products",
+                "description": "List all products with pagination",
+                "handler_service": "product_service",
+                "handler_method": "listProducts",
+                "auth": { "required": false },
+                "database_tables": ["products_table"]
+              },
+              {
+                "method": "GET",
+                "path": "/orders",
+                "description": "List user's orders",
+                "handler_service": "order_service",
+                "handler_method": "listOrders",
+                "auth": { "required": true, "roles": ["customer", "admin"] },
+                "database_tables": ["orders_table"]
+              },
+              {
+                "method": "POST",
+                "path": "/ai/chat",
+                "description": "Send message to AI agent and get response",
+                "handler_service": "agent_orchestrator",
+                "handler_method": "chat",
+                "auth": { "required": true, "roles": ["customer", "admin"] },
+                "database_tables": ["agent_sessions_table"]
+              }
+            ]
+          },
+          "database": {
+            "engine": "PostgreSQL",
+            "schema": {
+              "tables": [
+                {
+                  "logical_id": "users_table",
+                  "name": "users",
+                  "description": "Stores user account information",
+                  "columns": [
+                    { "name": "id", "type": "UUID", "pk": true },
+                    { "name": "email", "type": "VARCHAR(255)", "unique": true, "pii": true },
+                    { "name": "username", "type": "VARCHAR(50)", "unique": true, "pii": true }
+                  ]
+                },
+                {
+                  "logical_id": "products_table",
+                  "name": "products",
+                  "description": "Product catalog",
+                  "columns": [
+                    { "name": "id", "type": "UUID", "pk": true },
+                    { "name": "name", "type": "VARCHAR(255)" },
+                    { "name": "price", "type": "DECIMAL(10,2)" }
+                  ]
+                },
+                {
+                  "logical_id": "orders_table",
+                  "name": "orders",
+                  "description": "Customer orders",
+                  "columns": [
+                    { "name": "id", "type": "UUID", "pk": true },
+                    { "name": "user_id", "type": "UUID", "fk": true },
+                    { "name": "total_amount", "type": "DECIMAL(10,2)" }
+                  ]
+                },
+                {
+                  "logical_id": "agent_sessions_table",
+                  "name": "agent_sessions",
+                  "description": "AI agent conversation sessions",
+                  "columns": [
+                    { "name": "id", "type": "UUID", "pk": true },
+                    { "name": "user_id", "type": "UUID", "fk": true },
+                    { "name": "agent_id", "type": "VARCHAR(100)" }
+                  ]
+                }
+              ]
+            }
+          },
+          "workflows": [
+            {
+              "id": "wf-ai-support-escalation",
+              "name": "AI Support Escalation",
+              "description": "Escalate complex queries to human agents",
+              "status": "active",
+              "trigger": {
+                "type": "event",
+                "event": "ai.confidence_low",
+                "source": "agent-orchestrator-lambda"
+              },
+              "steps": [
+                {
+                  "id": "step-1",
+                  "type": "condition",
+                  "name": "Check Confidence",
+                  "condition": "response.confidence < 0.7",
+                  "true_next": "step-2",
+                  "false_next": "end"
+                },
+                {
+                  "id": "step-2",
+                  "type": "action",
+                  "name": "Create Support Ticket",
+                  "action": "api_call",
+                  "integration": "Zendesk",
+                  "config": { "priority": "high" }
+                },
+                {
+                  "id": "step-3",
+                  "type": "action",
+                  "name": "Notify Support Team",
+                  "action": "send_message",
+                  "integration": "Slack",
+                  "config": { "channel": "#support-escalations" }
+                }
+              ]
+            },
+            {
+              "id": "wf-knowledge-base-update",
+              "name": "Knowledge Base Update",
+              "description": "Sync new documents to vector store",
+              "status": "active",
+              "trigger": {
+                "type": "event",
+                "event": "document.uploaded",
+                "source": "s3-knowledge-base"
+              },
+              "steps": [
+                {
+                  "id": "step-1",
+                  "type": "action",
+                  "name": "Extract Text",
+                  "action": "extract_text",
+                  "integration": "Textract"
+                },
+                {
+                  "id": "step-2",
+                  "type": "action",
+                  "name": "Generate Embeddings",
+                  "action": "create_embeddings",
+                  "integration": "Bedrock"
+                },
+                {
+                  "id": "step-3",
+                  "type": "action",
+                  "name": "Index in OpenSearch",
+                  "action": "index_document",
+                  "integration": "OpenSearch"
+                }
+              ]
+            }
+          ],
+          "risks": {
+            "assumptions": [
+              { "category": "AI", "assumption": "Bedrock model availability in region", "impact": "May need to use different model or region" }
+            ],
+            "identifiedRisks": [
+              { "risk": "AI hallucination in customer support", "severity": "medium", "mitigation": "Implement guardrails and human escalation" }
+            ]
+          }
+        },
+        "environments": {
+          "dev": {
+            "present_nodes": ["api-gateway", "auth-lambda", "product-lambda", "order-lambda", "agent-orchestrator-lambda", "bedrock", "opensearch", "cognito", "db-main", "s3-images", "s3-knowledge-base", "cloudwatch"],
+            "overrides": {
+              "auth_service": { "memory": "256MB", "timeout": "30s" },
+              "product_service": { "memory": "512MB", "timeout": "30s" },
+              "order_service": { "memory": "512MB", "timeout": "60s" },
+              "agent_orchestrator": { "memory": "1024MB", "timeout": "120s" },
+              "main_database": { "instanceClass": "db.t3.micro", "multiAZ": false },
+              "vector_store": { "dataNodes": 1, "instanceType": "t3.small.search" }
+            },
+            "extra_nodes": [],
+            "extra_edges": []
+          },
+          "staging": {
+            "present_nodes": ["api-gateway", "auth-lambda", "product-lambda", "order-lambda", "agent-orchestrator-lambda", "bedrock", "opensearch", "cognito", "db-main", "s3-images", "s3-knowledge-base", "cloudwatch"],
+            "overrides": {
+              "auth_service": { "memory": "512MB", "timeout": "30s" },
+              "product_service": { "memory": "1024MB", "timeout": "30s" },
+              "order_service": { "memory": "2048MB", "timeout": "60s" },
+              "agent_orchestrator": { "memory": "2048MB", "timeout": "120s" },
+              "main_database": { "instanceClass": "db.t3.small", "multiAZ": true },
+              "vector_store": { "dataNodes": 2, "instanceType": "r6g.large.search" }
+            },
+            "extra_nodes": [],
+            "extra_edges": []
+          },
+          "prod": {
+            "present_nodes": ["api-gateway", "auth-lambda", "product-lambda", "order-lambda", "agent-orchestrator-lambda", "bedrock", "opensearch", "cognito", "db-main", "s3-images", "s3-knowledge-base", "cloudwatch"],
+            "overrides": {
+              "auth_service": { "memory": "512MB", "timeout": "30s", "concurrency": 100 },
+              "product_service": { "memory": "1024MB", "timeout": "30s", "concurrency": 200 },
+              "order_service": { "memory": "2048MB", "timeout": "60s", "concurrency": 150 },
+              "agent_orchestrator": { "memory": "2048MB", "timeout": "120s", "concurrency": 100 },
+              "main_database": { "instanceClass": "db.t3.medium", "multiAZ": true, "backupRetention": 30 },
+              "vector_store": { "dataNodes": 3, "instanceType": "r6g.large.search", "masterNodes": 3 }
+            },
+            "extra_nodes": [
+              {
+                "id": "waf",
+                "service": "WAF",
+                "label": "Web Firewall",
+                "logical_id": "web_firewall",
+                "description": "DDoS protection and request filtering"
+              },
+              {
+                "id": "cloudfront",
+                "service": "CloudFront",
+                "label": "CDN",
+                "logical_id": "cdn",
+                "description": "Content delivery and edge caching"
+              }
+            ],
+            "extra_edges": [
+              { "from": "cloudfront", "to": "waf", "label": "filter" },
+              { "from": "waf", "to": "api-gateway", "label": "forward" }
+            ]
+          }
+        },
+        "diff_from_parent": {
+          "nodes_added": ["agent-orchestrator-lambda", "bedrock", "opensearch", "s3-knowledge-base"],
+          "nodes_removed": [],
+          "edges_added": [
+            "api-gateway → agent-orchestrator-lambda",
+            "agent-orchestrator-lambda → bedrock",
+            "agent-orchestrator-lambda → opensearch"
+          ],
+          "tables_added": ["agent_sessions_table"],
+          "routes_added": ["/ai/chat"],
+          "breaks_compatibility": false
+        }
+      }
+    ]
+  }
+}

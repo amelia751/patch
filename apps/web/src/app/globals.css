@@ -6,7 +6,9 @@
 @source "./src/**/*.{js,ts,jsx,tsx,mdx}";
 
 :root {
-  /* Brand. Change the three values below to retheme the whole dashboard. */
+  /* Brand: adjust hue / saturation / lightness once to retheme the app */
+  /* Teal (previous default): --brand-h: 177; --brand-s: 59%; --brand-l: 40%; */
+  /* Orange (#DA5B41 ≈ hsl(10 67% 55%)): */
   --brand-h: 10;
   --brand-s: 67%;
   --brand-l: 55%;
@@ -33,6 +35,19 @@
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
   --radius: 0.5rem;
+  --chart-1: 12 76% 61%;
+  --chart-2: var(--brand-h) calc(var(--brand-s) - 6%) calc(var(--brand-l) - 3%);
+  --chart-3: 197 37% 24%;
+  --chart-4: 43 74% 66%;
+  --chart-5: 27 87% 67%;
+  --sidebar: hsl(0 0% 98%);
+  --sidebar-foreground: hsl(240 5.3% 26.1%);
+  --sidebar-primary: hsl(240 5.9% 10%);
+  --sidebar-primary-foreground: hsl(0 0% 98%);
+  --sidebar-accent: hsl(240 4.8% 95.9%);
+  --sidebar-accent-foreground: hsl(240 5.9% 10%);
+  --sidebar-border: hsl(220 13% 91%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 
   /* Run-state and verdict semantics. Deliberately not brand-derived: a
      verdict must not change meaning when the brand hue changes. */
@@ -43,7 +58,8 @@
   --state-running: 217 75% 52%;
   --state-idle: 215 16% 47%;
 
-  /* Neutral surfaces, referenced by the shell chrome. */
+  /* Neutral surfaces referenced by the operational PatchAPI pages. The app
+     shell itself uses the runtime bg/text pair set by ThemeProvider. */
   --surface-primary: #ffffff;
   --surface-secondary: #f7f7f8;
   --surface-tertiary: #ededf0;
@@ -54,23 +70,35 @@
 }
 
 .dark {
-  --background: 224 32% 6%;
+  --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
-  --card: 224 30% 8%;
+  --card: 222.2 84% 4.9%;
   --card-foreground: 210 40% 98%;
-  --popover: 224 30% 8%;
+  --popover: 222.2 84% 4.9%;
   --popover-foreground: 210 40% 98%;
   --primary-foreground: 210 40% 98%;
-  --secondary: 217.2 24% 15%;
+  --secondary: 217.2 32.6% 17.5%;
   --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 24% 15%;
-  --muted-foreground: 215 18% 62%;
-  --accent: 217.2 24% 15%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
   --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 40%;
+  --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 210 40% 98%;
-  --border: 217.2 20% 18%;
-  --input: 217.2 20% 18%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --chart-1: 12 76% 61%;
+  --chart-3: 197 37% 24%;
+  --chart-4: 43 74% 66%;
+  --chart-5: 27 87% 67%;
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 
   --state-pass: 152 50% 48%;
   --state-fail: 0 70% 60%;
@@ -88,41 +116,45 @@
   --ink-strong: #ffffff;
 }
 
-/* Every custom property above is a bare HSL triplet, so each one has to be
-   wrapped in `hsl()` here. Passing the triplet through unwrapped yields an
-   invalid colour that the browser silently drops, which shows up as unstyled
-   white surfaces rather than as an error. */
 @theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-primary-hover: hsl(var(--primary-hover));
   --color-primary-strong: hsl(var(--primary-strong));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
   --color-state-pass: hsl(var(--state-pass));
   --color-state-fail: hsl(var(--state-fail));
   --color-state-blocked: hsl(var(--state-blocked));
   --color-state-human: hsl(var(--state-human));
   --color-state-running: hsl(var(--state-running));
   --color-state-idle: hsl(var(--state-idle));
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 
@@ -147,11 +179,20 @@
 
 @layer base {
   * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  font-family: Arial, Helvetica, sans-serif;
+  }
+}
+
+@layer base {
+  * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
@@ -161,6 +202,14 @@
     scrollbar-width: none;
   }
   .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Ultra-thin scrollbar (Cursor-style) */
+  .thin-scrollbar {
+    scrollbar-width: none;
+  }
+  .thin-scrollbar::-webkit-scrollbar {
     display: none;
   }
 
@@ -187,10 +236,35 @@
   animation: pulse-ring 2s infinite;
 }
 
+/* Shimmer text animation for loading states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s infinite linear;
+}
+
+/* Fade in animation for chat messages */
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -199,5 +273,5 @@
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.4s ease-out;
 }

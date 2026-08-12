@@ -1,0 +1,571 @@
+{
+  "project": {
+    "id": "proj_ecommerce_001",
+    "name": "E-Commerce Platform",
+    "description": "AI-powered e-commerce platform with intelligent customer support and personalized recommendations",
+    "created_at": "2025-01-10T12:00:00Z",
+    "active_version_id": "v1",
+    "cloud_provider": "gcp",
+    "versions": [
+      {
+        "id": "v1",
+        "label": "MVP Serverless",
+        "description": "Initial serverless architecture with core e-commerce features on GCP",
+        "created_at": "2025-01-10T12:00:00Z",
+        "parent_version_id": null,
+        "status": "deployed",
+        "design": {
+          "architecture_type": "serverless",
+          "cloud_provider": "gcp",
+          "graph": {
+            "nodes": [
+              {
+                "id": "load-balancer",
+                "service": "Cloud Load Balancing",
+                "label": "ecomm-lb-prod",
+                "resource_name": "ecomm-lb-prod",
+                "logical_id": "EcommLoadBalancer",
+                "description": "HTTPS load balancer for API routing",
+                "config": {
+                  "protocol": "HTTPS",
+                  "port": 443,
+                  "sslPolicy": "MODERN"
+                }
+              },
+              {
+                "id": "auth-service",
+                "service": "Cloud Run",
+                "label": "ecomm-auth-svc",
+                "resource_name": "ecomm-auth-svc",
+                "logical_id": "EcommAuthService",
+                "description": "User authentication and JWT token generation",
+                "config": {
+                  "runtime": "nodejs20",
+                  "memory": "256Mi",
+                  "cpu": "1",
+                  "maxInstances": 100
+                }
+              },
+              {
+                "id": "product-service",
+                "service": "Cloud Run",
+                "label": "ecomm-products-svc",
+                "resource_name": "ecomm-products-svc",
+                "logical_id": "EcommProductsService",
+                "description": "Product catalog CRUD operations",
+                "config": {
+                  "runtime": "nodejs20",
+                  "memory": "512Mi",
+                  "cpu": "1",
+                  "maxInstances": 200
+                }
+              },
+              {
+                "id": "order-service",
+                "service": "Cloud Run",
+                "label": "ecomm-orders-svc",
+                "resource_name": "ecomm-orders-svc",
+                "logical_id": "EcommOrdersService",
+                "description": "Order processing and fulfillment",
+                "config": {
+                  "runtime": "nodejs20",
+                  "memory": "512Mi",
+                  "cpu": "2",
+                  "maxInstances": 150
+                }
+              },
+              {
+                "id": "firebase-auth",
+                "service": "Firebase Auth",
+                "label": "ecomm-users",
+                "resource_name": "ecomm-users",
+                "logical_id": "EcommUserAuth",
+                "description": "User authentication and management",
+                "config": {
+                  "providers": ["email", "google"],
+                  "tokenExpiry": "1 hour",
+                  "mfa": "optional",
+                  "passwordPolicy": {
+                    "minLength": 12,
+                    "requireUppercase": true,
+                    "requireNumbers": true,
+                    "requireSpecialChars": true
+                  }
+                }
+              },
+              {
+                "id": "db-main",
+                "service": "Cloud SQL",
+                "label": "ecomm-db-prod",
+                "resource_name": "ecomm-db-prod",
+                "logical_id": "EcommDatabase",
+                "description": "PostgreSQL 15 - Cloud SQL",
+                "config": {
+                  "engine": "postgres",
+                  "version": "15",
+                  "tier": "db-f1-micro",
+                  "diskSize": "10GB",
+                  "backupEnabled": true
+                }
+              },
+              {
+                "id": "storage-images",
+                "service": "Cloud Storage",
+                "label": "ecomm-product-images-prod",
+                "resource_name": "ecomm-product-images-prod",
+                "logical_id": "EcommProductImagesBucket",
+                "description": "Product images and static assets",
+                "config": {
+                  "versioning": true,
+                  "storageClass": "STANDARD",
+                  "lifecycle": { "deleteOlderThan": 90 }
+                }
+              },
+              {
+                "id": "cloud-logging",
+                "service": "Cloud Logging",
+                "label": "ecomm-logs",
+                "resource_name": "ecomm-logs",
+                "logical_id": "EcommLogSink",
+                "description": "Centralized logs and metrics",
+                "config": {
+                  "retention": 30
+                }
+              },
+              {
+                "id": "firestore",
+                "service": "Firestore",
+                "label": "ecomm-cache",
+                "resource_name": "ecomm-cache",
+                "logical_id": "EcommCache",
+                "description": "Product catalog cache and sessions",
+                "config": {
+                  "mode": "native",
+                  "location": "us-central1"
+                }
+              },
+              {
+                "id": "stripe",
+                "service": "Stripe",
+                "label": "Payment Processing",
+                "description": "Process payments and subscriptions",
+                "config": {
+                  "webhooks": ["payment.succeeded", "payment.failed", "subscription.updated"]
+                }
+              },
+              {
+                "id": "resend",
+                "service": "Resend",
+                "label": "Transactional Email",
+                "description": "Send order confirmations and notifications",
+                "config": {
+                  "templates": ["welcome", "order_confirmation", "shipping_update"]
+                }
+              },
+              {
+                "id": "slack",
+                "service": "Slack",
+                "label": "Team Notifications",
+                "description": "Alert team on high-value orders and issues",
+                "config": {
+                  "channels": ["#orders", "#alerts", "#vip-customers"]
+                }
+              }
+            ],
+            "edges": [
+              { "from": "load-balancer", "to": "auth-service", "label": "/auth/*" },
+              { "from": "load-balancer", "to": "product-service", "label": "/products/*" },
+              { "from": "load-balancer", "to": "order-service", "label": "/orders/*" },
+              { "from": "auth-service", "to": "firebase-auth", "label": "JWT auth" },
+              { "from": "auth-service", "to": "db-main", "label": "ecomm.users", "database": "ecomm-db-prod", "tables": ["users"] },
+              { "from": "auth-service", "to": "resend", "label": "welcome email" },
+              { "from": "product-service", "to": "db-main", "label": "ecomm.products", "database": "ecomm-db-prod", "tables": ["products"] },
+              { "from": "product-service", "to": "storage-images", "label": "images/*" },
+              { "from": "product-service", "to": "firestore", "label": "cache products" },
+              { "from": "order-service", "to": "db-main", "label": "ecomm.orders", "database": "ecomm-db-prod", "tables": ["orders", "order_items"] },
+              { "from": "order-service", "to": "stripe", "label": "process payment" },
+              { "from": "order-service", "to": "resend", "label": "order confirmation" },
+              { "from": "order-service", "to": "slack", "label": "notify #orders" },
+              { "from": "order-service", "to": "firestore", "label": "update cache" },
+              { "from": "auth-service", "to": "cloud-logging", "label": "logs" },
+              { "from": "product-service", "to": "cloud-logging", "label": "logs" },
+              { "from": "order-service", "to": "cloud-logging", "label": "logs" }
+            ]
+          },
+          "api": {
+            "roles": [
+              {
+                "name": "customer",
+                "description": "Regular authenticated user",
+                "permissions": [
+                  { "resource": "products", "actions": ["read"], "scope": "all" },
+                  { "resource": "orders", "actions": ["create", "read"], "scope": "own" }
+                ]
+              },
+              {
+                "name": "admin",
+                "description": "Full system access",
+                "permissions": [
+                  { "resource": "*", "actions": ["*"], "scope": "all" }
+                ]
+              }
+            ],
+            "routes": [
+              {
+                "method": "POST",
+                "path": "/auth/register",
+                "description": "Register a new user account",
+                "handler_service": "auth_service",
+                "handler_method": "register",
+                "auth": { "required": false },
+                "database_tables": ["users"],
+                "services": ["Firebase Auth"]
+              },
+              {
+                "method": "POST",
+                "path": "/auth/login",
+                "description": "Authenticate user and return JWT token",
+                "handler_service": "auth_service",
+                "handler_method": "login",
+                "auth": { "required": false },
+                "database_tables": ["users"],
+                "services": ["Firebase Auth"]
+              },
+              {
+                "method": "GET",
+                "path": "/products",
+                "description": "List all products with pagination",
+                "handler_service": "product_service",
+                "handler_method": "listProducts",
+                "auth": { "required": false },
+                "database_tables": ["products"]
+              },
+              {
+                "method": "GET",
+                "path": "/products/search",
+                "description": "Search products with AI",
+                "handler_service": "product_service",
+                "handler_method": "searchProducts",
+                "auth": { "required": false },
+                "database_tables": ["products"],
+                "services": ["Vertex AI"]
+              },
+              {
+                "method": "GET",
+                "path": "/orders",
+                "description": "List user's orders",
+                "handler_service": "order_service",
+                "handler_method": "listOrders",
+                "auth": { "required": true, "roles": ["customer", "admin"] },
+                "database_tables": ["orders", "order_items"]
+              },
+              {
+                "method": "POST",
+                "path": "/orders",
+                "description": "Create a new order",
+                "handler_service": "order_service",
+                "handler_method": "createOrder",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["orders", "order_items", "products"]
+              },
+              {
+                "method": "GET",
+                "path": "/products/:id",
+                "description": "Get product details",
+                "handler_service": "product_service",
+                "handler_method": "getProduct",
+                "auth": { "required": false },
+                "database_tables": ["products"]
+              },
+              {
+                "method": "PUT",
+                "path": "/products/:id",
+                "description": "Update product (admin only)",
+                "handler_service": "product_service",
+                "handler_method": "updateProduct",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"],
+                "services": ["Cloud Storage"]
+              },
+              {
+                "method": "POST",
+                "path": "/products/:id/image",
+                "description": "Upload product image",
+                "handler_service": "product_service",
+                "handler_method": "uploadImage",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"],
+                "services": ["Cloud Storage"]
+              },
+              {
+                "method": "GET",
+                "path": "/cart",
+                "description": "Get user's shopping cart",
+                "handler_service": "cart_service",
+                "handler_method": "getCart",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["carts", "cart_items"]
+              },
+              {
+                "method": "POST",
+                "path": "/cart/items",
+                "description": "Add item to cart",
+                "handler_service": "cart_service",
+                "handler_method": "addItem",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["cart_items", "products"]
+              },
+              {
+                "method": "PATCH",
+                "path": "/cart/items/:id",
+                "description": "Update item quantity",
+                "handler_service": "cart_service",
+                "handler_method": "updateQuantity",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["cart_items"]
+              },
+              {
+                "method": "DELETE",
+                "path": "/cart/items/:id",
+                "description": "Remove item from cart",
+                "handler_service": "cart_service",
+                "handler_method": "removeItem",
+                "auth": { "required": true, "roles": ["customer"] },
+                "database_tables": ["cart_items"]
+              },
+              {
+                "method": "PATCH",
+                "path": "/products/:id/stock",
+                "description": "Update product stock",
+                "handler_service": "product_service",
+                "handler_method": "updateStock",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"]
+              },
+              {
+                "method": "DELETE",
+                "path": "/products/:id",
+                "description": "Delete product (admin only)",
+                "handler_service": "product_service",
+                "handler_method": "deleteProduct",
+                "auth": { "required": true, "roles": ["admin"] },
+                "database_tables": ["products"],
+                "services": ["Cloud Storage"]
+              }
+            ]
+          },
+          "databases": [
+            {
+              "id": "primary",
+              "engine": "Cloud SQL PostgreSQL",
+              "instance_name": "ecomm-db-prod",
+              "version": "15",
+              "rationale": "ACID transactions for orders and user data",
+              "schema": {
+                "name": "ecomm",
+                "tables": [
+                  {
+                    "logical_id": "users_table",
+                    "name": "ecomm.users",
+                    "description": "User accounts and profiles",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "email", "type": "VARCHAR(255)", "unique": true, "index": true, "pii": true },
+                      { "name": "username", "type": "VARCHAR(50)", "unique": true, "pii": true },
+                      { "name": "password_hash", "type": "VARCHAR(255)" },
+                      { "name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()" },
+                      { "name": "updated_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_users_email", "idx_users_username"]
+                  },
+                  {
+                    "logical_id": "orders_table",
+                    "name": "ecomm.orders",
+                    "description": "Customer orders and transactions",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "order_number", "type": "VARCHAR(20)", "unique": true },
+                      { "name": "user_id", "type": "UUID", "fk": true, "references": "ecomm.users(id)" },
+                      { "name": "status", "type": "VARCHAR(20)", "default": "'pending'" },
+                      { "name": "total_cents", "type": "INTEGER" },
+                      { "name": "stripe_payment_id", "type": "VARCHAR(100)" },
+                      { "name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_orders_user_id", "idx_orders_status", "idx_orders_created_at"],
+                    "relationships": [
+                      { "column": "user_id", "references_table": "ecomm.users", "references_column": "id", "on_delete": "CASCADE" }
+                    ]
+                  },
+                  {
+                    "logical_id": "order_items_table",
+                    "name": "ecomm.order_items",
+                    "description": "Line items within orders",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "order_id", "type": "UUID", "fk": true, "references": "ecomm.orders(id)" },
+                      { "name": "product_id", "type": "UUID", "fk": true, "references": "ecomm.products(id)" },
+                      { "name": "quantity", "type": "INTEGER" },
+                      { "name": "unit_price_cents", "type": "INTEGER" }
+                    ],
+                    "indexes": ["idx_order_items_order_id"],
+                    "relationships": [
+                      { "column": "order_id", "references_table": "ecomm.orders", "references_column": "id", "on_delete": "CASCADE" },
+                      { "column": "product_id", "references_table": "ecomm.products", "references_column": "id", "on_delete": "RESTRICT" }
+                    ]
+                  },
+                  {
+                    "logical_id": "products_table",
+                    "name": "ecomm.products",
+                    "description": "Product catalog",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "name", "type": "VARCHAR(255)" },
+                      { "name": "description", "type": "TEXT" },
+                      { "name": "price_cents", "type": "INTEGER" },
+                      { "name": "category", "type": "VARCHAR(100)" },
+                      { "name": "stock", "type": "INTEGER" },
+                      { "name": "image_url", "type": "VARCHAR(500)" },
+                      { "name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()" },
+                      { "name": "updated_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_products_category", "idx_products_created_at"]
+                  },
+                  {
+                    "logical_id": "carts_table",
+                    "name": "ecomm.carts",
+                    "description": "Shopping carts",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "user_id", "type": "UUID", "fk": true, "references": "ecomm.users(id)" },
+                      { "name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()" },
+                      { "name": "updated_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_carts_user_id"]
+                  },
+                  {
+                    "logical_id": "cart_items_table",
+                    "name": "ecomm.cart_items",
+                    "description": "Items in shopping carts",
+                    "columns": [
+                      { "name": "id", "type": "UUID", "pk": true, "default": "gen_random_uuid()" },
+                      { "name": "cart_id", "type": "UUID", "fk": true, "references": "ecomm.carts(id)" },
+                      { "name": "product_id", "type": "UUID", "fk": true, "references": "ecomm.products(id)" },
+                      { "name": "quantity", "type": "INTEGER" },
+                      { "name": "added_at", "type": "TIMESTAMPTZ", "default": "NOW()" }
+                    ],
+                    "indexes": ["idx_cart_items_cart_id", "idx_cart_items_product_id"]
+                  }
+                ]
+              }
+            },
+            {
+              "id": "cache",
+              "engine": "Firestore",
+              "instance_name": "ecomm-cache",
+              "rationale": "Fast read access for product catalog and real-time updates",
+              "collections": [
+                {
+                  "logical_id": "products_cache",
+                  "name": "products",
+                  "description": "Product catalog cache for fast reads",
+                  "fields": [
+                    { "name": "id", "type": "string" },
+                    { "name": "name", "type": "string" },
+                    { "name": "price_cents", "type": "number" },
+                    { "name": "category", "type": "string" },
+                    { "name": "stock", "type": "number" },
+                    { "name": "image_url", "type": "string" },
+                    { "name": "updated_at", "type": "timestamp" }
+                  ],
+                  "indexes": [
+                    { "fields": ["category", "price_cents"] },
+                    { "fields": ["updated_at"] }
+                  ]
+                },
+                {
+                  "logical_id": "sessions_collection",
+                  "name": "sessions",
+                  "description": "User session and cart data",
+                  "fields": [
+                    { "name": "user_id", "type": "string", "pii": true },
+                    { "name": "cart_items", "type": "array" },
+                    { "name": "created_at", "type": "timestamp" },
+                    { "name": "expires_at", "type": "timestamp" }
+                  ],
+                  "indexes": [
+                    { "fields": ["user_id"] },
+                    { "fields": ["expires_at"] }
+                  ]
+                }
+              ]
+            }
+          ],
+          "risks": {
+            "assumptions": [
+              { "category": "Scale", "assumption": "Traffic under 10K requests/day initially", "impact": "May need to increase Cloud Run instances" },
+              { "category": "Cost", "assumption": "Cloud Run autoscaling is cost-effective for variable traffic", "impact": "Consider Cloud Functions if traffic spikes are predictable" }
+            ],
+            "identifiedRisks": [
+              { "risk": "Single region deployment", "severity": "medium", "mitigation": "Enable multi-region Cloud SQL and Cloud Run" },
+              { "risk": "Cold starts affecting user experience", "severity": "low", "mitigation": "Use minimum instances for Cloud Run services" }
+            ]
+          }
+        },
+        "environments": {
+          "dev": {
+            "present_nodes": ["load-balancer", "auth-service", "product-service", "order-service", "firebase-auth", "db-main", "storage-images", "firestore", "cloud-logging", "stripe", "resend"],
+            "overrides": {
+              "auth_service": { "memory": "256Mi", "cpu": "1", "minInstances": 0 },
+              "product_service": { "memory": "512Mi", "cpu": "1", "minInstances": 0 },
+              "order_service": { "memory": "512Mi", "cpu": "1", "minInstances": 0 },
+              "main_database": { "tier": "db-f1-micro", "backupEnabled": false }
+            },
+            "extra_nodes": [],
+            "extra_edges": []
+          },
+          "staging": {
+            "present_nodes": ["load-balancer", "auth-service", "product-service", "order-service", "firebase-auth", "db-main", "storage-images", "firestore", "cloud-logging", "stripe", "resend", "slack"],
+            "overrides": {
+              "auth_service": { "memory": "512Mi", "cpu": "1", "minInstances": 1 },
+              "product_service": { "memory": "1024Mi", "cpu": "2", "minInstances": 1 },
+              "order_service": { "memory": "2048Mi", "cpu": "2", "minInstances": 1 },
+              "main_database": { "tier": "db-g1-small", "backupEnabled": true }
+            },
+            "extra_nodes": [],
+            "extra_edges": []
+          },
+          "prod": {
+            "present_nodes": ["load-balancer", "auth-service", "product-service", "order-service", "firebase-auth", "db-main", "storage-images", "firestore", "cloud-logging", "stripe", "resend", "slack"],
+            "overrides": {
+              "auth_service": { "memory": "512Mi", "cpu": "2", "minInstances": 2, "maxInstances": 100 },
+              "product_service": { "memory": "1024Mi", "cpu": "2", "minInstances": 3, "maxInstances": 200 },
+              "order_service": { "memory": "2048Mi", "cpu": "4", "minInstances": 2, "maxInstances": 150 },
+              "main_database": { "tier": "db-n1-standard-2", "backupEnabled": true, "highAvailability": true }
+            },
+            "extra_nodes": [
+              {
+                "id": "cloud-armor",
+                "service": "Cloud Armor",
+                "label": "Security Policy",
+                "logical_id": "security_policy",
+                "description": "DDoS protection and WAF rules"
+              },
+              {
+                "id": "cloud-cdn",
+                "service": "Cloud CDN",
+                "label": "CDN",
+                "logical_id": "cdn",
+                "description": "Content delivery and edge caching"
+              }
+            ],
+            "extra_edges": [
+              { "from": "cloud-cdn", "to": "cloud-armor", "label": "filter" },
+              { "from": "cloud-armor", "to": "load-balancer", "label": "forward" }
+            ]
+          }
+        },
+        "diff_from_parent": null
+      }
+    ]
+  }
+}

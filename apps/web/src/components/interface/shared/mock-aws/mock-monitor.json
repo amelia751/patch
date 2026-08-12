@@ -1,0 +1,194 @@
+{
+  "project": {
+    "id": "proj_ecommerce_001",
+    "name": "E-Commerce Platform",
+    "slug": "ecommerce-a3f2k",
+    "tier": "growth"
+  },
+  "resources": {
+    "environments": {
+      "dev": {
+        "status": "healthy",
+        "last_deployed": "2026-01-10T08:20:00Z",
+        "deployed_by": "john@example.com",
+        "endpoint_url": "https://dev-api.ecommerce-a3f2k.jetrun.app",
+        "services": [
+          { "name": "auth-service", "type": "lambda", "status": "healthy", "invocations_24h": 1250, "errors_24h": 3, "avg_duration_ms": 45, "memory_mb": 256 },
+          { "name": "product-service", "type": "lambda", "status": "healthy", "invocations_24h": 3420, "errors_24h": 0, "avg_duration_ms": 32, "memory_mb": 512 },
+          { "name": "order-service", "type": "lambda", "status": "warning", "invocations_24h": 890, "errors_24h": 12, "avg_duration_ms": 156, "memory_mb": 512 },
+          { "name": "payment-service", "type": "lambda", "status": "healthy", "invocations_24h": 445, "errors_24h": 1, "avg_duration_ms": 234, "memory_mb": 256 }
+        ],
+        "databases": [
+          { "name": "main-db", "type": "aurora-postgresql", "status": "healthy", "connections": 12, "max_connections": 100, "storage_gb": 5.2, "cpu_percent": 15 }
+        ],
+        "storage": [
+          { "name": "uploads-bucket", "type": "s3", "objects": 1523, "size_gb": 2.4 },
+          { "name": "assets-bucket", "type": "s3", "objects": 89, "size_gb": 0.3 }
+        ],
+        "monthly_cost": 47.80
+      },
+      "staging": {
+        "status": "degraded",
+        "last_deployed": "2026-01-08T14:40:00Z",
+        "deployed_by": "sarah@example.com",
+        "endpoint_url": "https://staging-api.ecommerce-a3f2k.jetrun.app",
+        "services": [
+          { "name": "auth-service", "type": "lambda", "status": "healthy", "invocations_24h": 450, "errors_24h": 0, "avg_duration_ms": 42, "memory_mb": 512 },
+          { "name": "product-service", "type": "lambda", "status": "healthy", "invocations_24h": 1200, "errors_24h": 2, "avg_duration_ms": 28, "memory_mb": 1024 },
+          { "name": "order-service", "type": "lambda", "status": "error", "invocations_24h": 320, "errors_24h": 45, "avg_duration_ms": 890, "memory_mb": 1024 }
+        ],
+        "databases": [
+          { "name": "main-db", "type": "aurora-postgresql", "status": "healthy", "connections": 8, "max_connections": 100, "storage_gb": 3.1, "cpu_percent": 8 }
+        ],
+        "monthly_cost": 89.50
+      },
+      "prod": {
+        "status": "not_deployed",
+        "requires_business_tier": true
+      }
+    },
+    "alerts": [
+      { "id": "alert_001", "severity": "warning", "service": "order-service", "environment": "dev", "message": "High error rate (1.3%) in last hour", "triggered_at": "2026-01-10T10:15:00Z" },
+      { "id": "alert_002", "severity": "critical", "service": "order-service", "environment": "staging", "message": "Error rate exceeds 10%", "triggered_at": "2026-01-10T09:45:00Z" }
+    ]
+  },
+  "sandbox": {
+    "status": "running",
+    "started_at": "2026-01-10T09:15:00Z",
+    "hours_used_today": 2.5,
+    "hours_remaining": 7.5,
+    "connection": {
+      "type": "ssh_tunnel",
+      "status": "connected",
+      "target": "dev-database.ecommerce-a3f2k.us-east-1.rds.amazonaws.com",
+      "latency_ms": 45
+    },
+    "resources": {
+      "cpu_usage": 35,
+      "memory_usage": 48,
+      "storage_used_mb": 256,
+      "storage_limit_mb": 1024
+    },
+    "running_services": [
+      { "name": "auth-service", "status": "running", "port": 3001, "last_reload": "2026-01-10T10:30:00Z" },
+      { "name": "product-service", "status": "running", "port": 3002, "last_reload": "2026-01-10T10:28:00Z" },
+      { "name": "order-service", "status": "running", "port": 3003, "last_reload": "2026-01-10T10:25:00Z" }
+    ],
+    "logs": [
+      { "timestamp": "2026-01-10T10:30:15Z", "service": "auth-service", "level": "info", "message": "User login successful: user_123" },
+      { "timestamp": "2026-01-10T10:30:12Z", "service": "product-service", "level": "info", "message": "Fetched 25 products" },
+      { "timestamp": "2026-01-10T10:30:10Z", "service": "order-service", "level": "warn", "message": "Slow query detected: 245ms" },
+      { "timestamp": "2026-01-10T10:29:58Z", "service": "auth-service", "level": "info", "message": "Token refresh for user_456" },
+      { "timestamp": "2026-01-10T10:29:45Z", "service": "product-service", "level": "debug", "message": "Cache hit for product_list" }
+    ]
+  },
+  "rollback": {
+    "lambda_versions": {
+      "auth-service": {
+        "current_alias": "live",
+        "versions": [
+          { "version": "5", "alias": "live", "deployed_at": "2026-01-10T08:15:00Z", "size_kb": 245 },
+          { "version": "4", "alias": null, "deployed_at": "2026-01-08T14:35:00Z", "size_kb": 243 },
+          { "version": "3", "alias": null, "deployed_at": "2026-01-06T11:20:00Z", "size_kb": 238 }
+        ]
+      },
+      "product-service": {
+        "current_alias": "live",
+        "versions": [
+          { "version": "3", "alias": "live", "deployed_at": "2026-01-08T14:35:00Z", "size_kb": 312 },
+          { "version": "2", "alias": null, "deployed_at": "2026-01-06T11:20:00Z", "size_kb": 298 },
+          { "version": "1", "alias": null, "deployed_at": "2026-01-05T10:20:00Z", "size_kb": 285 }
+        ]
+      },
+      "order-service": {
+        "current_alias": "live",
+        "versions": [
+          { "version": "4", "alias": "live", "deployed_at": "2026-01-10T08:15:00Z", "size_kb": 428 },
+          { "version": "3", "alias": null, "deployed_at": "2026-01-08T14:35:00Z", "size_kb": 412 },
+          { "version": "2", "alias": null, "deployed_at": "2026-01-06T11:20:00Z", "size_kb": 398 }
+        ]
+      },
+      "payment-service": {
+        "current_alias": "live",
+        "versions": [
+          { "version": "1", "alias": "live", "deployed_at": "2026-01-10T08:15:00Z", "size_kb": 356 }
+        ]
+      }
+    },
+    "terraform_state_versions": [
+      { "version_id": "tfstate-v15", "created_at": "2026-01-10T08:20:00Z", "changes": "+2 ~1 -0" },
+      { "version_id": "tfstate-v14", "created_at": "2026-01-08T14:40:00Z", "changes": "+0 ~3 -0" },
+      { "version_id": "tfstate-v13", "created_at": "2026-01-06T11:25:00Z", "changes": "+1 ~2 -0" }
+    ]
+  },
+  "logs": {
+    "audit_log": [
+      { "id": "audit_001", "timestamp": "2026-01-10T10:30:00Z", "user": "john@example.com", "action": "sandbox.start", "resource": "sandbox/ecommerce-a3f2k", "status": "success", "ip": "192.168.1.100" },
+      { "id": "audit_002", "timestamp": "2026-01-10T09:00:00Z", "user": "john@example.com", "action": "approval.request", "resource": "deployment/staging", "status": "success", "ip": "192.168.1.100" },
+      { "id": "audit_003", "timestamp": "2026-01-10T08:15:00Z", "user": "jetrun-ci", "action": "deploy.lambda", "resource": "lambda/auth-service", "status": "success", "ip": null },
+      { "id": "audit_004", "timestamp": "2026-01-10T08:00:00Z", "user": "jetrun-ai", "action": "code.generate", "resource": "version/v3", "status": "success", "ip": null },
+      { "id": "audit_005", "timestamp": "2026-01-08T14:40:00Z", "user": "sarah@example.com", "action": "approval.approve", "resource": "deployment/staging", "status": "success", "ip": "192.168.1.105" },
+      { "id": "audit_006", "timestamp": "2026-01-08T14:35:00Z", "user": "jetrun-ci", "action": "deploy.terraform", "resource": "terraform/staging", "status": "success", "ip": null },
+      { "id": "audit_007", "timestamp": "2026-01-06T11:20:00Z", "user": "john@example.com", "action": "secret.create", "resource": "secret/DATABASE_URL", "status": "success", "ip": "192.168.1.100" },
+      { "id": "audit_008", "timestamp": "2026-01-05T10:00:00Z", "user": "john@example.com", "action": "project.create", "resource": "project/ecommerce-a3f2k", "status": "success", "ip": "192.168.1.100" }
+    ],
+    "deployment_history": [
+      { "id": "deploy_001", "environment": "dev", "status": "success", "deployed_at": "2026-01-10T08:20:00Z", "deployed_by": "john@example.com", "duration_seconds": 245, "changes": { "created": 2, "updated": 1, "deleted": 0 }, "version": "v3", "cost_delta": "+$8.50/month" },
+      { "id": "deploy_002", "environment": "staging", "status": "success", "deployed_at": "2026-01-08T14:40:00Z", "deployed_by": "sarah@example.com", "duration_seconds": 287, "changes": { "created": 0, "updated": 3, "deleted": 0 }, "version": "v2", "approved_by": "sarah@example.com" },
+      { "id": "deploy_003", "environment": "dev", "status": "success", "deployed_at": "2026-01-08T14:35:00Z", "deployed_by": "john@example.com", "duration_seconds": 198, "changes": { "created": 0, "updated": 3, "deleted": 0 }, "version": "v2" },
+      { "id": "deploy_004", "environment": "dev", "status": "failed", "deployed_at": "2026-01-05T16:45:00Z", "deployed_by": "john@example.com", "duration_seconds": 145, "error": "Failed to create RDS: Insufficient permissions", "version": "v1" },
+      { "id": "deploy_005", "environment": "dev", "status": "success", "deployed_at": "2026-01-05T10:20:00Z", "deployed_by": "john@example.com", "duration_seconds": 425, "changes": { "created": 12, "updated": 0, "deleted": 0 }, "version": "v1", "initial_deployment": true }
+    ]
+  },
+  "usage": {
+    "current_tier": "growth",
+    "quotas": {
+      "projects": { "used": 3, "limit": 5 },
+      "sandbox_hours": { "used": 6.5, "limit": 10 },
+      "deployments_today": { "used": 12, "limit": 50 },
+      "api_requests_this_minute": { "used": 45, "limit": 300 },
+      "github_repos": { "used": 8, "limit": 20 }
+    },
+    "features": {
+      "sandbox_execution": true,
+      "one_click_deploy": true,
+      "dev_staging_envs": true,
+      "prod_env": false,
+      "github_pr_integration": true,
+      "slack_integration": false,
+      "e2e_test_generation": false,
+      "multi_account": false,
+      "private_networking": false
+    },
+    "cost_breakdown": {
+      "current_month": {
+        "total": 137.30,
+        "by_environment": {
+          "dev": 47.80,
+          "staging": 89.50,
+          "prod": 0
+        },
+        "by_service": [
+          { "service": "RDS Aurora", "cost": 56.80, "percent": 41 },
+          { "service": "Lambda", "cost": 12.40, "percent": 9 },
+          { "service": "API Gateway", "cost": 8.50, "percent": 6 },
+          { "service": "S3", "cost": 5.60, "percent": 4 },
+          { "service": "CloudWatch", "cost": 18.00, "percent": 13 },
+          { "service": "Cognito", "cost": 22.00, "percent": 16 },
+          { "service": "Other", "cost": 14.00, "percent": 11 }
+        ]
+      },
+      "projection": {
+        "next_month": 145.00,
+        "trend": "+5.6%"
+      }
+    },
+    "tier_comparison": {
+      "starter": { "projects": 1, "sandbox_hours": 0, "deployments_per_day": 5, "price": "$0/month" },
+      "growth": { "projects": 5, "sandbox_hours": 10, "deployments_per_day": 50, "price": "$49/month" },
+      "business": { "projects": 20, "sandbox_hours": -1, "deployments_per_day": 500, "price": "$199/month" },
+      "enterprise": { "projects": -1, "sandbox_hours": -1, "deployments_per_day": -1, "price": "Custom" }
+    }
+  }
+}
+

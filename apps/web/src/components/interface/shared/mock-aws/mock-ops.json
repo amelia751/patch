@@ -1,0 +1,1131 @@
+{
+  "project": {
+    "id": "proj_ecommerce_001",
+    "name": "E-Commerce Platform",
+    "slug": "ecommerce-a3f2k",
+    "tier": "growth"
+  },
+  "aws_connection": {
+    "status": "connected",
+    "method": "iam_role",
+    "role_arn": "arn:aws:iam::123456789012:role/JetRunDeploymentRole",
+    "external_id": "jetrun-ext-7f3a9b2c",
+    "region": "us-east-1",
+    "account_id": "123456789012",
+    "connected_at": "2025-01-10T12:00:00Z",
+    "last_validated": "2026-01-10T08:30:00Z",
+    "connection_methods": {
+      "iam_role": {
+        "name": "IAM Role (AssumeRole)",
+        "recommended": true,
+        "description": "Secure, no secrets stored. We use short-lived credentials via STS.",
+        "status": "active",
+        "setup_options": [
+          {
+            "type": "cloudformation",
+            "label": "One-Click CloudFormation",
+            "url": "https://console.aws.amazon.com/cloudformation/..."
+          },
+          {
+            "type": "terraform",
+            "label": "Terraform Snippet",
+            "snippet": "module \"jetrun_role\" {\n  source = \"jetrun/iam-role/aws\"\n  external_id = \"jetrun-ext-7f3a9b2c\"\n}"
+          },
+          {
+            "type": "manual",
+            "label": "Manual Setup",
+            "docs_url": "/docs/aws-connection/iam-role"
+          }
+        ],
+        "trust_policy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::093955289594:root"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "sts:ExternalId": "jetrun-ext-7f3a9b2c"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "organizations": {
+        "name": "AWS Organizations",
+        "recommended": false,
+        "enterprise_only": true,
+        "description": "For enterprises with multi-account setups. Centralized governance.",
+        "status": "not_configured",
+        "features": [
+          "Manage multiple AWS accounts",
+          "Centralized governance",
+          "Account discovery",
+          "Multi-region support"
+        ]
+      },
+      "access_keys": {
+        "name": "Access Keys",
+        "recommended": false,
+        "warning": "Not recommended for production. Secrets are stored.",
+        "description": "Only for testing or read-only mode.",
+        "status": "not_configured"
+      }
+    },
+    "roles": {
+      "planner": {
+        "name": "JetRunPlannerRole",
+        "description": "Read-only access for architecture planning",
+        "arn": "arn:aws:iam::123456789012:role/JetRunPlannerRole",
+        "status": "active",
+        "permissions": [
+          "Read infrastructure state",
+          "Describe resources",
+          "Read CloudWatch logs"
+        ]
+      },
+      "executor": {
+        "name": "JetRunDeploymentRole",
+        "description": "Create and update resources",
+        "arn": "arn:aws:iam::123456789012:role/JetRunDeploymentRole",
+        "status": "active",
+        "permissions": [
+          "Create Lambda functions",
+          "Update API Gateway",
+          "Manage S3",
+          "Run CloudFormation"
+        ]
+      },
+      "observer": {
+        "name": "JetRunObserverRole",
+        "description": "Logs and metrics only",
+        "arn": "arn:aws:iam::123456789012:role/JetRunObserverRole",
+        "status": "not_configured",
+        "permissions": [
+          "Read CloudWatch logs",
+          "Read X-Ray traces",
+          "Read CloudTrail"
+        ]
+      }
+    },
+    "required_policies": [
+      {
+        "name": "Lambda Management",
+        "description": "Create and manage Lambda functions",
+        "validated": true,
+        "policy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "lambda:CreateFunction",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:DeleteFunction",
+                "lambda:GetFunction",
+                "lambda:ListFunctions"
+              ],
+              "Resource": "arn:aws:lambda:*:*:function:jetrun-*"
+            }
+          ]
+        }
+      },
+      {
+        "name": "API Gateway Management",
+        "description": "Create and manage API Gateway endpoints",
+        "validated": true,
+        "policy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "apigateway:POST",
+                "apigateway:GET",
+                "apigateway:PUT",
+                "apigateway:DELETE",
+                "apigateway:PATCH"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      },
+      {
+        "name": "RDS Management",
+        "description": "Create and manage RDS database instances",
+        "validated": true,
+        "policy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "rds:CreateDBCluster",
+                "rds:CreateDBInstance",
+                "rds:ModifyDBCluster",
+                "rds:DeleteDBCluster",
+                "rds:DescribeDBClusters"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      },
+      {
+        "name": "S3 Management",
+        "description": "Create and manage S3 buckets",
+        "validated": true,
+        "policy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:CreateBucket",
+                "s3:DeleteBucket",
+                "s3:PutBucketPolicy",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                "arn:aws:s3:::jetrun-*"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "IAM Role Management",
+        "description": "Create execution roles for Lambda",
+        "validated": false,
+        "policy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "iam:CreateRole",
+                "iam:AttachRolePolicy",
+                "iam:PassRole"
+              ],
+              "Resource": "arn:aws:iam::*:role/jetrun-*"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "gcp_connection": {
+    "status": "connected",
+    "project_id": "ecommerce-prod",
+    "project_number": "123456789012",
+    "service_account_email": "jetrun-deployer@ecommerce-prod.iam.gserviceaccount.com",
+    "region": "us-central1",
+    "zone": "us-central1-a",
+    "connected_at": "2025-01-10T12:00:00Z",
+    "last_validated": "2026-01-10T08:30:00Z",
+    "required_apis": [
+      {
+        "name": "Cloud Run API",
+        "description": "Deploy and manage serverless containers",
+        "validated": true,
+        "api_endpoint": "run.googleapis.com"
+      },
+      {
+        "name": "Cloud Functions API",
+        "description": "Create and manage Cloud Functions",
+        "validated": true,
+        "api_endpoint": "cloudfunctions.googleapis.com"
+      },
+      {
+        "name": "Cloud SQL Admin API",
+        "description": "Manage Cloud SQL instances",
+        "validated": true,
+        "api_endpoint": "sqladmin.googleapis.com"
+      },
+      {
+        "name": "Cloud Storage API",
+        "description": "Manage Cloud Storage buckets",
+        "validated": false,
+        "api_endpoint": "storage.googleapis.com"
+      },
+      {
+        "name": "Service Networking API",
+        "description": "VPC and networking configuration",
+        "validated": true,
+        "api_endpoint": "servicenetworking.googleapis.com"
+      }
+    ]
+  },
+  "generated_code": {
+    "current_version": "v10",
+    "versions": [
+      {
+        "id": "v10",
+        "created_at": "2026-02-05T15:30:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Add Stripe payment integration' • 2 hours ago",
+        "status": "current",
+        "commit_sha": "a7f3e2d"
+      },
+      {
+        "id": "v9",
+        "created_at": "2026-02-04T10:15:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Implement user notification system' • Yesterday",
+        "status": "deployed",
+        "commit_sha": "f8a2c1b"
+      },
+      {
+        "id": "v8",
+        "created_at": "2026-02-02T14:20:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Add Redis caching layer for sessions' • Feb 2",
+        "status": "deployed",
+        "commit_sha": "e3d9f7a"
+      },
+      {
+        "id": "v7",
+        "created_at": "2026-01-30T09:45:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Optimize Lambda cold starts with provisioned concurrency' • Jan 30",
+        "status": "deployed",
+        "commit_sha": "d2b5c8e"
+      },
+      {
+        "id": "v6",
+        "created_at": "2026-01-25T16:00:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Add SQS queue for async order processing' • Jan 25",
+        "status": "archived",
+        "commit_sha": "c9a4d6f"
+      },
+      {
+        "id": "v5",
+        "created_at": "2026-01-20T11:30:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Implement S3 event triggers for image processing' • Jan 20",
+        "status": "archived",
+        "commit_sha": "b8f3e2a"
+      },
+      {
+        "id": "v4",
+        "created_at": "2026-01-15T13:45:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Add CloudWatch dashboards and alarms' • Jan 15",
+        "status": "archived",
+        "commit_sha": "a1e7d9c"
+      },
+      {
+        "id": "v3",
+        "created_at": "2026-01-10T08:00:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Setup API Gateway with custom domain' • Jan 10",
+        "status": "archived",
+        "commit_sha": "9f2c8b5"
+      },
+      {
+        "id": "v2",
+        "created_at": "2026-01-08T14:30:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Refactor order processing for better performance' • Jan 8",
+        "status": "archived",
+        "commit_sha": "b9e1c4f"
+      },
+      {
+        "id": "v1",
+        "created_at": "2026-01-05T10:00:00Z",
+        "created_by": "jetrun-ai",
+        "label": "From: 'Generate initial Lambda infrastructure' • Jan 5",
+        "status": "archived",
+        "commit_sha": "c2d5a8e"
+      }
+    ],
+    "file_tree": [
+      {
+        "id": "infrastructure",
+        "name": "infrastructure",
+        "path": "infrastructure/",
+        "type": "folder",
+        "children": [
+          {
+            "id": "terraform",
+            "name": "terraform",
+            "path": "infrastructure/terraform/",
+            "type": "folder",
+            "children": [
+              {
+                "id": "tf-main",
+                "name": "main.tf",
+                "path": "infrastructure/terraform/main.tf",
+                "type": "file",
+                "lines": 145,
+                "content": "# main.tf - Generated by Inngress\n\nterraform {\n  required_version = \">= 1.5.0\"\n  \n  backend \"s3\" {\n    bucket = \"inngress-tfstate-ecommerce\"\n    key    = \"terraform.tfstate\"\n    region = \"us-east-1\"\n  }\n}\n\nprovider \"aws\" {\n  region = var.aws_region\n  default_tags {\n    tags = {\n      Project   = \"ecommerce\"\n      ManagedBy = \"inngress\"\n    }\n  }\n}\n\nmodule \"networking\" {\n  source   = \"./modules/networking\"\n  vpc_cidr = var.vpc_cidr\n}\n\nmodule \"database\" {\n  source = \"./modules/database\"\n  vpc_id = module.networking.vpc_id\n}\n\nmodule \"compute\" {\n  source      = \"./modules/compute\"\n  vpc_id      = module.networking.vpc_id\n  db_endpoint = module.database.endpoint\n}"
+              },
+              {
+                "id": "tf-variables",
+                "name": "variables.tf",
+                "path": "infrastructure/terraform/variables.tf",
+                "type": "file",
+                "lines": 89,
+                "content": "variable \"aws_region\" {\n  description = \"AWS region\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"vpc_cidr\" {\n  description = \"VPC CIDR block\"\n  type        = string\n  default     = \"10.0.0.0/16\"\n}\n\nvariable \"environment\" {\n  description = \"Environment name\"\n  type        = string\n  default     = \"dev\"\n}"
+              },
+              {
+                "id": "tf-outputs",
+                "name": "outputs.tf",
+                "path": "infrastructure/terraform/outputs.tf",
+                "type": "file",
+                "lines": 34,
+                "content": "output \"api_endpoint\" {\n  description = \"API Gateway endpoint\"\n  value       = module.compute.api_endpoint\n}\n\noutput \"database_endpoint\" {\n  description = \"Database endpoint\"\n  value       = module.database.endpoint\n}"
+              },
+              {
+                "id": "tf-modules",
+                "name": "modules",
+                "path": "infrastructure/terraform/modules/",
+                "type": "folder",
+                "children": [
+                  {
+                    "id": "mod-networking",
+                    "name": "networking",
+                    "path": "infrastructure/terraform/modules/networking/",
+                    "type": "folder",
+                    "children": [
+                      {
+                        "id": "net-main",
+                        "name": "main.tf",
+                        "path": "infrastructure/terraform/modules/networking/main.tf",
+                        "type": "file",
+                        "lines": 78,
+                        "content": "# VPC and Subnets\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  enable_dns_support   = true\n\n  tags = {\n    Name = \"ecommerce-vpc\"\n  }\n}\n\nresource \"aws_subnet\" \"public\" {\n  count             = 2\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index)\n  availability_zone = data.aws_availability_zones.available.names[count.index]\n\n  tags = {\n    Name = \"ecommerce-public-${count.index + 1}\"\n  }\n}"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "mod-compute",
+                    "name": "compute",
+                    "path": "infrastructure/terraform/modules/compute/",
+                    "type": "folder",
+                    "children": [
+                      {
+                        "id": "compute-main",
+                        "name": "main.tf",
+                        "path": "infrastructure/terraform/modules/compute/main.tf",
+                        "type": "file",
+                        "lines": 156,
+                        "content": "# Lambda Functions\nresource \"aws_lambda_function\" \"auth\" {\n  function_name = \"ecommerce-auth\"\n  handler       = \"handler.handler\"\n  runtime       = \"python3.12\"\n  memory_size   = 256\n  timeout       = 30\n\n  filename         = data.archive_file.auth.output_path\n  source_code_hash = data.archive_file.auth.output_base64sha256\n\n  environment {\n    variables = {\n      DB_ENDPOINT = var.db_endpoint\n    }\n  }\n}"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "mod-database",
+                    "name": "database",
+                    "path": "infrastructure/terraform/modules/database/",
+                    "type": "folder",
+                    "children": [
+                      {
+                        "id": "db-main",
+                        "name": "main.tf",
+                        "path": "infrastructure/terraform/modules/database/main.tf",
+                        "type": "file",
+                        "lines": 92,
+                        "content": "# Aurora PostgreSQL Cluster\nresource \"aws_rds_cluster\" \"main\" {\n  cluster_identifier      = \"ecommerce-db\"\n  engine                  = \"aurora-postgresql\"\n  engine_version          = \"15.4\"\n  database_name           = \"ecommerce\"\n  master_username         = var.db_username\n  master_password         = var.db_password\n  backup_retention_period = 7\n  preferred_backup_window = \"03:00-04:00\"\n  vpc_security_group_ids  = [aws_security_group.db.id]\n  db_subnet_group_name    = aws_db_subnet_group.main.name\n}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "services",
+        "name": "services",
+        "path": "services/",
+        "type": "folder",
+        "children": [
+          {
+            "id": "core",
+            "name": "core",
+            "path": "services/core/",
+            "type": "folder",
+            "children": [
+              {
+                "id": "auth",
+                "name": "auth",
+                "path": "services/core/auth/",
+                "type": "folder",
+                "children": [
+                  {
+                    "id": "auth-handler",
+                    "name": "handler.py",
+                    "path": "services/core/auth/handler.py",
+                    "type": "file",
+                    "lines": 156,
+                    "content": "\"\"\"Authentication Lambda Handler\"\"\"\nimport json\nfrom shared.response import api_response, error_response\nfrom shared.database import get_db\nfrom .cognito import CognitoAuth\nfrom .repository import UserRepository\n\ncognito = CognitoAuth()\nrepo = UserRepository()\n\n\ndef handler(event, context):\n    \"\"\"Main Lambda handler for auth endpoints.\"\"\"\n    path = event.get('path', '')\n    method = event.get('httpMethod', 'GET')\n    \n    routes = {\n        ('POST', '/auth/login'): handle_login,\n        ('POST', '/auth/register'): handle_register,\n        ('POST', '/auth/refresh'): handle_refresh,\n        ('GET', '/auth/me'): handle_get_me,\n    }\n    \n    handler_fn = routes.get((method, path))\n    if handler_fn:\n        return handler_fn(event)\n    return error_response(404, 'Not found')\n\n\ndef handle_login(event):\n    \"\"\"Handle user login.\"\"\"\n    body = json.loads(event.get('body', '{}'))\n    result = cognito.authenticate(\n        email=body.get('email'),\n        password=body.get('password')\n    )\n    if result.get('success'):\n        return api_response(result)\n    return error_response(401, 'Invalid credentials')"
+                  },
+                  {
+                    "id": "auth-repo",
+                    "name": "repository.py",
+                    "path": "services/core/auth/repository.py",
+                    "type": "file",
+                    "lines": 78,
+                    "content": "\"\"\"User Repository - Database operations\"\"\"\nfrom shared.database import get_db\nfrom typing import Optional\n\n\nclass UserRepository:\n    \"\"\"Handle user database operations.\"\"\"\n    \n    def __init__(self):\n        self.db = get_db()\n    \n    def get_by_email(self, email: str) -> Optional[dict]:\n        \"\"\"Get user by email address.\"\"\"\n        query = \"SELECT * FROM users WHERE email = %s\"\n        return self.db.fetch_one(query, (email,))\n    \n    def create(self, email: str, cognito_id: str) -> dict:\n        \"\"\"Create new user record.\"\"\"\n        query = \"\"\"\n            INSERT INTO users (email, cognito_id, created_at)\n            VALUES (%s, %s, NOW())\n            RETURNING *\n        \"\"\"\n        return self.db.fetch_one(query, (email, cognito_id))"
+                  },
+                  {
+                    "id": "auth-cognito",
+                    "name": "cognito.py",
+                    "path": "services/core/auth/cognito.py",
+                    "type": "file",
+                    "lines": 89,
+                    "content": "\"\"\"Cognito Authentication Integration\"\"\"\nimport boto3\nimport os\n\n\nclass CognitoAuth:\n    \"\"\"AWS Cognito authentication wrapper.\"\"\"\n    \n    def __init__(self):\n        self.client = boto3.client('cognito-idp')\n        self.user_pool_id = os.environ['COGNITO_USER_POOL_ID']\n        self.client_id = os.environ['COGNITO_CLIENT_ID']\n    \n    def authenticate(self, email: str, password: str) -> dict:\n        \"\"\"Authenticate user with Cognito.\"\"\"\n        try:\n            response = self.client.initiate_auth(\n                ClientId=self.client_id,\n                AuthFlow='USER_PASSWORD_AUTH',\n                AuthParameters={\n                    'USERNAME': email,\n                    'PASSWORD': password\n                }\n            )\n            return {\n                'success': True,\n                'tokens': response['AuthenticationResult']\n            }\n        except self.client.exceptions.NotAuthorizedException:\n            return {'success': False, 'error': 'Invalid credentials'}"
+                  }
+                ]
+              },
+              {
+                "id": "products",
+                "name": "products",
+                "path": "services/core/products/",
+                "type": "folder",
+                "children": [
+                  {
+                    "id": "products-handler",
+                    "name": "handler.py",
+                    "path": "services/core/products/handler.py",
+                    "type": "file",
+                    "lines": 203,
+                    "content": "\"\"\"Products Lambda Handler\"\"\"\nimport json\nfrom shared.response import api_response, error_response\nfrom .repository import ProductRepository\n\nrepo = ProductRepository()\n\n\ndef handler(event, context):\n    \"\"\"Main Lambda handler for product endpoints.\"\"\"\n    path = event.get('path', '')\n    method = event.get('httpMethod', 'GET')\n    \n    if path == '/products' and method == 'GET':\n        return list_products(event)\n    elif path.startswith('/products/') and method == 'GET':\n        product_id = path.split('/')[-1]\n        return get_product(product_id)\n    elif path == '/products' and method == 'POST':\n        return create_product(event)\n    \n    return error_response(404, 'Not found')\n\n\ndef list_products(event):\n    \"\"\"List all products with pagination.\"\"\"\n    params = event.get('queryStringParameters') or {}\n    limit = int(params.get('limit', 20))\n    offset = int(params.get('offset', 0))\n    \n    products = repo.list_all(limit=limit, offset=offset)\n    return api_response({'products': products, 'count': len(products)})"
+                  },
+                  {
+                    "id": "products-repo",
+                    "name": "repository.py",
+                    "path": "services/core/products/repository.py",
+                    "type": "file",
+                    "lines": 124,
+                    "content": "\"\"\"Product Repository - Database operations\"\"\"\nfrom shared.database import get_db\nfrom typing import List, Optional\n\n\nclass ProductRepository:\n    \"\"\"Handle product database operations.\"\"\"\n    \n    def __init__(self):\n        self.db = get_db()\n    \n    def list_all(self, limit: int = 20, offset: int = 0) -> List[dict]:\n        \"\"\"List products with pagination.\"\"\"\n        query = \"\"\"\n            SELECT id, name, description, price, image_url, category\n            FROM products\n            ORDER BY created_at DESC\n            LIMIT %s OFFSET %s\n        \"\"\"\n        return self.db.fetch_all(query, (limit, offset))\n    \n    def get_by_id(self, product_id: str) -> Optional[dict]:\n        \"\"\"Get product by ID.\"\"\"\n        query = \"SELECT * FROM products WHERE id = %s\"\n        return self.db.fetch_one(query, (product_id,))"
+                  }
+                ]
+              },
+              {
+                "id": "orders",
+                "name": "orders",
+                "path": "services/core/orders/",
+                "type": "folder",
+                "children": [
+                  {
+                    "id": "orders-handler",
+                    "name": "handler.py",
+                    "path": "services/core/orders/handler.py",
+                    "type": "file",
+                    "lines": 245,
+                    "content": "\"\"\"Orders Lambda Handler\"\"\"\nimport json\nfrom shared.response import api_response, error_response\nfrom shared.auth import require_auth\nfrom .repository import OrderRepository\nfrom .stripe import StripePayment\n\nrepo = OrderRepository()\npayment = StripePayment()\n\n\ndef handler(event, context):\n    \"\"\"Main Lambda handler for order endpoints.\"\"\"\n    path = event.get('path', '')\n    method = event.get('httpMethod', 'GET')\n    \n    if path == '/orders' and method == 'GET':\n        return list_orders(event)\n    elif path == '/orders' and method == 'POST':\n        return create_order(event)\n    elif path.startswith('/orders/') and method == 'GET':\n        order_id = path.split('/')[-1]\n        return get_order(order_id, event)\n    \n    return error_response(404, 'Not found')\n\n\n@require_auth\ndef create_order(event):\n    \"\"\"Create a new order with payment.\"\"\"\n    user = event['requestContext']['authorizer']['claims']\n    body = json.loads(event.get('body', '{}'))\n    \n    # Create payment intent\n    payment_intent = payment.create_intent(\n        amount=body['total'],\n        customer_email=user['email']\n    )\n    \n    # Create order\n    order = repo.create(\n        user_id=user['sub'],\n        items=body['items'],\n        payment_intent_id=payment_intent['id']\n    )\n    \n    return api_response(order)"
+                  },
+                  {
+                    "id": "orders-repo",
+                    "name": "repository.py",
+                    "path": "services/core/orders/repository.py",
+                    "type": "file",
+                    "lines": 167,
+                    "content": "\"\"\"Order Repository - Database operations\"\"\"\nfrom shared.database import get_db\nfrom typing import List, Optional\nimport uuid\n\n\nclass OrderRepository:\n    \"\"\"Handle order database operations.\"\"\"\n    \n    def __init__(self):\n        self.db = get_db()\n    \n    def create(self, user_id: str, items: List[dict], payment_intent_id: str) -> dict:\n        \"\"\"Create a new order.\"\"\"\n        order_id = str(uuid.uuid4())\n        query = \"\"\"\n            INSERT INTO orders (id, user_id, items, payment_intent_id, status, created_at)\n            VALUES (%s, %s, %s, %s, 'pending', NOW())\n            RETURNING *\n        \"\"\"\n        return self.db.fetch_one(query, (order_id, user_id, items, payment_intent_id))"
+                  },
+                  {
+                    "id": "orders-stripe",
+                    "name": "stripe.py",
+                    "path": "services/core/orders/stripe.py",
+                    "type": "file",
+                    "lines": 89,
+                    "content": "\"\"\"Stripe Payment Integration\"\"\"\nimport stripe\nimport os\n\nstripe.api_key = os.environ['STRIPE_SECRET_KEY']\n\n\nclass StripePayment:\n    \"\"\"Stripe payment wrapper.\"\"\"\n    \n    def create_intent(self, amount: int, customer_email: str) -> dict:\n        \"\"\"Create a payment intent.\"\"\"\n        intent = stripe.PaymentIntent.create(\n            amount=amount,\n            currency='usd',\n            receipt_email=customer_email,\n            automatic_payment_methods={'enabled': True}\n        )\n        return {\n            'id': intent.id,\n            'client_secret': intent.client_secret\n        }"
+                  }
+                ]
+              },
+              {
+                "id": "shared",
+                "name": "shared",
+                "path": "services/core/shared/",
+                "type": "folder",
+                "children": [
+                  {
+                    "id": "shared-database",
+                    "name": "database.py",
+                    "path": "services/core/shared/database.py",
+                    "type": "file",
+                    "lines": 67,
+                    "content": "\"\"\"Database Connection Utilities\"\"\"\nimport os\nimport psycopg2\nfrom contextlib import contextmanager\n\n_connection = None\n\n\ndef get_db():\n    \"\"\"Get database connection (singleton).\"\"\"\n    global _connection\n    if _connection is None:\n        _connection = DatabaseClient()\n    return _connection\n\n\nclass DatabaseClient:\n    \"\"\"PostgreSQL database client.\"\"\"\n    \n    def __init__(self):\n        self.dsn = os.environ['DATABASE_URL']\n    \n    @contextmanager\n    def cursor(self):\n        \"\"\"Get a database cursor.\"\"\"\n        conn = psycopg2.connect(self.dsn)\n        try:\n            cur = conn.cursor()\n            yield cur\n            conn.commit()\n        finally:\n            cur.close()\n            conn.close()\n    \n    def fetch_one(self, query: str, params: tuple = None) -> dict:\n        \"\"\"Fetch single row.\"\"\"\n        with self.cursor() as cur:\n            cur.execute(query, params)\n            row = cur.fetchone()\n            if row:\n                columns = [desc[0] for desc in cur.description]\n                return dict(zip(columns, row))\n        return None"
+                  },
+                  {
+                    "id": "shared-response",
+                    "name": "response.py",
+                    "path": "services/core/shared/response.py",
+                    "type": "file",
+                    "lines": 45,
+                    "content": "\"\"\"Standardized API Response Utilities\"\"\"\nimport json\nfrom typing import Any\n\n\ndef api_response(data: Any, status_code: int = 200) -> dict:\n    \"\"\"Create a standardized API response.\"\"\"\n    return {\n        'statusCode': status_code,\n        'headers': {\n            'Content-Type': 'application/json',\n            'Access-Control-Allow-Origin': '*',\n            'Access-Control-Allow-Credentials': True\n        },\n        'body': json.dumps(data)\n    }\n\n\ndef error_response(status_code: int, message: str) -> dict:\n    \"\"\"Create an error response.\"\"\"\n    return api_response({'error': message}, status_code)"
+                  },
+                  {
+                    "id": "shared-auth",
+                    "name": "auth.py",
+                    "path": "services/core/shared/auth.py",
+                    "type": "file",
+                    "lines": 56,
+                    "content": "\"\"\"Authentication Middleware\"\"\"\nimport functools\nfrom .response import error_response\n\n\ndef require_auth(func):\n    \"\"\"Decorator to require authentication.\"\"\"\n    @functools.wraps(func)\n    def wrapper(event, *args, **kwargs):\n        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims')\n        if not claims:\n            return error_response(401, 'Unauthorized')\n        return func(event, *args, **kwargs)\n    return wrapper"
+                  },
+                  {
+                    "id": "shared-config",
+                    "name": "config.py",
+                    "path": "services/core/shared/config.py",
+                    "type": "file",
+                    "lines": 32,
+                    "content": "\"\"\"Environment Configuration\"\"\"\nimport os\n\n\nclass Config:\n    \"\"\"Application configuration from environment.\"\"\"\n    DATABASE_URL = os.environ.get('DATABASE_URL')\n    COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID')\n    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID')\n    STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY')\n    ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')\n    DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "database",
+        "name": "database",
+        "path": "database/",
+        "type": "folder",
+        "children": [
+          {
+            "id": "migrations",
+            "name": "migrations",
+            "path": "database/migrations/",
+            "type": "folder",
+            "children": [
+              {
+                "id": "mig-001",
+                "name": "001_users.py",
+                "path": "database/migrations/001_users.py",
+                "type": "file",
+                "lines": 45,
+                "content": "\"\"\"Create users table\"\"\"\nfrom alembic import op\nimport sqlalchemy as sa\n\n\ndef upgrade():\n    op.create_table(\n        'users',\n        sa.Column('id', sa.UUID(), primary_key=True),\n        sa.Column('email', sa.String(255), unique=True, nullable=False),\n        sa.Column('cognito_id', sa.String(255), unique=True, nullable=False),\n        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now()),\n        sa.Column('updated_at', sa.DateTime(), onupdate=sa.func.now())\n    )\n    op.create_index('ix_users_email', 'users', ['email'])\n\n\ndef downgrade():\n    op.drop_table('users')"
+              },
+              {
+                "id": "mig-002",
+                "name": "002_products.py",
+                "path": "database/migrations/002_products.py",
+                "type": "file",
+                "lines": 52,
+                "content": "\"\"\"Create products table\"\"\"\nfrom alembic import op\nimport sqlalchemy as sa\n\n\ndef upgrade():\n    op.create_table(\n        'products',\n        sa.Column('id', sa.UUID(), primary_key=True),\n        sa.Column('name', sa.String(255), nullable=False),\n        sa.Column('description', sa.Text()),\n        sa.Column('price', sa.Integer(), nullable=False),\n        sa.Column('image_url', sa.String(512)),\n        sa.Column('category', sa.String(100)),\n        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now())\n    )\n\n\ndef downgrade():\n    op.drop_table('products')"
+              },
+              {
+                "id": "mig-003",
+                "name": "003_orders.py",
+                "path": "database/migrations/003_orders.py",
+                "type": "file",
+                "lines": 58,
+                "content": "\"\"\"Create orders table\"\"\"\nfrom alembic import op\nimport sqlalchemy as sa\nfrom sqlalchemy.dialects.postgresql import JSONB\n\n\ndef upgrade():\n    op.create_table(\n        'orders',\n        sa.Column('id', sa.UUID(), primary_key=True),\n        sa.Column('user_id', sa.UUID(), sa.ForeignKey('users.id'), nullable=False),\n        sa.Column('items', JSONB(), nullable=False),\n        sa.Column('payment_intent_id', sa.String(255)),\n        sa.Column('status', sa.String(50), default='pending'),\n        sa.Column('total', sa.Integer()),\n        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now())\n    )\n    op.create_index('ix_orders_user_id', 'orders', ['user_id'])\n\n\ndef downgrade():\n    op.drop_table('orders')"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "api",
+        "name": "api",
+        "path": "api/",
+        "type": "folder",
+        "children": [
+          {
+            "id": "openapi",
+            "name": "openapi.yaml",
+            "path": "api/openapi.yaml",
+            "type": "file",
+            "lines": 180,
+            "content": "openapi: 3.1.0\ninfo:\n  title: E-Commerce API\n  version: 1.0.0\n  description: API for e-commerce platform\n\nservers:\n  - url: https://api.ecommerce.example.com\n    description: Production\n  - url: https://api-staging.ecommerce.example.com\n    description: Staging\n\npaths:\n  /auth/login:\n    post:\n      summary: User login\n      tags: [Auth]\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              type: object\n              properties:\n                email:\n                  type: string\n                password:\n                  type: string\n      responses:\n        '200':\n          description: Login successful\n\n  /products:\n    get:\n      summary: List products\n      tags: [Products]\n      parameters:\n        - name: limit\n          in: query\n          schema:\n            type: integer\n            default: 20\n        - name: offset\n          in: query\n          schema:\n            type: integer\n            default: 0\n      responses:\n        '200':\n          description: List of products\n\n  /orders:\n    get:\n      summary: List user orders\n      tags: [Orders]\n      security:\n        - bearerAuth: []\n    post:\n      summary: Create order\n      tags: [Orders]\n      security:\n        - bearerAuth: []"
+          }
+        ]
+      },
+      {
+        "id": "requirements",
+        "name": "requirements.txt",
+        "path": "requirements.txt",
+        "type": "file",
+        "lines": 15,
+        "content": "boto3>=1.34.0\npsycopg2-binary>=2.9.9\nstripe>=7.0.0\npydantic>=2.5.0\npython-jose>=3.3.0\naws-lambda-powertools>=2.30.0"
+      }
+    ],
+    "stats": {
+      "total_files": 24,
+      "total_lines": 2156,
+      "total_folders": 12
+    }
+  },
+  "pending_changes": {
+    "infrastructure": [
+      {
+        "action": "create",
+        "resource_type": "aws_lambda_function",
+        "resource_name": "ecomm-payments-fn",
+        "logical_id": "PaymentsFunction",
+        "details": {
+          "runtime": "python3.12",
+          "memory": 256,
+          "timeout": 45
+        }
+      },
+      {
+        "action": "create",
+        "resource_type": "aws_secretsmanager_secret",
+        "resource_name": "stripe-webhook-secret",
+        "logical_id": "StripeWebhookSecret",
+        "details": {
+          "description": "Stripe webhook signing secret"
+        }
+      },
+      {
+        "action": "update",
+        "resource_type": "aws_apigatewayv2_api",
+        "resource_name": "ecomm-api",
+        "logical_id": "ApiGateway",
+        "details": {
+          "change": "Add /payments/* routes",
+          "routes_added": 4
+        }
+      }
+    ],
+    "migrations": [
+      {
+        "id": "003",
+        "name": "003_add_payments.py",
+        "description": "Add payments table and indexes",
+        "sql": "CREATE TABLE payments (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  order_id UUID REFERENCES orders(id),\n  stripe_payment_intent_id VARCHAR(255) UNIQUE,\n  amount DECIMAL(10,2) NOT NULL,\n  status VARCHAR(50) DEFAULT 'pending',\n  created_at TIMESTAMP DEFAULT NOW()\n);\n\nCREATE INDEX idx_payments_order_id ON payments(order_id);",
+        "status": "pending",
+        "reversible": true
+      }
+    ],
+    "cost_estimate": {
+      "monthly": 8.50,
+      "breakdown": [
+        {
+          "service": "Lambda (payment-service)",
+          "cost": 2.50
+        },
+        {
+          "service": "Secrets Manager",
+          "cost": 0.40
+        },
+        {
+          "service": "API Gateway",
+          "cost": 0.60
+        },
+        {
+          "service": "CloudWatch Logs",
+          "cost": 5.00
+        }
+      ]
+    }
+  },
+  "approval_workflow": {
+    "enabled": true,
+    "pending_approvals": [
+      {
+        "id": "approval_001",
+        "type": "infrastructure",
+        "title": "Deploy to Staging",
+        "description": "Infrastructure changes for payment service",
+        "requested_by": "john@example.com",
+        "requested_at": "2026-01-10T09:00:00Z",
+        "status": "pending",
+        "changes": {
+          "created": [
+            {
+              "resource": "aws_lambda_function.payment_service",
+              "reason": "New payment processing service"
+            },
+            {
+              "resource": "aws_secretsmanager_secret.stripe_webhook",
+              "reason": "Stripe webhook secret"
+            }
+          ],
+          "updated": [
+            {
+              "resource": "aws_api_gateway_rest_api.main",
+              "changes": "Add /payments/* routes"
+            }
+          ],
+          "deleted": []
+        },
+        "cost_impact": "+$8.50/month",
+        "approvers": [
+          {
+            "email": "sarah@example.com",
+            "role": "Tech Lead",
+            "status": "pending"
+          }
+        ]
+      }
+    ],
+    "recent_approvals": [
+      {
+        "id": "approval_000",
+        "type": "database_migration",
+        "title": "Add indexes",
+        "approved_by": "sarah@example.com",
+        "approved_at": "2026-01-08T14:28:00Z",
+        "status": "approved"
+      }
+    ]
+  },
+  "workspaces": [
+    { "id": "ws_orch_ecom", "name": "orchestrator" },
+    { "id": "ws_web_ecom", "name": "web" },
+    { "id": "ws_core_ecom", "name": "core" }
+  ],
+  "secrets": {
+    "configured": [
+      {
+        "id": "secret_001",
+        "name": "DATABASE_URL",
+        "workspace_id": "ws_orch_ecom",
+        "workspace_name": "orchestrator",
+        "type": "database",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/orchestrator/db-url",
+        "created_at": "2026-01-05T10:00:00Z",
+        "last_rotated": "2026-01-05T10:00:00Z",
+        "referenced_by": ["orchestrator", "api"],
+        "status": "active"
+      },
+      {
+        "id": "secret_004",
+        "name": "DATABASE_URL",
+        "workspace_id": "ws_web_ecom",
+        "workspace_name": "web",
+        "type": "database",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/web/db-url",
+        "created_at": "2026-01-06T09:00:00Z",
+        "last_rotated": null,
+        "referenced_by": ["nextjs"],
+        "status": "active"
+      },
+      {
+        "id": "secret_002",
+        "name": "STRIPE_SECRET_KEY",
+        "workspace_id": "ws_orch_ecom",
+        "workspace_name": "orchestrator",
+        "type": "api_key",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/stripe-key",
+        "created_at": "2026-01-05T10:05:00Z",
+        "last_rotated": null,
+        "referenced_by": ["order-service", "payment-service"],
+        "status": "active"
+      },
+      {
+        "id": "secret_003",
+        "name": "JWT_SECRET",
+        "workspace_id": null,
+        "workspace_name": null,
+        "type": "encryption",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/jwt-secret",
+        "created_at": "2026-01-05T10:02:00Z",
+        "last_rotated": "2026-01-05T10:02:00Z",
+        "referenced_by": ["auth-service", "orchestrator", "web"],
+        "status": "active"
+      },
+      {
+        "id": "secret_005",
+        "name": "SENTRY_DSN",
+        "workspace_id": null,
+        "workspace_name": null,
+        "type": "api_key",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/sentry",
+        "created_at": "2026-01-07T11:00:00Z",
+        "last_rotated": null,
+        "referenced_by": ["all-services"],
+        "status": "active"
+      },
+      {
+        "id": "secret_006",
+        "name": "AURORA_PASSWORD",
+        "workspace_id": "ws_core_ecom",
+        "workspace_name": "core",
+        "type": "database",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/core/aurora",
+        "created_at": "2026-01-08T14:00:00Z",
+        "last_rotated": null,
+        "referenced_by": ["migrations"],
+        "status": "active"
+      }
+    ],
+    "pending": [
+      {
+        "name": "SENDGRID_API_KEY",
+        "type": "api_key",
+        "description": "Required for email notifications from the orchestrator",
+        "workspace_id": "ws_orch_ecom",
+        "workspace_name": "orchestrator",
+        "required_by": ["order-service"]
+      }
+    ]
+  },
+  "environments": {
+    "dev": {
+      "status": "deployed",
+      "last_deployed": "2026-01-10T08:20:00Z",
+      "endpoint_url": "https://dev-api.ecommerce-a3f2k.jetrun.app"
+    },
+    "staging": {
+      "status": "pending_approval",
+      "last_deployed": "2026-01-08T14:40:00Z",
+      "pending_changes": true
+    },
+    "prod": {
+      "status": "not_deployed",
+      "requires_business_tier": true
+    }
+  },
+  "deployed_resources": [
+    {
+      "id": "lambda-1",
+      "name": "ecommerce-auth",
+      "type": "Lambda",
+      "category": "compute",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-02-04T15:30:00Z",
+      "version": "v3",
+      "dependencies": ["db-users", "secret-jwt"],
+      "cloud_arn": "arn:aws:lambda:us-east-1:123456789012:function:ecommerce-auth",
+      "cloud_provider": "aws",
+      "metadata": {
+        "runtime": "python3.12",
+        "memory": 256,
+        "timeout": 30
+      }
+    },
+    {
+      "id": "lambda-2",
+      "name": "ecommerce-products",
+      "type": "Lambda",
+      "category": "compute",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-02-03T12:15:00Z",
+      "version": "v4",
+      "dependencies": ["db-products"],
+      "cloud_arn": "arn:aws:lambda:us-east-1:123456789012:function:ecommerce-products",
+      "cloud_provider": "aws",
+      "metadata": {
+        "runtime": "python3.12",
+        "memory": 256,
+        "timeout": 30
+      }
+    },
+    {
+      "id": "lambda-3",
+      "name": "ecommerce-orders",
+      "type": "Lambda",
+      "category": "compute",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-08T14:20:00Z",
+      "updated_at": "2024-02-05T16:45:00Z",
+      "version": "v5",
+      "dependencies": ["db-orders", "secret-stripe"],
+      "cloud_arn": "arn:aws:lambda:us-east-1:123456789012:function:ecommerce-orders",
+      "cloud_provider": "aws",
+      "metadata": {
+        "runtime": "python3.12",
+        "memory": 512,
+        "timeout": 45
+      }
+    },
+    {
+      "id": "lambda-4",
+      "name": "image-processor",
+      "type": "Lambda",
+      "category": "compute",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-15T09:00:00Z",
+      "updated_at": "2024-01-20T11:15:00Z",
+      "version": "v1",
+      "dependencies": ["s3-images"],
+      "cloud_arn": "arn:aws:lambda:us-east-1:123456789012:function:image-processor",
+      "cloud_provider": "aws",
+      "metadata": {
+        "runtime": "python3.12",
+        "memory": 1024,
+        "timeout": 60
+      }
+    },
+    {
+      "id": "rds-1",
+      "name": "ecommerce-db",
+      "type": "RDS Aurora",
+      "category": "database",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-02-03T14:25:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:rds:us-east-1:123456789012:cluster:ecommerce-db",
+      "cloud_provider": "aws",
+      "metadata": {
+        "engine": "aurora-postgresql",
+        "engine_version": "15.4",
+        "instance_class": "db.r6g.large",
+        "storage_encrypted": true
+      }
+    },
+    {
+      "id": "rds-2",
+      "name": "analytics-db",
+      "type": "RDS",
+      "category": "database",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-18T11:00:00Z",
+      "updated_at": "2024-02-05T08:30:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:rds:us-east-1:123456789012:db:analytics-db",
+      "cloud_provider": "aws",
+      "metadata": {
+        "engine": "postgres",
+        "engine_version": "14.9",
+        "instance_class": "db.t3.medium"
+      }
+    },
+    {
+      "id": "s3-1",
+      "name": "ecommerce-images",
+      "type": "S3",
+      "category": "storage",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-02-04T16:00:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:s3:::ecommerce-images-prod",
+      "cloud_provider": "aws",
+      "metadata": {
+        "storage_class": "STANDARD",
+        "versioning": true,
+        "encryption": "AES256"
+      }
+    },
+    {
+      "id": "s3-2",
+      "name": "ecommerce-backups",
+      "type": "S3",
+      "category": "storage",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-12T09:30:00Z",
+      "updated_at": "2024-01-28T12:45:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:s3:::ecommerce-backups-prod",
+      "cloud_provider": "aws",
+      "metadata": {
+        "storage_class": "GLACIER",
+        "lifecycle_enabled": true
+      }
+    },
+    {
+      "id": "apigw-1",
+      "name": "ecommerce-api",
+      "type": "API Gateway",
+      "category": "networking-content-delivery",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-02-02T11:20:00Z",
+      "version": "v2",
+      "dependencies": ["ecommerce-auth", "ecommerce-products", "ecommerce-orders"],
+      "cloud_arn": "arn:aws:apigateway:us-east-1::/restapis/abc123def456",
+      "cloud_provider": "aws",
+      "metadata": {
+        "type": "REST",
+        "endpoint_type": "REGIONAL",
+        "custom_domain": "api.ecommerce.example.com"
+      }
+    },
+    {
+      "id": "vpc-1",
+      "name": "ecommerce-vpc",
+      "type": "VPC",
+      "category": "networking-content-delivery",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-01-10T14:00:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0",
+      "cloud_provider": "aws",
+      "metadata": {
+        "cidr_block": "10.0.0.0/16",
+        "subnets": 4,
+        "nat_gateways": 2
+      }
+    },
+    {
+      "id": "sm-1",
+      "name": "JWT_SECRET",
+      "type": "Secrets Manager",
+      "category": "security-identity-compliance",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-01-25T16:30:00Z",
+      "version": "v2",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/jwt-secret",
+      "cloud_provider": "aws",
+      "metadata": {
+        "rotation_enabled": false,
+        "kms_key_id": "alias/aws/secretsmanager"
+      }
+    },
+    {
+      "id": "sm-2",
+      "name": "STRIPE_SECRET_KEY",
+      "type": "Secrets Manager",
+      "category": "security-identity-compliance",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-08T14:20:00Z",
+      "updated_at": "2024-01-08T14:20:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/stripe-key",
+      "cloud_provider": "aws",
+      "metadata": {
+        "rotation_enabled": false,
+        "kms_key_id": "alias/aws/secretsmanager"
+      }
+    },
+    {
+      "id": "sm-3",
+      "name": "DATABASE_URL",
+      "type": "Secrets Manager",
+      "category": "security-identity-compliance",
+      "status": "active",
+      "region": "us-east-1",
+      "created_at": "2024-01-05T10:00:00Z",
+      "updated_at": "2024-01-05T10:00:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/db-url",
+      "cloud_provider": "aws",
+      "metadata": {
+        "rotation_enabled": true,
+        "rotation_days": 30,
+        "kms_key_id": "alias/aws/secretsmanager"
+      }
+    }
+  ]
+}

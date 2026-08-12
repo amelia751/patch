@@ -142,7 +142,18 @@ CODE="$(probe "$BASE/openapi.json")"
 import json, sys
 
 document = json.load(open("/tmp/patchapi_control_api_body"))
-expected = {"/healthz", "/readyz", "/v1/provider-checks", "/v1/runs/{run_id}"}
+expected = {
+    "/healthz",
+    "/readyz",
+    "/v1/provider-checks",
+    "/v1/runs",
+    "/v1/runs/{run_id}",
+    "/v1/runs/{run_id}/detail",
+    "/v1/changes",
+    "/v1/changes/{change_id}",
+    "/v1/repositories",
+    "/v1/fleet",
+}
 served = set(document["paths"])
 assert served == expected, f"served {sorted(served)}, expected {sorted(expected)}"
 print("openapi paths:", ", ".join(sorted(served)))
@@ -157,7 +168,7 @@ import json
 body = json.load(open("/tmp/patchapi_control_api_body"))
 assert body["status"] == "not_ready", body
 missing = sorted(check["name"] for check in body["checks"] if not check["ready"])
-assert missing == ["event_transport", "workflow_state_store"], missing
+assert missing == ["dashboard_read_model", "event_transport", "workflow_state_store"], missing
 print("not ready:", ", ".join(missing))
 '
 
@@ -172,6 +183,22 @@ assert detail["error"] == "dependency_unavailable", detail
 assert detail["dependency"] == "workflow_state_store", detail
 print("run read fails closed:", detail["reason"])
 '
+
+step "dashboard reads fail closed while unwired"
+# An empty list here would read as "nothing is affected". Every dashboard route
+# must name the missing dependency instead.
+for ROUTE in /v1/changes /v1/repositories /v1/runs /v1/fleet; do
+  CODE="$(probe "$BASE$ROUTE")"
+  [[ "$CODE" == "503" ]] || fail "$ROUTE returned $CODE, expected 503 with no read model"
+  "${RUN[@]}" python -c '
+import json
+
+detail = json.load(open("/tmp/patchapi_control_api_body"))["detail"]
+assert detail["error"] == "dependency_unavailable", detail
+assert detail["dependency"] == "dashboard_read_model", detail
+'
+  echo "  ${ROUTE} -> 503 dashboard_read_model"
+done
 
 step "unknown route is 404"
 CODE="$(probe "$BASE/v1/not-a-route")"

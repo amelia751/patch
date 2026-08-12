@@ -1,0 +1,418 @@
+{
+  "project": {
+    "id": "proj_clause_001",
+    "name": "Clause",
+    "slug": "clause-frontend",
+    "tier": "growth"
+  },
+  "gcp_connection": {
+    "status": "connected",
+    "method": "service_account",
+    "project_id": "artful-journey-486915-a8",
+    "project_number": "1005432364863",
+    "region": "us-central1",
+    "connected_at": "2026-02-01T12:00:00Z",
+    "last_validated": "2026-02-09T10:30:00Z",
+    "service_account_email": "development@artful-journey-486915-a8.iam.gserviceaccount.com",
+    "required_apis": [
+      {
+        "name": "Cloud Run API",
+        "description": "Deploy and manage serverless containers for clause-api",
+        "validated": true,
+        "api_endpoint": "run.googleapis.com"
+      },
+      {
+        "name": "Cloud SQL Admin API",
+        "description": "Manage PostgreSQL database for users, projects, and documents",
+        "validated": true,
+        "api_endpoint": "sqladmin.googleapis.com"
+      },
+      {
+        "name": "Cloud Firestore API",
+        "description": "Real-time document metadata and processing status",
+        "validated": true,
+        "api_endpoint": "firestore.googleapis.com"
+      },
+      {
+        "name": "Cloud Storage API",
+        "description": "Store raw and processed legal documents",
+        "validated": true,
+        "api_endpoint": "storage.googleapis.com"
+      },
+      {
+        "name": "Cloud Pub/Sub API",
+        "description": "Document processing event messaging",
+        "validated": true,
+        "api_endpoint": "pubsub.googleapis.com"
+      },
+      {
+        "name": "Document AI API",
+        "description": "OCR and form parsing for legal documents",
+        "validated": true,
+        "api_endpoint": "documentai.googleapis.com"
+      },
+      {
+        "name": "Vertex AI API",
+        "description": "Text embeddings and Gemini 2.5 Pro for Q&A",
+        "validated": true,
+        "api_endpoint": "aiplatform.googleapis.com"
+      },
+      {
+        "name": "Cloud Tasks API",
+        "description": "Batch document analysis job queue",
+        "validated": true,
+        "api_endpoint": "cloudtasks.googleapis.com"
+      },
+      {
+        "name": "Cloud Logging API",
+        "description": "Centralized logging and monitoring",
+        "validated": true,
+        "api_endpoint": "logging.googleapis.com"
+      },
+      {
+        "name": "Compute Engine API",
+        "description": "Load balancing and networking infrastructure",
+        "validated": true,
+        "api_endpoint": "compute.googleapis.com"
+      }
+    ],
+    "marketplace_services": [
+      {
+        "name": "Elastic Cloud",
+        "description": "Elasticsearch 8.11 for hybrid search (BM25 + vector)",
+        "status": "enabled",
+        "subscription_id": "clause-search-subscription",
+        "marketplace_url": "https://console.cloud.google.com/marketplace/product/elastic-cloud/elastic-cloud"
+      }
+    ]
+  },
+  "generated_code": {
+    "current_version": "v1",
+    "versions": [
+      {
+        "id": "v1",
+        "created_at": "2026-02-09T09:45:00Z",
+        "created_by": "jetrun-ai",
+        "label": "Initial deployment • Just now",
+        "status": "current",
+        "commit_sha": "a3f7e9b"
+      }
+    ],
+    "stats": {
+      "total_files": 16,
+      "total_lines": 2847,
+      "total_folders": 3
+    },
+    "services": [
+      {
+        "name": "routes",
+        "path": "routes/",
+        "files": [
+          {"name": "__init__.py", "path": "routes/__init__.py", "lines": 8, "content": "\"\"\"Routes package for Clause API.\"\"\"\nfrom . import upload, ask, documents, qa, batch_upload, browser_upload, table_analysis\n\n__all__ = ['upload', 'ask', 'documents', 'qa', 'batch_upload', 'browser_upload', 'table_analysis']\n"},
+          {"name": "ask.py", "path": "routes/ask.py", "lines": 142, "content": "\"\"\"\nAsk route - Simple Q&A endpoint.\nPOST /api/ask - Quick answer without full citation pipeline\n\"\"\"\nimport logging\nfrom fastapi import APIRouter, HTTPException\nfrom pydantic import BaseModel\nfrom typing import Optional\n\nfrom services.elasticsearch import ElasticsearchService\nfrom services.vertex_ai import VertexAIService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\nclass AskRequest(BaseModel):\n    query: str\n    project_id: str\n    k: int = 3\n\n\nclass AskResponse(BaseModel):\n    answer: str\n    sources: list\n\n\n@router.post(\"/ask\", response_model=AskResponse)\nasync def ask_question(request: AskRequest):\n    \"\"\"Quick Q&A without full citation pipeline.\"\"\"\n    es_service = ElasticsearchService()\n    vertex_service = VertexAIService()\n    \n    # Get relevant chunks\n    query_vector = vertex_service.generate_query_embedding(request.query)\n    results = await es_service.hybrid_search(\n        query=request.query,\n        vector=query_vector,\n        project_id=request.project_id,\n        k=request.k\n    )\n    \n    # Generate answer\n    context = \"\\n\\n\".join([r['text'] for r in results])\n    answer = await vertex_service.generate_answer(request.query, context)\n    \n    return AskResponse(answer=answer, sources=[r['doc_title'] for r in results])\n"},
+          {"name": "batch_upload.py", "path": "routes/batch_upload.py", "lines": 98, "content": "\"\"\"\nBatch upload route for multiple documents.\nPOST /api/batch-upload - Upload multiple files at once\n\"\"\"\nimport logging\nfrom fastapi import APIRouter, UploadFile, File, Form, HTTPException\nfrom typing import List\n\nfrom services.gcs import GCSService\nfrom services.ingestion import IngestionService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\n@router.post(\"/batch-upload\")\nasync def batch_upload(\n    files: List[UploadFile] = File(...),\n    project_id: str = Form(...)\n):\n    \"\"\"Upload multiple documents for processing.\"\"\"\n    gcs_service = GCSService()\n    ingestion_service = IngestionService()\n    \n    results = []\n    for file in files:\n        # Upload to GCS\n        gcs_uri = await gcs_service.upload_file(file, project_id)\n        \n        # Queue for processing\n        job_id = await ingestion_service.queue_document(gcs_uri, project_id)\n        \n        results.append({\n            \"filename\": file.filename,\n            \"gcs_uri\": gcs_uri,\n            \"job_id\": job_id,\n            \"status\": \"queued\"\n        })\n    \n    return {\"uploaded\": len(results), \"documents\": results}\n"},
+          {"name": "browser_upload.py", "path": "routes/browser_upload.py", "lines": 156, "content": "\"\"\"\nBrowser upload route with chunked upload support.\nPOST /api/browser-upload - Upload from browser with progress\n\"\"\"\nimport logging\nfrom fastapi import APIRouter, UploadFile, File, Form, HTTPException\nfrom fastapi.responses import StreamingResponse\nimport json\n\nfrom services.gcs import GCSService\nfrom services.ingestion import IngestionService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\n@router.post(\"/browser-upload\")\nasync def browser_upload(\n    file: UploadFile = File(...),\n    project_id: str = Form(...),\n    doc_title: str = Form(None)\n):\n    \"\"\"Upload document from browser with progress tracking.\"\"\"\n    gcs_service = GCSService()\n    ingestion_service = IngestionService()\n    \n    # Upload to GCS\n    gcs_uri = await gcs_service.upload_file(file, project_id)\n    \n    # Start ingestion pipeline\n    result = await ingestion_service.process_document(\n        gcs_uri=gcs_uri,\n        project_id=project_id,\n        doc_title=doc_title or file.filename\n    )\n    \n    return {\n        \"doc_id\": result[\"doc_id\"],\n        \"gcs_uri\": gcs_uri,\n        \"status\": \"indexed\",\n        \"num_chunks\": result[\"num_chunks\"]\n    }\n"},
+          {"name": "documents.py", "path": "routes/documents.py", "lines": 234, "content": "\"\"\"\nDocuments route - CRUD operations for documents.\nGET /api/documents - List documents\nGET /api/documents/{doc_id} - Get document details\nDELETE /api/documents/{doc_id} - Delete document\n\"\"\"\nimport logging\nfrom fastapi import APIRouter, HTTPException, Query\nfrom typing import List, Optional\n\nfrom services.firestore import FirestoreService\nfrom services.elasticsearch import ElasticsearchService\nfrom services.gcs import GCSService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\n@router.get(\"/documents\")\nasync def list_documents(\n    project_id: str = Query(...),\n    limit: int = Query(50, le=100),\n    offset: int = Query(0)\n):\n    \"\"\"List all documents in a project.\"\"\"\n    firestore = FirestoreService()\n    docs = await firestore.list_documents(project_id, limit, offset)\n    return {\"documents\": docs, \"total\": len(docs)}\n\n\n@router.get(\"/documents/{doc_id}\")\nasync def get_document(doc_id: str, project_id: str = Query(...)):\n    \"\"\"Get document details and metadata.\"\"\"\n    firestore = FirestoreService()\n    doc = await firestore.get_document(doc_id, project_id)\n    if not doc:\n        raise HTTPException(status_code=404, detail=\"Document not found\")\n    return doc\n\n\n@router.delete(\"/documents/{doc_id}\")\nasync def delete_document(doc_id: str, project_id: str = Query(...)):\n    \"\"\"Delete a document and all its chunks.\"\"\"\n    firestore = FirestoreService()\n    es_service = ElasticsearchService()\n    gcs_service = GCSService()\n    \n    # Delete from all services\n    await firestore.delete_document(doc_id, project_id)\n    await es_service.delete_document_chunks(doc_id, project_id)\n    await gcs_service.delete_document(doc_id, project_id)\n    \n    return {\"deleted\": doc_id}\n"},
+          {"name": "qa.py", "path": "routes/qa.py", "lines": 192, "content": "\"\"\"\nQ&A route with agent collaboration (Retrieval → LLM → Citation).\nPOST /api/qa - Answer questions with citations\n\"\"\"\nimport logging\nimport time\nfrom fastapi import APIRouter, HTTPException\nfrom pydantic import BaseModel\nfrom typing import List, Dict, Any\n\nfrom services.elasticsearch import ElasticsearchService\nfrom services.vertex_ai import VertexAIService\nfrom services.firestore import FirestoreService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\nclass QARequest(BaseModel):\n    \"\"\"Request model for Q&A endpoint.\"\"\"\n    query: str\n    project_id: str\n    k: int = 5\n\n\nclass Citation(BaseModel):\n    \"\"\"Citation model.\"\"\"\n    doc_id: str\n    doc_title: str\n    page: int\n    snippet: str\n    score: float\n\n\nclass QAResponse(BaseModel):\n    \"\"\"Response model for Q&A endpoint.\"\"\"\n    query: str\n    answer: str\n    citations: List[Citation]\n    stats: Dict[str, Any]\n\n\n@router.post(\"/qa\", response_model=QAResponse)\nasync def answer_question(request: QARequest):\n    \"\"\"\n    Answer a question using the multi-agent system:\n    1. Retrieval Agent: Hybrid search (BM25 + kNN + RRF)\n    2. LLM Agent: Generate answer with Gemini\n    3. Citation Agent: Map answer to source documents\n    \"\"\"\n    start_time = time.time()\n    \n    es_service = ElasticsearchService()\n    vertex_service = VertexAIService()\n    \n    # Step 1: Generate query embedding\n    query_vector = vertex_service.generate_query_embedding(request.query)\n    \n    # Step 2: Hybrid search\n    results = await es_service.hybrid_search(\n        query=request.query,\n        vector=query_vector,\n        project_id=request.project_id,\n        k=request.k\n    )\n    \n    # Step 3: Generate answer with Gemini\n    context = \"\\n\\n\".join([f\"[{i+1}] {r['text']}\" for i, r in enumerate(results)])\n    answer = await vertex_service.generate_answer(request.query, context)\n    \n    latency = (time.time() - start_time) * 1000\n    \n    return QAResponse(\n        query=request.query,\n        answer=answer,\n        citations=[Citation(**r) for r in results],\n        stats={\"latency_ms\": latency, \"num_chunks\": len(results)}\n    )\n"},
+          {"name": "table_analysis.py", "path": "routes/table_analysis.py", "lines": 287, "content": "\"\"\"\nTable analysis route for batch document analysis.\nPOST /api/table/analyze - Analyze documents with custom columns\nGET /api/table/results - Get analysis results\n\"\"\"\nimport logging\nfrom fastapi import APIRouter, HTTPException, Query\nfrom pydantic import BaseModel\nfrom typing import List, Dict, Any, Optional\n\nfrom services.table_analysis import TableAnalysisService\nfrom services.firestore import FirestoreService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\nclass ColumnDefinition(BaseModel):\n    name: str\n    description: str\n    type: str = \"text\"\n\n\nclass AnalyzeRequest(BaseModel):\n    project_id: str\n    doc_ids: List[str]\n    columns: List[ColumnDefinition]\n\n\n@router.post(\"/table/analyze\")\nasync def analyze_documents(request: AnalyzeRequest):\n    \"\"\"Analyze documents and extract structured data.\"\"\"\n    service = TableAnalysisService()\n    \n    job_id = await service.start_analysis(\n        project_id=request.project_id,\n        doc_ids=request.doc_ids,\n        columns=[c.dict() for c in request.columns]\n    )\n    \n    return {\"job_id\": job_id, \"status\": \"processing\"}\n\n\n@router.get(\"/table/results\")\nasync def get_results(\n    project_id: str = Query(...),\n    job_id: str = Query(None)\n):\n    \"\"\"Get table analysis results.\"\"\"\n    service = TableAnalysisService()\n    results = await service.get_results(project_id, job_id)\n    return {\"results\": results}\n"},
+          {"name": "upload.py", "path": "routes/upload.py", "lines": 312, "content": "\"\"\"\nUpload route - Document upload and ingestion.\nPOST /api/upload - Upload document from local path\nPOST /api/upload/file - Upload document from file\n\"\"\"\nimport logging\nfrom fastapi import APIRouter, UploadFile, File, Form, HTTPException\nfrom pydantic import BaseModel\nfrom typing import Optional\n\nfrom services.gcs import GCSService\nfrom services.ingestion import IngestionService\nfrom services.document_ai import DocumentAIService\n\nlogger = logging.getLogger(__name__)\nrouter = APIRouter()\n\n\nclass LocalUploadRequest(BaseModel):\n    file_path: str\n    project_id: str\n    doc_title: Optional[str] = None\n\n\n@router.post(\"/upload/local\")\nasync def upload_local(request: LocalUploadRequest):\n    \"\"\"Upload a document from local file path.\"\"\"\n    gcs_service = GCSService()\n    ingestion_service = IngestionService()\n    \n    # Upload to GCS\n    gcs_uri = await gcs_service.upload_local_file(\n        request.file_path,\n        request.project_id\n    )\n    \n    # Process and index\n    result = await ingestion_service.process_document(\n        gcs_uri=gcs_uri,\n        project_id=request.project_id,\n        doc_title=request.doc_title\n    )\n    \n    return {\n        \"doc_id\": result[\"doc_id\"],\n        \"gcs_uri\": gcs_uri,\n        \"status\": \"indexed\",\n        \"num_chunks\": result[\"num_chunks\"]\n    }\n\n\n@router.post(\"/upload/file\")\nasync def upload_file(\n    file: UploadFile = File(...),\n    project_id: str = Form(...),\n    doc_title: str = Form(None)\n):\n    \"\"\"Upload a document file.\"\"\"\n    gcs_service = GCSService()\n    ingestion_service = IngestionService()\n    \n    # Upload to GCS\n    gcs_uri = await gcs_service.upload_file(file, project_id)\n    \n    # Process and index\n    result = await ingestion_service.process_document(\n        gcs_uri=gcs_uri,\n        project_id=project_id,\n        doc_title=doc_title or file.filename\n    )\n    \n    return {\n        \"doc_id\": result[\"doc_id\"],\n        \"gcs_uri\": gcs_uri,\n        \"status\": \"indexed\",\n        \"num_chunks\": result[\"num_chunks\"]\n    }\n"}
+        ]
+      },
+      {
+        "name": "services",
+        "path": "services/",
+        "files": [
+          {"name": "__init__.py", "path": "services/__init__.py", "lines": 6, "content": "\"\"\"Services package for Clause API.\"\"\"\nfrom .elasticsearch import ElasticsearchService\nfrom .vertex_ai import VertexAIService\nfrom .firestore import FirestoreService\nfrom .gcs import GCSService\n"},
+          {"name": "document_ai.py", "path": "services/document_ai.py", "lines": 198, "content": "\"\"\"\nDocument AI service for OCR and form parsing.\nUsed for extracting text from PDFs and images.\n\"\"\"\nimport logging\nfrom typing import List, Dict, Any\nfrom google.cloud import documentai\n\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass DocumentAIService:\n    \"\"\"Document AI operations for OCR.\"\"\"\n    \n    def __init__(self):\n        settings = get_settings()\n        self.client = documentai.DocumentProcessorServiceClient()\n        self.processor_name = settings.document_ai_processor_id\n        \n    async def extract_text(self, gcs_uri: str) -> Dict[str, Any]:\n        \"\"\"Extract text from document using Document AI.\"\"\"\n        request = documentai.ProcessRequest(\n            name=self.processor_name,\n            raw_document=documentai.RawDocument(\n                content=await self._read_gcs_file(gcs_uri),\n                mime_type=\"application/pdf\"\n            )\n        )\n        \n        result = self.client.process_document(request=request)\n        document = result.document\n        \n        return {\n            \"text\": document.text,\n            \"pages\": len(document.pages),\n            \"entities\": self._extract_entities(document)\n        }\n"},
+          {"name": "elasticsearch.py", "path": "services/elasticsearch.py", "lines": 368, "content": "\"\"\"\nElasticsearch service for hybrid search (BM25 + vector + RRF).\nImplements the core retrieval functionality with proper index mapping.\n\"\"\"\nimport logging\nfrom typing import List, Dict, Any, Optional\nfrom elasticsearch import Elasticsearch, AsyncElasticsearch\n\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass ElasticsearchService:\n    \"\"\"Elasticsearch operations for hybrid search.\"\"\"\n    \n    INDEX_MAPPING = {\n        \"mappings\": {\n            \"properties\": {\n                \"project_id\": {\"type\": \"keyword\"},\n                \"doc_id\": {\"type\": \"keyword\"},\n                \"chunk_id\": {\"type\": \"keyword\"},\n                \"doc_title\": {\"type\": \"text\"},\n                \"text\": {\"type\": \"text\"},\n                \"page\": {\"type\": \"integer\"},\n                \"vector\": {\n                    \"type\": \"dense_vector\",\n                    \"dims\": 768,\n                    \"index\": True,\n                    \"similarity\": \"cosine\"\n                }\n            }\n        }\n    }\n    \n    def __init__(self):\n        settings = get_settings()\n        self.client = Elasticsearch(\n            hosts=[settings.elasticsearch_url],\n            api_key=settings.elasticsearch_api_key\n        )\n        self.index_name = f\"{settings.elasticsearch_index_prefix}-documents\"\n    \n    async def hybrid_search(\n        self,\n        query: str,\n        vector: List[float],\n        project_id: str,\n        k: int = 5\n    ) -> List[Dict]:\n        \"\"\"Hybrid search with BM25 + kNN + RRF.\"\"\"\n        response = self.client.search(\n            index=self.index_name,\n            body={\n                \"size\": k,\n                \"query\": {\n                    \"bool\": {\n                        \"must\": [{\"match\": {\"text\": query}}],\n                        \"filter\": [{\"term\": {\"project_id\": project_id}}]\n                    }\n                },\n                \"knn\": {\n                    \"field\": \"vector\",\n                    \"query_vector\": vector,\n                    \"k\": k,\n                    \"num_candidates\": 100\n                },\n                \"rank\": {\"rrf\": {\"window_size\": 100}}\n            }\n        )\n        \n        return [hit[\"_source\"] for hit in response[\"hits\"][\"hits\"]]\n"},
+          {"name": "firestore.py", "path": "services/firestore.py", "lines": 156, "content": "\"\"\"\nFirestore service for document metadata.\nStores document and chunk metadata with real-time sync.\n\"\"\"\nimport logging\nfrom typing import List, Dict, Any, Optional\nfrom google.cloud import firestore\n\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass FirestoreService:\n    \"\"\"Firestore operations for metadata.\"\"\"\n    \n    def __init__(self):\n        settings = get_settings()\n        self.db = firestore.Client(project=settings.gcp_project_id)\n        self.docs_collection = \"documents\"\n        self.chunks_collection = \"chunks\"\n    \n    async def save_document_metadata(self, doc_id: str, project_id: str, metadata: Dict) -> None:\n        \"\"\"Save document metadata.\"\"\"\n        doc_ref = self.db.collection(self.docs_collection).document(doc_id)\n        doc_ref.set({\n            \"project_id\": project_id,\n            **metadata,\n            \"created_at\": firestore.SERVER_TIMESTAMP\n        })\n    \n    async def list_documents(self, project_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:\n        \"\"\"List documents in a project.\"\"\"\n        query = self.db.collection(self.docs_collection)\\\n            .where(\"project_id\", \"==\", project_id)\\\n            .limit(limit)\\\n            .offset(offset)\n        \n        return [doc.to_dict() for doc in query.stream()]\n"},
+          {"name": "gcs.py", "path": "services/gcs.py", "lines": 189, "content": "\"\"\"\nGoogle Cloud Storage service for document storage.\nHandles raw and processed document files.\n\"\"\"\nimport logging\nfrom typing import Optional\nfrom google.cloud import storage\nfrom fastapi import UploadFile\n\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass GCSService:\n    \"\"\"GCS operations for document storage.\"\"\"\n    \n    def __init__(self):\n        settings = get_settings()\n        self.client = storage.Client(project=settings.gcp_project_id)\n        self.raw_bucket = self.client.bucket(settings.gcs_bucket_raw)\n        self.processed_bucket = self.client.bucket(settings.gcs_bucket_processed)\n    \n    async def upload_file(self, file: UploadFile, project_id: str) -> str:\n        \"\"\"Upload file to raw bucket.\"\"\"\n        blob_name = f\"{project_id}/{file.filename}\"\n        blob = self.raw_bucket.blob(blob_name)\n        \n        content = await file.read()\n        blob.upload_from_string(content, content_type=file.content_type)\n        \n        return f\"gs://{self.raw_bucket.name}/{blob_name}\"\n    \n    async def upload_local_file(self, file_path: str, project_id: str) -> str:\n        \"\"\"Upload local file to raw bucket.\"\"\"\n        import os\n        filename = os.path.basename(file_path)\n        blob_name = f\"{project_id}/{filename}\"\n        blob = self.raw_bucket.blob(blob_name)\n        \n        blob.upload_from_filename(file_path)\n        \n        return f\"gs://{self.raw_bucket.name}/{blob_name}\"\n"},
+          {"name": "ingestion.py", "path": "services/ingestion.py", "lines": 267, "content": "\"\"\"\nIngestion service for document processing pipeline.\nOrchestrates: Upload → OCR → Chunking → Embedding → Indexing\n\"\"\"\nimport logging\nimport uuid\nfrom typing import Dict, Any, List\n\nfrom services.document_ai import DocumentAIService\nfrom services.vertex_ai import VertexAIService\nfrom services.elasticsearch import ElasticsearchService\nfrom services.firestore import FirestoreService\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass IngestionService:\n    \"\"\"Document ingestion pipeline.\"\"\"\n    \n    def __init__(self):\n        self.doc_ai = DocumentAIService()\n        self.vertex_ai = VertexAIService()\n        self.elasticsearch = ElasticsearchService()\n        self.firestore = FirestoreService()\n    \n    async def process_document(\n        self,\n        gcs_uri: str,\n        project_id: str,\n        doc_title: str\n    ) -> Dict[str, Any]:\n        \"\"\"Process a document through the full pipeline.\"\"\"\n        doc_id = str(uuid.uuid4())\n        \n        # Step 1: Extract text with Document AI\n        extraction = await self.doc_ai.extract_text(gcs_uri)\n        \n        # Step 2: Chunk the text\n        chunks = self._chunk_text(extraction[\"text\"], doc_id)\n        \n        # Step 3: Generate embeddings\n        texts = [c[\"text\"] for c in chunks]\n        embeddings = self.vertex_ai.generate_embeddings(texts)\n        \n        # Step 4: Index in Elasticsearch\n        for chunk, embedding in zip(chunks, embeddings):\n            chunk[\"vector\"] = embedding\n            chunk[\"project_id\"] = project_id\n            chunk[\"doc_title\"] = doc_title\n            await self.elasticsearch.index_chunk(chunk)\n        \n        # Step 5: Save metadata to Firestore\n        await self.firestore.save_document_metadata(doc_id, project_id, {\n            \"title\": doc_title,\n            \"gcs_uri\": gcs_uri,\n            \"num_chunks\": len(chunks),\n            \"num_pages\": extraction[\"pages\"]\n        })\n        \n        return {\"doc_id\": doc_id, \"num_chunks\": len(chunks)}\n"},
+          {"name": "table_analysis.py", "path": "services/table_analysis.py", "lines": 342, "content": "\"\"\"\nTable analysis service for batch document analysis.\nExtracts structured data from documents based on custom columns.\n\"\"\"\nimport logging\nimport uuid\nfrom typing import List, Dict, Any\n\nfrom services.vertex_ai import VertexAIService\nfrom services.elasticsearch import ElasticsearchService\nfrom services.firestore import FirestoreService\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass TableAnalysisService:\n    \"\"\"Batch document analysis with custom columns.\"\"\"\n    \n    def __init__(self):\n        self.vertex_ai = VertexAIService()\n        self.elasticsearch = ElasticsearchService()\n        self.firestore = FirestoreService()\n    \n    async def start_analysis(\n        self,\n        project_id: str,\n        doc_ids: List[str],\n        columns: List[Dict]\n    ) -> str:\n        \"\"\"Start batch analysis job.\"\"\"\n        job_id = str(uuid.uuid4())\n        \n        # Queue analysis tasks\n        for doc_id in doc_ids:\n            await self._analyze_document(project_id, doc_id, columns, job_id)\n        \n        return job_id\n    \n    async def _analyze_document(\n        self,\n        project_id: str,\n        doc_id: str,\n        columns: List[Dict],\n        job_id: str\n    ) -> Dict:\n        \"\"\"Analyze a single document.\"\"\"\n        # Get document chunks\n        chunks = await self.elasticsearch.get_document_chunks(doc_id, project_id)\n        context = \"\\n\\n\".join([c[\"text\"] for c in chunks])\n        \n        # Generate structured output with Gemini\n        result = await self.vertex_ai.extract_structured_data(\n            context=context,\n            columns=columns\n        )\n        \n        return result\n"},
+          {"name": "vertex_ai.py", "path": "services/vertex_ai.py", "lines": 260, "content": "\"\"\"\nVertex AI service for embeddings and LLM (Gemini).\nUsed for generating text embeddings and powering the Q&A system.\n\"\"\"\nimport logging\nimport os\nfrom typing import List, Dict, Any, Optional\nfrom google.oauth2 import service_account\nimport vertexai\nfrom vertexai.language_models import TextEmbeddingModel, TextEmbeddingInput\nfrom vertexai.generative_models import GenerativeModel, GenerationConfig\n\nfrom config import get_settings\n\nlogger = logging.getLogger(__name__)\n\n\nclass VertexAIService:\n    \"\"\"Vertex AI operations for embeddings and LLM.\"\"\"\n    \n    def __init__(self):\n        settings = get_settings()\n        vertexai.init(\n            project=settings.gcp_project_id,\n            location=settings.vertex_ai_location\n        )\n        \n        self.embedding_model = TextEmbeddingModel.from_pretrained(\n            settings.vertex_ai_embedding_model\n        )\n        self.llm = GenerativeModel(settings.vertex_ai_llm_model)\n    \n    def generate_embeddings(self, texts: List[str]) -> List[List[float]]:\n        \"\"\"Generate embeddings for a list of texts.\"\"\"\n        inputs = [TextEmbeddingInput(text=t, task_type=\"RETRIEVAL_DOCUMENT\") for t in texts]\n        embeddings = self.embedding_model.get_embeddings(inputs)\n        return [e.values for e in embeddings]\n    \n    def generate_query_embedding(self, query: str) -> List[float]:\n        \"\"\"Generate embedding for a query.\"\"\"\n        inputs = [TextEmbeddingInput(text=query, task_type=\"RETRIEVAL_QUERY\")]\n        embeddings = self.embedding_model.get_embeddings(inputs)\n        return embeddings[0].values\n    \n    async def generate_answer(self, query: str, context: str) -> str:\n        \"\"\"Generate answer using Gemini.\"\"\"\n        prompt = f\"\"\"You are a legal document analyst. Answer the question using ONLY the provided context.\nAlways cite sources using [1], [2], etc.\n\nContext:\n{context}\n\nQuestion: {query}\n\nAnswer:\"\"\"\n        \n        response = self.llm.generate_content(\n            prompt,\n            generation_config=GenerationConfig(\n                temperature=0.2,\n                max_output_tokens=2048\n            )\n        )\n        return response.text\n"}
+        ]
+      }
+    ],
+    "shared": {
+      "path": "",
+      "files": [
+        {"name": "main.py", "path": "main.py", "lines": 112, "content": "\"\"\"\nClause Backend API - FastAPI Application\nLegal AI workbench with hybrid search and multi-agent system\n\"\"\"\nimport logging\nfrom contextlib import asynccontextmanager\nfrom fastapi import FastAPI, HTTPException, Depends\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom fastapi.responses import JSONResponse\n\nfrom config import get_settings, Settings\nfrom services.elasticsearch import ElasticsearchService\nfrom services.gcs import GCSService\nfrom services.firestore import FirestoreService\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger(__name__)\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    \"\"\"Manage application startup and shutdown.\"\"\"\n    logger.info(\"Starting Clause backend API...\")\n    yield\n    logger.info(\"Shutting down Clause backend API...\")\n\n\napp = FastAPI(\n    title=\"Clause API\",\n    description=\"Legal AI workbench with hybrid search and multi-agent system\",\n    version=\"0.1.0\",\n    lifespan=lifespan\n)\n\nsettings = get_settings()\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=settings.cors_origins_list,\n    allow_credentials=True,\n    allow_methods=[\"*\"],\n    allow_headers=[\"*\"],\n)\n\n\n@app.get(\"/healthz\")\nasync def health_check():\n    return {\"status\": \"healthy\", \"service\": \"clause-api\"}\n\n\n@app.get(\"/\")\nasync def root():\n    return {\"name\": \"Clause API\", \"version\": \"0.1.0\", \"status\": \"running\"}\n\n\nfrom routes import upload, ask, documents, qa, batch_upload, browser_upload, table_analysis\n\napp.include_router(upload.router, prefix=\"/api\", tags=[\"upload\"])\napp.include_router(ask.router, prefix=\"/api\", tags=[\"ask\"])\napp.include_router(documents.router, prefix=\"/api\", tags=[\"documents\"])\napp.include_router(qa.router, prefix=\"/api\", tags=[\"qa\"])\napp.include_router(batch_upload.router, prefix=\"/api\", tags=[\"batch-upload\"])\napp.include_router(browser_upload.router, prefix=\"/api\", tags=[\"browser-upload\"])\napp.include_router(table_analysis.router, prefix=\"/api\", tags=[\"table-analysis\"])\n"},
+        {"name": "config.py", "path": "config.py", "lines": 89, "content": "\"\"\"\nConfiguration settings for Clause Backend API.\nUses pydantic-settings for environment variable management.\n\"\"\"\nfrom functools import lru_cache\nfrom pydantic_settings import BaseSettings\nfrom typing import List\nfrom pathlib import Path\n\n\nclass Settings(BaseSettings):\n    \"\"\"Application settings loaded from environment variables.\"\"\"\n    \n    # API Settings\n    api_host: str = \"0.0.0.0\"\n    api_port: int = 8002\n    log_level: str = \"INFO\"\n    cors_origins: str = \"http://localhost:3000,http://localhost:3002\"\n    \n    # GCP Settings\n    gcp_project_id: str\n    gcp_credentials_path: Path = Path(\"gcp-credentials.json\")\n    \n    # Cloud Storage\n    gcs_bucket_raw: str\n    gcs_bucket_processed: str\n    \n    # Elasticsearch\n    elasticsearch_url: str = \"http://localhost:9200\"\n    elasticsearch_api_key: str = \"\"\n    elasticsearch_index_prefix: str = \"clause\"\n    \n    # Vertex AI\n    vertex_ai_location: str = \"us-central1\"\n    vertex_ai_embedding_model: str = \"text-embedding-004\"\n    vertex_ai_llm_model: str = \"gemini-2.0-flash\"\n    \n    # Document AI\n    document_ai_processor_id: str = \"\"\n    \n    @property\n    def cors_origins_list(self) -> List[str]:\n        return [origin.strip() for origin in self.cors_origins.split(\",\")]\n    \n    class Config:\n        env_file = \".env.local\"\n        env_file_encoding = \"utf-8\"\n\n\n@lru_cache()\ndef get_settings() -> Settings:\n    return Settings()\n"},
+        {"name": "requirements.txt", "path": "requirements.txt", "lines": 28, "content": "fastapi==0.109.0\nuvicorn[standard]==0.27.0\npython-multipart==0.0.6\npydantic==2.5.3\npydantic-settings==2.1.0\n\n# Google Cloud\ngoogle-cloud-storage==2.14.0\ngoogle-cloud-firestore==2.14.0\ngoogle-cloud-documentai==2.20.0\ngoogle-cloud-aiplatform==1.38.0\nvertexai==1.38.0\n\n# Elasticsearch\nelasticsearch==8.11.0\n\n# Utilities\npython-dotenv==1.0.0\naiofiles==23.2.1\nhttpx==0.26.0\n"},
+        {"name": "Dockerfile", "path": "Dockerfile", "lines": 31, "content": "# Dockerfile for Clause Backend API\nFROM python:3.11-slim\n\nWORKDIR /app\n\nRUN apt-get update && apt-get install -y \\\n    build-essential \\\n    curl \\\n    && rm -rf /var/lib/apt/lists/*\n\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\nCOPY . .\n\nEXPOSE 8002\n\nENV PYTHONUNBUFFERED=1\nENV PORT=8080\n\nCMD exec python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}\n"},
+        {"name": "README.md", "path": "README.md", "lines": 156, "content": "# Clause Backend API\n\nLegal AI workbench with hybrid search and multi-agent system.\n\n## Features\n\n- **Hybrid Search**: BM25 + Vector + RRF fusion\n- **Document Processing**: OCR with Document AI\n- **Q&A with Citations**: Gemini-powered answers\n- **Table Analysis**: Batch document analysis\n\n## Services\n\n- **Elasticsearch**: Hybrid search index\n- **Vertex AI**: Embeddings & Gemini LLM\n- **Document AI**: OCR processing\n- **Firestore**: Document metadata\n- **Cloud Storage**: Raw & processed files\n\n## Quick Start\n\n```bash\n# Install dependencies\npip install -r requirements.txt\n\n# Run locally\npython -m uvicorn main:app --reload --port 8002\n```\n\n## API Endpoints\n\n- `POST /api/upload` - Upload documents\n- `POST /api/qa` - Q&A with citations\n- `GET /api/documents` - List documents\n- `POST /api/table/analyze` - Batch analysis\n"}
+      ]
+    }
+  },
+  "deployed_resources": [
+    {
+      "id": "clause-api",
+      "name": "clause-api",
+      "type": "cloudrun",
+      "category": "compute",
+      "status": "deployed",
+      "region": "us-central1",
+      "cloud_provider": "gcp",
+      "cloud_id": "projects/artful-journey-486915-a8/locations/us-central1/services/clause-api",
+      "cloud_arn": "projects/artful-journey-486915-a8/locations/us-central1/services/clause-api",
+      "created_at": "2026-02-01T14:30:00Z",
+      "updated_at": "2026-02-09T09:45:00Z",
+      "version": "v47",
+      "dependencies": ["clause-db", "clause-search", "clause-metadata", "clause-lb-prod"],
+      "metadata": {
+        "runtime": "python311",
+        "memory": "2Gi",
+        "cpu": "4",
+        "minInstances": 2,
+        "maxInstances": 20,
+        "url": "https://clause-api-1005432364863.us-central1.run.app"
+      }
+    },
+    {
+      "id": "clause-db",
+      "name": "clause-db",
+      "type": "cloudsql",
+      "category": "database",
+      "status": "deployed",
+      "region": "us-central1",
+      "cloud_provider": "gcp",
+      "cloud_id": "artful-journey-486915-a8:us-central1:clause-db",
+      "cloud_arn": "projects/artful-journey-486915-a8/instances/clause-db",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-01T12:00:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "metadata": {
+        "engine": "postgres",
+        "version": "15",
+        "tier": "db-g1-small",
+        "diskSize": "50GB",
+        "highAvailability": true,
+        "connectionName": "artful-journey-486915-a8:us-central1:clause-db"
+      }
+    },
+    {
+      "id": "clause-search",
+      "name": "clause-search",
+      "type": "elasticsearch",
+      "category": "database",
+      "status": "deployed",
+      "region": "us-central1",
+      "cloud_provider": "elastic",
+      "cloud_id": "clause-search-cluster",
+      "cloud_arn": "deployments/clause-search-cluster",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-09T06:00:00Z",
+      "version": "8.11",
+      "dependencies": [],
+      "metadata": {
+        "endpoint": "https://clause-search.us-central1.gcp.elastic-cloud.com:9243",
+        "nodeCount": 3,
+        "vectorDimensions": 768,
+        "documentsIndexed": 47823
+      }
+    },
+    {
+      "id": "clause-metadata",
+      "name": "clause-metadata",
+      "type": "firestore",
+      "category": "database",
+      "status": "deployed",
+      "region": "us-central1",
+      "cloud_provider": "gcp",
+      "cloud_id": "projects/artful-journey-486915-a8/databases/(default)",
+      "cloud_arn": "projects/artful-journey-486915-a8/databases/(default)",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-09T10:30:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "metadata": {
+        "mode": "native",
+        "collections": 3,
+        "documentsCount": 156789
+      }
+    },
+    {
+      "id": "clause-raw-documents",
+      "name": "clause-raw-documents",
+      "type": "gcs",
+      "category": "storage",
+      "status": "deployed",
+      "region": "us-central1",
+      "cloud_provider": "gcp",
+      "cloud_id": "clause-raw-documents",
+      "cloud_arn": "gs://clause-raw-documents",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-09T10:30:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "metadata": {
+        "storageClass": "STANDARD",
+        "versioning": true,
+        "sizeGB": 234.5,
+        "objectCount": 12456
+      }
+    },
+    {
+      "id": "clause-processed",
+      "name": "clause-processed",
+      "type": "gcs",
+      "category": "storage",
+      "status": "deployed",
+      "region": "us-central1",
+      "cloud_provider": "gcp",
+      "cloud_id": "clause-processed",
+      "cloud_arn": "gs://clause-processed",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-09T10:30:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "metadata": {
+        "storageClass": "STANDARD",
+        "versioning": false,
+        "sizeGB": 89.2,
+        "objectCount": 47823
+      }
+    },
+    {
+      "id": "clause-events",
+      "name": "clause-events",
+      "type": "pubsub",
+      "category": "networking",
+      "status": "deployed",
+      "region": "global",
+      "cloud_provider": "gcp",
+      "cloud_id": "projects/artful-journey-486915-a8/topics/clause-events",
+      "cloud_arn": "projects/artful-journey-486915-a8/topics/clause-events",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-01T12:00:00Z",
+      "version": "v1",
+      "dependencies": [],
+      "metadata": {
+        "topics": ["document-uploaded", "processing-complete", "analysis-ready"],
+        "subscriptions": 3,
+        "messagesPerDay": 5432
+      }
+    },
+    {
+      "id": "clause-lb-prod",
+      "name": "clause-lb-prod",
+      "type": "loadbalancer",
+      "category": "networking",
+      "status": "deployed",
+      "region": "global",
+      "cloud_provider": "gcp",
+      "cloud_id": "projects/artful-journey-486915-a8/global/urlMaps/clause-lb-prod",
+      "cloud_arn": "projects/artful-journey-486915-a8/global/urlMaps/clause-lb-prod",
+      "created_at": "2026-02-01T12:00:00Z",
+      "updated_at": "2026-02-01T12:00:00Z",
+      "version": "v1",
+      "dependencies": ["clause-api"],
+      "metadata": {
+        "protocol": "HTTPS",
+        "ip": "34.117.89.123",
+        "domain": "api.clause.legal",
+        "sslPolicy": "MODERN"
+      }
+    }
+  ],
+  "secrets": {
+    "configured": [
+      {
+        "name": "GCP_PROJECT_ID",
+        "description": "GCP Project ID for clause services",
+        "source": "gcp_secret_manager",
+        "last_rotated": "2026-02-01T12:00:00Z"
+      },
+      {
+        "name": "DOCUMENT_AI_PROCESSOR_ID",
+        "description": "Document AI OCR processor ID",
+        "source": "gcp_secret_manager",
+        "last_rotated": "2026-02-01T12:00:00Z"
+      },
+      {
+        "name": "ELASTICSEARCH_URL",
+        "description": "Elastic Cloud endpoint URL",
+        "source": "gcp_secret_manager",
+        "last_rotated": "2026-02-01T12:00:00Z"
+      },
+      {
+        "name": "ELASTICSEARCH_API_KEY",
+        "description": "Elastic Cloud API key for authentication",
+        "source": "gcp_secret_manager",
+        "last_rotated": "2026-02-01T12:00:00Z"
+      },
+      {
+        "name": "GCS_BUCKET_RAW",
+        "description": "Cloud Storage bucket for raw documents",
+        "source": "gcp_secret_manager",
+        "last_rotated": "2026-02-01T12:00:00Z"
+      },
+      {
+        "name": "GCS_BUCKET_PROCESSED",
+        "description": "Cloud Storage bucket for processed documents",
+        "source": "gcp_secret_manager",
+        "last_rotated": "2026-02-01T12:00:00Z"
+      }
+    ],
+    "pending": [],
+    "note": "GCP service authentication uses Application Default Credentials (ADC). Elasticsearch requires API key for Elastic Cloud."
+  },
+  "deployments": [
+    {
+      "id": "deploy-001",
+      "version": "v47",
+      "status": "success",
+      "deployed_at": "2026-02-09T09:45:00Z",
+      "deployed_by": "jetrun-agent",
+      "commit_sha": "a3f7e9b",
+      "commit_message": "feat: Add batch document analysis with custom columns",
+      "duration_seconds": 127,
+      "services_updated": ["clause-api", "clause-frontend"]
+    },
+    {
+      "id": "deploy-002",
+      "version": "v46",
+      "status": "success",
+      "deployed_at": "2026-02-08T16:20:00Z",
+      "deployed_by": "jetrun-agent",
+      "commit_sha": "b2c8d1a",
+      "commit_message": "fix: Elasticsearch query optimization for large documents",
+      "duration_seconds": 98,
+      "services_updated": ["clause-api"]
+    },
+    {
+      "id": "deploy-003",
+      "version": "v45",
+      "status": "success",
+      "deployed_at": "2026-02-07T11:30:00Z",
+      "deployed_by": "jetrun-agent",
+      "commit_sha": "c9d2e3f",
+      "commit_message": "feat: PDF bbox highlighting in document viewer",
+      "duration_seconds": 145,
+      "services_updated": ["clause-frontend"]
+    }
+  ],
+  "pending_changes": [],
+  "approval_workflow": {
+    "enabled": false,
+    "requires_approval_for": []
+  },
+  "environments": {
+    "dev": {
+      "status": "deployed",
+      "last_deployed": "2026-02-09T09:45:00Z",
+      "endpoint_url": "https://dev-api.clause.legal"
+    },
+    "staging": {
+      "status": "deployed",
+      "last_deployed": "2026-02-08T16:20:00Z",
+      "endpoint_url": "https://staging-api.clause.legal"
+    },
+    "prod": {
+      "status": "deployed",
+      "last_deployed": "2026-02-07T11:30:00Z",
+      "endpoint_url": "https://api.clause.legal"
+    }
+  }
+}

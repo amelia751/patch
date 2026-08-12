@@ -91,6 +91,7 @@ T-services-github_tools|verify_services_github_tools.sh|yes|900|live GitHub App 
 T-agents-adk|verify_agents_adk.sh|yes|1200|live ADK turn against Gemini 3.5 Flash
 T-gemini-live|verify_gemini_live.sh|yes|900|live reasoning + live image, both required
 T-db|verify_db.sh|yes|1200|needs a running Docker daemon
+T-control-api-reads|verify_control_api_reads.sh|yes|1200|dashboard read path against seeded Postgres; needs a running Docker daemon
 T-sandbox-local|verify_sandbox_local.sh|yes|1800|needs a running Docker daemon
 T-apps-web|verify_apps_web.sh|yes|1800|npm ci + next build + HTTP probe
 T-apps-web-browser|verify_apps_web_browser.sh|yes|1800|Playwright against a local Next server

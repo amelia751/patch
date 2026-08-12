@@ -1,0 +1,91 @@
+{
+  "mockUser": {
+    "name": "Demo User",
+    "email": "demo@clause.legal",
+    "avatar": null
+  },
+  "mockProjects": [
+    {
+      "id": "proj_clause_001",
+      "name": "Clause",
+      "slug": "clause-frontend",
+      "status": "active",
+      "cloud_provider": "gcp",
+      "description": "Backend API for legal document analysis with hybrid search (Elasticsearch + Vertex AI), document processing (Document AI), and multi-agent Q&A system"
+    }
+  ],
+  "project": {
+    "id": "proj_clause_001",
+    "name": "Clause",
+    "slug": "clause-frontend",
+    "status": "active",
+    "cloud_provider": "gcp",
+    "description": "Backend API for legal document analysis with hybrid search (Elasticsearch + Vertex AI), document processing (Document AI), and multi-agent Q&A system"
+  },
+  "github": {
+    "frontend_repo": {
+      "id": 1,
+      "name": "clause-frontend",
+      "full_name": "anhlam/clause",
+      "private": false,
+      "stars": 234,
+      "language": "TypeScript",
+      "default_branch": "main",
+      "clone_url": "https://github.com/anhlam/clause.git"
+    },
+    "backend_repo": {
+      "id": 2,
+      "name": "clause-backend",
+      "full_name": "anhlam/clause",
+      "private": false,
+      "stars": 234,
+      "language": "Python",
+      "default_branch": "main",
+      "clone_url": "https://github.com/anhlam/clause.git"
+    }
+  },
+  "tech_stack": {
+    "frontend": {
+      "framework": "Next.js 14",
+      "language": "TypeScript",
+      "styling": "Tailwind CSS",
+      "auth": "Identity Platform",
+      "orm": "Prisma"
+    },
+    "backend": {
+      "framework": "FastAPI",
+      "language": "Python 3.11",
+      "search": "Elasticsearch 8.11",
+      "database": "PostgreSQL 15",
+      "storage": "Cloud Storage",
+      "ai": "Vertex AI (Gemini 1.5 Pro)"
+    }
+  },
+  "features": [
+    {
+      "name": "Hybrid Search",
+      "description": "BM25 + Vector + RRF for accurate document retrieval",
+      "status": "deployed"
+    },
+    {
+      "name": "Document Processing",
+      "description": "OCR, form parsing, and entity extraction via Document AI",
+      "status": "deployed"
+    },
+    {
+      "name": "Q&A with Citations",
+      "description": "Ask questions with source citations and PDF highlighting",
+      "status": "deployed"
+    },
+    {
+      "name": "Batch Analysis",
+      "description": "Custom column extraction across document collections",
+      "status": "deployed"
+    },
+    {
+      "name": "Evidence Discovery",
+      "description": "Automated metadata extraction for legal evidence",
+      "status": "deployed"
+    }
+  ]
+}

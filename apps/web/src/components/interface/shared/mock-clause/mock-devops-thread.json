@@ -1,0 +1,188 @@
+{
+  "thread": {
+    "id": "clause-devops-2",
+    "threadNumber": 2,
+    "title": "Deploy clause-backend to GCP",
+    "status": "in_progress",
+    "createdAt": "10 min ago",
+    "updatedAt": "Just now",
+    "messageCount": 4,
+    "activityCount": 12,
+    "preview": "Provisioning GCP resources: Cloud Run, GCS buckets, Firestore, Document AI, and Elasticsearch integration."
+  },
+  "messages": [
+    {
+      "id": "msg-1",
+      "author": "agent",
+      "content": "I'll recreate the complete Clause backend infrastructure on GCP. This includes:\n\n**Core Services:**\n- Cloud Run service for FastAPI backend\n- Cloud Storage buckets (raw documents + processed)\n- Firestore for document chunk metadata\n- Document AI processor for OCR\n\n**Search & AI:**\n- Elasticsearch for hybrid search (BM25 + vectors)\n- Vertex AI for embeddings (text-embedding-004)\n- Gemini 2.5 Pro for Q&A with citations\n\n**Event Processing:**\n- Pub/Sub for async document pipeline\n- Cloud Tasks for batch analysis jobs\n\nStarting with infrastructure provisioning...",
+      "timestamp": "10 min ago",
+      "activities": "__CLAUSE_ACTIVITIES__"
+    },
+    {
+      "id": "msg-2",
+      "author": "user",
+      "content": "Looks good. Make sure to set up the Elasticsearch index with the correct vector dimensions (768) for the embedding model.",
+      "timestamp": "8 min ago"
+    },
+    {
+      "id": "msg-3",
+      "author": "agent",
+      "content": "Good point! I've configured the Elasticsearch index `clause-documents` with:\n- `dense_vector` field with 768 dimensions matching text-embedding-004\n- Cosine similarity for vector search\n- RRF (Reciprocal Rank Fusion) for hybrid BM25 + vector results\n\nNow generating the backend codebase and deploying to Cloud Run...",
+      "timestamp": "7 min ago",
+      "activities": "__CLAUSE_CODEBASE_ACTIVITIES__"
+    },
+    {
+      "id": "msg-4",
+      "author": "agent",
+      "content": "Backend deployed successfully! Now integrating with the frontend...\n\nCreating API SDK in `lib/api.ts` with typed functions for:\n- Document upload and management\n- Q&A with citations\n- Table analysis with custom columns\n\nUpdating frontend components to use real backend API instead of mock data.",
+      "timestamp": "2 min ago",
+      "activities": "__CLAUSE_FRONTEND_ACTIVITIES__"
+    }
+  ],
+  "activities": {
+    "__CLAUSE_ACTIVITIES__": [
+      {
+        "id": "gcp-auth",
+        "status": "completed",
+        "title": "Authenticated with GCP",
+        "duration": "0.8s",
+        "content": "**Setting up GCP authentication**\n\nConfiguring service account credentials for deployment.\n\n```bash\n$ export GOOGLE_APPLICATION_CREDENTIALS=\"gcp-credentials.json\"\n$ gcloud auth activate-service-account \\\n    --key-file=gcp-credentials.json\n\nActivated service account credentials for:\n[development@artful-journey-486915-a8.iam.gserviceaccount.com]\n\n$ gcloud config set project artful-journey-486915-a8\nUpdated property [core/project].\n```\n\n✓ Service account authenticated\n✓ Project set to artful-journey-486915-a8"
+      },
+      {
+        "id": "enable-apis",
+        "status": "completed",
+        "title": "Enabled GCP APIs (8)",
+        "duration": "12.3s",
+        "content": "**Enabling required GCP APIs**\n\n```bash\n$ gcloud services enable \\\n    run.googleapis.com \\\n    documentai.googleapis.com \\\n    aiplatform.googleapis.com \\\n    storage.googleapis.com \\\n    firestore.googleapis.com \\\n    pubsub.googleapis.com \\\n    cloudtasks.googleapis.com \\\n    cloudbuild.googleapis.com\n\nOperation \"operations/acat.p2-123456789\" finished successfully.\n```\n\n✓ Cloud Run API enabled\n✓ Document AI API enabled\n✓ Vertex AI API enabled\n✓ Cloud Storage API enabled\n✓ Firestore API enabled\n✓ Pub/Sub API enabled\n✓ Cloud Tasks API enabled\n✓ Cloud Build API enabled"
+      },
+      {
+        "id": "gcs-buckets",
+        "status": "completed",
+        "title": "Created GCS Buckets (2)",
+        "duration": "2.1s",
+        "content": "**Creating Cloud Storage buckets for document storage**\n\nSetting up two buckets:\n- `clause-raw-artful` - Raw uploaded documents (PDFs, DOCX, images)\n- `clause-processed-artful` - Processed text and extracted content\n\n```bash\n$ gsutil mb -l us-central1 -c STANDARD gs://clause-raw-artful/\nCreating gs://clause-raw-artful/...\n\n$ gsutil mb -l us-central1 -c STANDARD gs://clause-processed-artful/\nCreating gs://clause-processed-artful/...\n\n# Enable versioning on raw bucket for audit trail\n$ gsutil versioning set on gs://clause-raw-artful/\nEnabling versioning for gs://clause-raw-artful/...\n\n# Set lifecycle policy for processed bucket\n$ cat > lifecycle.json << 'EOF'\n{\n  \"rule\": [{\n    \"action\": {\"type\": \"Delete\"},\n    \"condition\": {\"age\": 365}\n  }]\n}\nEOF\n\n$ gsutil lifecycle set lifecycle.json gs://clause-processed-artful/\nSetting lifecycle configuration on gs://clause-processed-artful/...\n```\n\n✓ Raw bucket: gs://clause-raw-artful/ (versioning enabled)\n✓ Processed bucket: gs://clause-processed-artful/ (365-day lifecycle)"
+      },
+      {
+        "id": "firestore",
+        "status": "completed",
+        "title": "Created Firestore Database",
+        "duration": "8.5s",
+        "content": "**Setting up Firestore for document metadata**\n\nConfiguring native mode Firestore in us-central1:\n\n```bash\n$ gcloud firestore databases create \\\n    --location=us-central1 \\\n    --type=firestore-native\n\nCreating database... Done.\nDatabase created: projects/artful-journey-486915-a8/databases/(default)\n```\n\n**Creating composite index for efficient queries**\n\n```bash\n$ cat > firestore-indexes.json << 'EOF'\n{\n  \"indexes\": [{\n    \"collectionGroup\": \"chunks\",\n    \"queryScope\": \"COLLECTION\",\n    \"fields\": [\n      {\"fieldPath\": \"project_id\", \"order\": \"ASCENDING\"},\n      {\"fieldPath\": \"doc_id\", \"order\": \"ASCENDING\"},\n      {\"fieldPath\": \"page\", \"order\": \"ASCENDING\"}\n    ]\n  }]\n}\nEOF\n\n$ gcloud firestore indexes composite create \\\n    --collection-group=chunks \\\n    --field-config=field-path=project_id,order=ascending \\\n    --field-config=field-path=doc_id,order=ascending \\\n    --field-config=field-path=page,order=ascending\n\nCreating index... Done.\n```\n\n✓ Firestore database: (default) in us-central1\n✓ Composite index created for chunks collection"
+      },
+      {
+        "id": "document-ai",
+        "status": "completed",
+        "title": "Created Document AI Processor",
+        "duration": "15.2s",
+        "content": "**Provisioning Document AI Form Parser**\n\nCreating OCR-enabled processor for legal document extraction:\n\n```bash\n$ curl -X POST \\\n  -H \"Authorization: Bearer $(gcloud auth print-access-token)\" \\\n  -H \"Content-Type: application/json\" \\\n  \"https://us-documentai.googleapis.com/v1/projects/1005432364863/locations/us/processors\" \\\n  -d '{\n    \"type\": \"FORM_PARSER_PROCESSOR\",\n    \"displayName\": \"clause-doc-processor\"\n  }'\n\n{\n  \"name\": \"projects/1005432364863/locations/us/processors/33319aaf8ffed055\",\n  \"type\": \"FORM_PARSER_PROCESSOR\",\n  \"displayName\": \"clause-doc-processor\",\n  \"state\": \"ENABLED\"\n}\n```\n\n**Verifying processor capabilities**\n\n```bash\n$ curl -X GET \\\n  -H \"Authorization: Bearer $(gcloud auth print-access-token)\" \\\n  \"https://us-documentai.googleapis.com/v1/projects/1005432364863/locations/us/processors/33319aaf8ffed055\"\n\n{\n  \"name\": \"clause-doc-processor\",\n  \"state\": \"ENABLED\",\n  \"defaultProcessorVersion\": \"pretrained-form-parser-v2.1-2024-04-30\"\n}\n```\n\n✓ Processor ID: 33319aaf8ffed055\n✓ Type: FORM_PARSER_PROCESSOR\n✓ OCR enabled with multi-language support (en, de, fr)"
+      },
+      {
+        "id": "elasticsearch",
+        "status": "completed",
+        "title": "Configured Elasticsearch Index",
+        "duration": "3.4s",
+        "content": "**Setting up Elasticsearch for hybrid search**\n\nStarting local Elasticsearch container for development:\n\n```bash\n$ docker run -d --name clause-elasticsearch \\\n    -p 9200:9200 \\\n    -e \"discovery.type=single-node\" \\\n    -e \"xpack.security.enabled=false\" \\\n    elasticsearch:8.11.0\n\nab12cd34ef56: Pull complete\nDigest: sha256:abc123...\nStatus: Downloaded newer image for elasticsearch:8.11.0\nContainer ID: 7f8a9b0c1d2e\n\n$ curl -s http://localhost:9200\n{\n  \"name\" : \"abc123\",\n  \"cluster_name\" : \"docker-cluster\",\n  \"version\" : {\n    \"number\" : \"8.11.0\"\n  },\n  \"tagline\" : \"You Know, for Search\"\n}\n```\n\n**Creating clause-documents index with hybrid search mappings**\n\n```bash\n$ curl -X PUT \"http://localhost:9200/clause-documents\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"mappings\": {\n      \"properties\": {\n        \"project_id\": {\"type\": \"keyword\"},\n        \"doc_id\": {\"type\": \"keyword\"},\n        \"chunk_id\": {\"type\": \"keyword\"},\n        \"doc_title\": {\"type\": \"text\", \"analyzer\": \"english\"},\n        \"section_path\": {\"type\": \"text\"},\n        \"text\": {\"type\": \"text\", \"analyzer\": \"english\"},\n        \"page\": {\"type\": \"integer\"},\n        \"vector\": {\n          \"type\": \"dense_vector\",\n          \"dims\": 768,\n          \"index\": true,\n          \"similarity\": \"cosine\"\n        },\n        \"tags\": {\"type\": \"keyword\"},\n        \"created_at\": {\"type\": \"date\"}\n      }\n    }\n  }'\n\n{\"acknowledged\":true,\"shards_acknowledged\":true,\"index\":\"clause-documents\"}\n```\n\n✓ Elasticsearch running on localhost:9200\n✓ Index: clause-documents with 768-dim vectors\n✓ Hybrid search ready (BM25 + cosine similarity)"
+      }
+    ],
+    "__CLAUSE_CODEBASE_ACTIVITIES__": [
+      {
+        "id": "backend-structure",
+        "status": "completed",
+        "title": "Generated Backend Structure",
+        "duration": "1.2s",
+        "content": "**Creating FastAPI backend project structure**\n\n```\nclause-backend/\n├── main.py                 # FastAPI app with all routes\n├── requirements.txt        # Python dependencies\n├── Dockerfile             # Cloud Run container\n├── .env.example           # Environment template\n├── services/\n│   ├── __init__.py\n│   ├── vertex_ai.py       # Embeddings & Gemini\n│   ├── elasticsearch.py   # Hybrid search\n│   ├── firestore.py       # Document metadata\n│   ├── document_ai.py     # OCR processing\n│   └── storage.py         # GCS operations\n└── routes/\n    ├── __init__.py\n    ├── upload.py          # Document upload endpoints\n    ├── search.py          # Q&A and search\n    └── table.py           # Table analysis\n```\n\n✓ Created 12 files\n✓ FastAPI with async support\n✓ Service layer pattern"
+      },
+      {
+        "id": "main-py",
+        "status": "completed",
+        "title": "Generated main.py",
+        "duration": "0.5s",
+        "content": "**Creating FastAPI application entry point**\n\n```diff\n--- /dev/null\n+++ clause-backend/main.py\n@@ -0,0 +1,89 @@\n+from fastapi import FastAPI, HTTPException, File, UploadFile, Query\n+from fastapi.middleware.cors import CORSMiddleware\n+from pydantic import BaseModel\n+from typing import List, Optional\n+import os\n+\n+from services.vertex_ai import VertexAIService\n+from services.elasticsearch import ElasticsearchService\n+from services.firestore import FirestoreService\n+from services.storage import StorageService\n+from services.document_ai import DocumentAIService\n+\n+app = FastAPI(\n+    title=\"Clause API\",\n+    description=\"Legal document analysis with hybrid search and AI Q&A\",\n+    version=\"0.1.0\"\n+)\n+\n+# CORS for frontend\n+app.add_middleware(\n+    CORSMiddleware,\n+    allow_origins=[\"*\"],\n+    allow_credentials=True,\n+    allow_methods=[\"*\"],\n+    allow_headers=[\"*\"],\n+)\n+\n+# Initialize services\n+vertex_ai = VertexAIService()\n+es_service = ElasticsearchService()\n+firestore = FirestoreService()\n+storage = StorageService()\n+doc_ai = DocumentAIService()\n+\n+# Pydantic models\n+class AskRequest(BaseModel):\n+    query: str\n+    project_id: str\n+    k: int = 5\n+\n+class Citation(BaseModel):\n+    doc_id: str\n+    doc_title: str\n+    page: int\n+    snippet: str\n+    score: float\n+\n+class AskResponse(BaseModel):\n+    query_id: str\n+    answer: str\n+    citations: List[Citation]\n+    num_hits: int\n+    latency_ms: float\n+\n+@app.get(\"/\")\n+async def root():\n+    return {\"name\": \"Clause API\", \"status\": \"running\"}\n+\n+@app.get(\"/healthz\")\n+async def health():\n+    return {\"status\": \"healthy\", \"service\": \"clause-api\"}\n+\n+@app.post(\"/api/ask\", response_model=AskResponse)\n+async def ask_question(request: AskRequest):\n+    \"\"\"Q&A with hybrid search and citations\"\"\"\n+    import time\n+    import uuid\n+    start = time.time()\n+    \n+    # Get embedding for query\n+    query_vector = await vertex_ai.get_embedding(request.query)\n+    \n+    # Hybrid search (BM25 + vector)\n+    hits = await es_service.hybrid_search(\n+        query=request.query,\n+        vector=query_vector,\n+        project_id=request.project_id,\n+        k=request.k\n+    )\n+    \n+    # Generate answer with Gemini\n+    answer = await vertex_ai.generate_answer(\n+        query=request.query,\n+        context_chunks=hits\n+    )\n+    \n+    latency = (time.time() - start) * 1000\n+    return AskResponse(\n+        query_id=str(uuid.uuid4()),\n+        answer=answer,\n+        citations=[...],  # Map from hits\n+        num_hits=len(hits),\n+        latency_ms=latency\n+    )\n```\n\n✓ FastAPI app with CORS\n✓ Q&A endpoint with hybrid search\n✓ Health check endpoints"
+      },
+      {
+        "id": "vertex-service",
+        "status": "completed",
+        "title": "Generated Vertex AI Service",
+        "duration": "0.4s",
+        "content": "**Creating Vertex AI service for embeddings and Gemini**\n\n```diff\n--- /dev/null\n+++ clause-backend/services/vertex_ai.py\n@@ -0,0 +1,98 @@\n+import os\n+from google.cloud import aiplatform\n+from vertexai.language_models import TextEmbeddingModel\n+import google.generativeai as genai\n+\n+class VertexAIService:\n+    def __init__(self):\n+        self.project_id = os.getenv(\"GCP_PROJECT_ID\")\n+        self.location = os.getenv(\"GCP_LOCATION\", \"us-central1\")\n+        \n+        # Initialize Vertex AI\n+        aiplatform.init(project=self.project_id, location=self.location)\n+        \n+        # Embedding model\n+        self.embedding_model = TextEmbeddingModel.from_pretrained(\n+            \"text-embedding-004\"\n+        )\n+        \n+        # Gemini for Q&A\n+        genai.configure()\n+        self.llm = genai.GenerativeModel(\"gemini-2.5-pro\")\n+    \n+    async def get_embedding(self, text: str) -> list[float]:\n+        \"\"\"Get 768-dim embedding for text\"\"\"\n+        embeddings = self.embedding_model.get_embeddings([text])\n+        return embeddings[0].values\n+    \n+    async def get_embeddings_batch(self, texts: list[str]) -> list[list[float]]:\n+        \"\"\"Batch embed multiple texts\"\"\"\n+        embeddings = self.embedding_model.get_embeddings(texts)\n+        return [e.values for e in embeddings]\n+    \n+    async def generate_answer(self, query: str, context_chunks: list) -> str:\n+        \"\"\"Generate answer with Gemini using retrieved context\"\"\"\n+        context = \"\\n\\n\".join([\n+            f\"[{i+1}] {chunk['doc_title']} (Page {chunk['page']}):\\n{chunk['text']}\"\n+            for i, chunk in enumerate(context_chunks)\n+        ])\n+        \n+        prompt = f\"\"\"You are a legal document analyst. Answer the question using ONLY the provided context.\n+Always cite sources using [1], [2], etc. If you cannot answer, say so.\n+\n+Context:\n{context}\n+\n+Question: {query}\n+\n+Answer:\"\"\"\n+        \n+        response = self.llm.generate_content(\n+            prompt,\n+            generation_config={\n+                \"temperature\": 0.2,\n+                \"max_output_tokens\": 2048\n+            }\n+        )\n+        return response.text\n```\n\n✓ text-embedding-004 (768 dimensions)\n✓ Gemini 2.5 Pro for Q&A\n✓ Citation-aware prompting"
+      },
+      {
+        "id": "elasticsearch-service",
+        "status": "completed",
+        "title": "Generated Elasticsearch Service",
+        "duration": "0.4s",
+        "content": "**Creating hybrid search service**\n\n```diff\n--- /dev/null\n+++ clause-backend/services/elasticsearch.py\n@@ -0,0 +1,82 @@\n+import os\n+from elasticsearch import AsyncElasticsearch\n+\n+class ElasticsearchService:\n+    def __init__(self):\n+        self.es = AsyncElasticsearch(\n+            hosts=[os.getenv(\"ELASTICSEARCH_URL\", \"http://localhost:9200\")],\n+            api_key=os.getenv(\"ELASTICSEARCH_API_KEY\")  # Optional\n+        )\n+        self.index = \"clause-documents\"\n+    \n+    async def hybrid_search(\n+        self,\n+        query: str,\n+        vector: list[float],\n+        project_id: str,\n+        k: int = 5\n+    ) -> list[dict]:\n+        \"\"\"Hybrid search with BM25 + kNN + RRF\"\"\"\n+        \n+        response = await self.es.search(\n+            index=self.index,\n+            body={\n+                \"size\": k,\n+                \"query\": {\n+                    \"bool\": {\n+                        \"must\": [\n+                            {\"match\": {\"text\": query}}\n+                        ],\n+                        \"filter\": [\n+                            {\"term\": {\"project_id\": project_id}}\n+                        ]\n+                    }\n+                },\n+                \"knn\": {\n+                    \"field\": \"vector\",\n+                    \"query_vector\": vector,\n+                    \"k\": k,\n+                    \"num_candidates\": 100,\n+                    \"filter\": [\n+                        {\"term\": {\"project_id\": project_id}}\n+                    ]\n+                },\n+                \"rank\": {\n+                    \"rrf\": {\n+                        \"window_size\": 100,\n+                        \"rank_constant\": 60\n+                    }\n+                }\n+            }\n+        )\n+        \n+        return [{\n+            \"doc_id\": hit[\"_source\"][\"doc_id\"],\n+            \"doc_title\": hit[\"_source\"][\"doc_title\"],\n+            \"text\": hit[\"_source\"][\"text\"],\n+            \"page\": hit[\"_source\"][\"page\"],\n+            \"score\": hit[\"_score\"]\n+        } for hit in response[\"hits\"][\"hits\"]]\n+    \n+    async def index_chunk(self, chunk: dict) -> str:\n+        \"\"\"Index a document chunk\"\"\"\n+        result = await self.es.index(\n+            index=self.index,\n+            id=chunk[\"chunk_id\"],\n+            document=chunk\n+        )\n+        return result[\"_id\"]\n```\n\n✓ BM25 text search\n✓ kNN vector search (768-dim cosine)\n✓ RRF (Reciprocal Rank Fusion) for result merging"
+      },
+      {
+        "id": "cloud-run-deploy",
+        "status": "completed",
+        "title": "Deployed to Cloud Run",
+        "duration": "45.3s",
+        "content": "**Building and deploying to Cloud Run**\n\n```bash\n# Build container with Cloud Build\n$ gcloud builds submit --tag gcr.io/artful-journey-486915-a8/clause-api:latest\n\nCreating temporary archive of 12 file(s) totalling 45.2 KiB...\nUploading tarball of [.] to [gs://artful-journey-486915-a8_cloudbuild/source/...]\nWaiting for build to complete...\n\nStep 1/8 : FROM python:3.11-slim\n3.11-slim: Pulling from library/python\nStatus: Downloaded\n\nStep 2/8 : WORKDIR /app\nStep 3/8 : COPY requirements.txt .\nStep 4/8 : RUN pip install --no-cache-dir -r requirements.txt\n  Installing: fastapi uvicorn google-cloud-aiplatform...\n  Successfully installed 47 packages\n\nStep 5/8 : COPY . .\nStep 6/8 : EXPOSE 8080\nStep 7/8 : CMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8080\"]\n\nPushed gcr.io/artful-journey-486915-a8/clause-api:latest\nBuild completed in 38.2s\n```\n\n```bash\n# Deploy to Cloud Run\n$ gcloud run deploy clause-api \\\n    --image gcr.io/artful-journey-486915-a8/clause-api:latest \\\n    --platform managed \\\n    --region us-central1 \\\n    --allow-unauthenticated \\\n    --memory 2Gi \\\n    --cpu 4 \\\n    --min-instances 0 \\\n    --max-instances 20 \\\n    --set-env-vars \"GCP_PROJECT_ID=artful-journey-486915-a8,GCS_BUCKET_RAW=clause-raw-artful,ELASTICSEARCH_URL=http://localhost:9200\"\n\nDeploying container to Cloud Run service [clause-api]...\n✓ Deploying new service... Done.\n  ✓ Creating Revision... Deploying Revision.\n  ✓ Routing traffic...\n  ✓ Setting IAM Policy...\nDone.\n\nService [clause-api] revision [clause-api-00001-abc] deployed\nService URL: https://clause-api-abc123-uc.a.run.app\n```\n\n**Testing deployment**\n\n```bash\n$ curl https://clause-api-abc123-uc.a.run.app/healthz\n{\"status\":\"healthy\",\"service\":\"clause-api\"}\n```\n\n✓ Cloud Run service: clause-api\n✓ URL: https://clause-api-abc123-uc.a.run.app\n✓ Memory: 2Gi, CPU: 4\n✓ Auto-scaling: 0-20 instances"
+      },
+      {
+        "id": "e2e-test",
+        "status": "completed",
+        "title": "Ran End-to-End Pipeline Test",
+        "duration": "8.7s",
+        "content": "**Testing complete document pipeline**\n\n```bash\n# 1. Upload test document\n$ curl -X POST http://localhost:8002/api/upload/local \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"file_path\": \"test-docs/sample_nda.txt\",\n    \"project_id\": \"proj_demo_001\",\n    \"doc_title\": \"Acme Corp NDA 2024\"\n  }'\n\n{\n  \"doc_id\": \"0fe2092b-bead-4ec8-8a0e-f5f5ea31ada2\",\n  \"gcs_uri\": \"gs://clause-raw-artful/proj_demo_001/0fe2092b-bead-4ec8-8a0e-f5f5ea31ada2.txt\",\n  \"ingestion_result\": {\n    \"doc_id\": \"0fe2092b-bead-4ec8-8a0e-f5f5ea31ada2\",\n    \"status\": \"indexed\",\n    \"num_pages\": 1,\n    \"num_chunks\": 1,\n    \"num_chars\": 2746\n  }\n}\n```\n\n```bash\n# 2. Test Q&A with citations\n$ curl -X POST http://localhost:8002/api/ask \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"query\": \"What are the termination clauses?\",\n    \"project_id\": \"proj_demo_001\"\n  }'\n\n{\n  \"query_id\": \"8c38b440-839a-4e37-9b63-371c8151fb7a\",\n  \"answer\": \"The NDA outlines the following termination clauses:\\n\\n1. **Term and Termination:** The agreement is effective for three years [1].\\n2. **Termination with Notice:** Either party can terminate with 30 days notice [1].\\n3. **Immediate Termination:** Either party can terminate immediately for material breach [1].\",\n  \"citations\": [{\n    \"doc_id\": \"0fe2092b-bead-4ec8-8a0e-f5f5ea31ada2\",\n    \"doc_title\": \"Acme Corp NDA 2024\",\n    \"page\": 1,\n    \"snippet\": \"TERM AND TERMINATION 3.1 This Agreement shall remain in effect...\",\n    \"score\": 5.51\n  }],\n  \"num_hits\": 1,\n  \"latency_ms\": 1962.63\n}\n```\n\n✅ Document upload → GCS storage\n✅ Text extraction → Firestore metadata\n✅ Embedding → Elasticsearch indexing\n✅ Q&A with Gemini → Citations returned\n✅ Full pipeline: ~2s latency"
+      }
+    ],
+    "__CLAUSE_FRONTEND_ACTIVITIES__": [
+      {
+        "id": "api-sdk",
+        "status": "completed",
+        "title": "Created Frontend API SDK",
+        "duration": "0.3s",
+        "content": "**Generating typed API client for frontend**\n\n```diff\n--- /dev/null\n+++ clause-frontend/src/lib/api.ts\n@@ -0,0 +1,120 @@\n+// Generated by JetRun - Clause Backend API Client\n+\n+export interface Document {\n+  id: string;\n+  project_id: string;\n+  title: string;\n+  gcs_uri: string;\n+  status: \"pending\" | \"processing\" | \"indexed\" | \"failed\";\n+  num_pages?: number;\n+  created_at: string;\n+}\n+\n+export interface Citation {\n+  doc_id: string;\n+  doc_title: string;\n+  page: number;\n+  snippet: string;\n+  score: number;\n+}\n+\n+export interface QAResponse {\n+  query_id: string;\n+  answer: string;\n+  citations: Citation[];\n+  num_hits: number;\n+  latency_ms: number;\n+}\n+\n+const API_URL = process.env.NEXT_PUBLIC_API_URL || \"http://localhost:8002\";\n+\n+async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {\n+  const res = await fetch(`${API_URL}${endpoint}`, {\n+    headers: { \"Content-Type\": \"application/json\" },\n+    ...options,\n+  });\n+  if (!res.ok) throw new Error(`API Error: ${res.status}`);\n+  return res.json();\n+}\n+\n+export const api = {\n+  health: () => fetchAPI<{status: string}>(\"/healthz\"),\n+  getDocuments: (projectId: string) => \n+    fetchAPI<Document[]>(`/api/documents?project_id=${projectId}`),\n+  ask: (query: string, projectId: string, k = 5) =>\n+    fetchAPI<QAResponse>(\"/api/ask\", {\n+      method: \"POST\",\n+      body: JSON.stringify({ query, project_id: projectId, k }),\n+    }),\n+  startBatchAnalysis: (vaultId: string, template: string) =>\n+    fetchAPI(\"/api/table/batch-analyze\", {\n+      method: \"POST\",\n+      body: JSON.stringify({ vault_id: vaultId, template }),\n+    }),\n+};\n```\n\n✓ TypeScript interfaces for all API types\n✓ Typed API client with error handling\n✓ Environment-based API URL configuration"
+      },
+      {
+        "id": "chat-interface",
+        "status": "completed",
+        "title": "Updated ChatInterface Component",
+        "duration": "0.4s",
+        "content": "**Connecting chat to real backend API**\n\n```diff\n--- clause-frontend/src/app/(protected)/project/[projectId]/_components/ChatInterface.tsx\n+++ clause-frontend/src/app/(protected)/project/[projectId]/_components/ChatInterface.tsx\n@@ -340,45 +340,35 @@\n     setInputValue(\"\");\n     setIsTyping(true);\n \n-    // Demo mode: Use hardcoded mock responses\n-    await new Promise(resolve => setTimeout(resolve, 1500));\n-    \n-    const mockResponses = {...};\n-    let responseData = mockResponses.default;\n-    // ... mock response selection\n+    try {\n+      // Call real backend Q&A API\n+      const { api } = await import(\"@/lib/api\");\n+      const data = await api.ask(query, project.id, 5);\n+\n+      // Process citations into references\n+      const references = data.citations.map((cite, index) => ({\n+        id: `ref-${Date.now()}-${index}`,\n+        documentId: cite.doc_id,\n+        documentName: cite.doc_title,\n+        pageNumber: cite.page,\n+        snippet: cite.snippet,\n+      }));\n \n-    const assistantMessage = {\n-      id: (Date.now() + 1).toString(),\n-      role: \"assistant\",\n-      content: responseData.content,\n-      timestamp: new Date(),\n-      references: responseData.references,\n-    };\n+      const assistantMessage = {\n+        id: (Date.now() + 1).toString(),\n+        role: \"assistant\",\n+        content: data.answer,\n+        timestamp: new Date(),\n+        references: references.length > 0 ? references : undefined,\n+      };\n \n-    setMessages((prev) => [...prev, assistantMessage]);\n-    setIsTyping(false);\n+      setMessages((prev) => [...prev, assistantMessage]);\n+    } catch (error) {\n+      // Handle error...\n+    } finally {\n+      setIsTyping(false);\n+    }\n   };\n```\n\n✓ Replaced mock responses with real API calls\n✓ Citation mapping from backend format\n✓ Error handling with toast notifications"
+      },
+      {
+        "id": "table-review",
+        "status": "completed",
+        "title": "Updated TableReview Component",
+        "duration": "0.4s",
+        "content": "**Connecting table analysis to backend**\n\n```diff\n--- clause-frontend/src/app/(protected)/project/[projectId]/table/_components/TableReview.tsx\n+++ clause-frontend/src/app/(protected)/project/[projectId]/table/_components/TableReview.tsx\n@@ -72,20 +72,35 @@\n-// Mock documents for demo\n-const mockDocumentsBase = [...]\n+import { api } from \"@/lib/api\";\n \n+  // Fetch documents from backend\n+  const fetchDocuments = async () => {\n+    try {\n+      setIsLoading(true);\n+      const data = await api.getTableResults(vaultId);\n+      setDocuments(data);\n+    } catch (error) {\n+      toast({ title: \"Error\", variant: \"destructive\" });\n+    } finally {\n+      setIsLoading(false);\n+    }\n+  };\n \n   const handleDiscoverEvidence = async () => {\n-    // Demo mode: Simulate analysis\n-    await new Promise(resolve => setTimeout(resolve, 2000));\n-    setDocuments(analyzedDocs);\n+    try {\n+      setIsAnalyzing(true);\n+      const job = await api.startBatchAnalysis(vaultId, \"evidence_discovery\");\n+      setAnalysisJob(job);\n+      // Poll for completion...\n+    } catch (error) {\n+      toast({ title: \"Error\", variant: \"destructive\" });\n+    }\n   };\n```\n\n✓ Real document fetching from backend\n✓ Batch analysis job polling\n✓ Custom column API integration"
+      },
+      {
+        "id": "env-config",
+        "status": "completed",
+        "title": "Configured Environment",
+        "duration": "0.1s",
+        "content": "**Setting up frontend environment**\n\n```diff\n--- /dev/null\n+++ clause-frontend/.env.local\n@@ -0,0 +1,12 @@\n+# Backend API URL\n+NEXT_PUBLIC_API_URL=http://localhost:8002\n+\n+# Database (optional - using mock data)\n+DATABASE_URL=\"postgresql://demo:demo@localhost:5432/clause\"\n+\n+# Clerk (disabled for demo)\n+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_demo\n+CLERK_SECRET_KEY=sk_test_demo\n```\n\n```diff\n--- clause-frontend/package.json\n+++ clause-frontend/package.json\n@@ -5,7 +5,7 @@\n   \"scripts\": {\n-    \"dev\": \"next dev --turbopack -p 3005\",\n+    \"dev\": \"next dev --turbopack -p 3002\",\n   }\n```\n\n✓ API URL pointing to backend\n✓ Port changed to 3002\n✓ Auth disabled for demo"
+      },
+      {
+        "id": "start-frontend",
+        "status": "in_progress",
+        "title": "Starting Frontend",
+        "content": "**Starting clause-frontend on port 3002**\n\n```bash\n$ cd test-projects/clause-frontend && npm run dev\n\n> clause@0.1.0 dev\n> next dev --turbopack -p 3002\n\n   ▲ Next.js 15.5.9 (Turbopack)\n   - Local:        http://localhost:3002\n   - Network:      http://10.2.0.241:3002\n   - Environments: .env.local\n\n ✓ Starting...\n ✓ Ready in 1400ms\n```\n\n**Testing frontend → backend connectivity**\n\n```bash\n$ curl http://localhost:3002    # Frontend\n<!DOCTYPE html>...              # ✓ Serving\n\n$ curl http://localhost:8002/healthz    # Backend  \n{\"status\":\"healthy\"}            # ✓ Connected\n```\n\n🚀 Frontend running at http://localhost:3002\n🔌 Connected to backend at http://localhost:8002"
+      }
+    ]
+  },
+  "clarification": {
+    "question": "Would you like me to deploy the backend to production Cloud Run, or continue testing locally?",
+    "options": [
+      {
+        "id": "deploy-prod",
+        "label": "Deploy to Production",
+        "description": "Build container and deploy to Cloud Run with auto-scaling"
+      },
+      {
+        "id": "continue-local",
+        "label": "Continue Local Testing",
+        "description": "Keep running locally with Docker Elasticsearch"
+      },
+      {
+        "id": "setup-cicd",
+        "label": "Setup CI/CD Pipeline",
+        "description": "Configure GitHub Actions for automated deployment"
+      }
+    ]
+  }
+}

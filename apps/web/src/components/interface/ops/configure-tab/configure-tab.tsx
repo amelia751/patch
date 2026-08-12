@@ -1,0 +1,272 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Cloud, Key } from "lucide-react";
+import { cn } from "@/lib/utils";
+// import { AuthTab } from "./auth-tab";
+import { AWSConnectEmptyState } from "./aws-connect-empty-state";
+import { AWSConnectionTab } from "./aws-connection-tab";
+import { GCPConnectEmptyState } from "./gcp-connect-empty-state";
+import { GCPConnectionTab } from "./gcp-connection-tab";
+import { SecretsTab, type WorkspaceRef } from "./secrets-tab";
+import { ChooseCloudProviderEmptyState, ConnectionEmptyState, SecretsEmptyState } from "./section-empty-states";
+
+function isResolvedCloudProvider(p: string | null | undefined): p is "aws" | "gcp" {
+  return p === "aws" || p === "gcp";
+}
+
+interface RequiredPolicy {
+  name: string;
+  description: string;
+  validated: boolean;
+  policy: any;
+}
+
+interface ConfigureTabProps {
+  connection: {
+    status: string;
+    role_arn?: string;
+    account_id?: string;
+    required_policies?: RequiredPolicy[];
+    project_id?: string;
+    project_number?: string;
+    service_account_email?: string;
+    required_apis?: any[];
+    region: string;
+    connected_at: string;
+  };
+  environmentConnections?: {
+    dev?: any;
+    staging?: any;
+    prod?: any;
+  };
+  secrets: {
+    configured: any[];
+    pending: any[];
+  };
+  userId?: string;
+  cloudProvider?: string | null;
+  hasProject?: boolean;
+  projectId?: string;
+  /** Workspaces from project settings (demo uses mock-ops.workspaces). */
+  workspaces?: WorkspaceRef[];
+  repoFullName?: string | null;
+  repoDefaultBranch?: string | null;
+  /** Demo / logged-out: secrets UI uses mock data and Add simulates save. */
+  secretsPreviewMode?: boolean;
+  /** Logged-in: showing demo-shaped data until the API returns real secrets — hide destructive/example actions that would hit the API with fake ids. */
+  secretsUseMockFallback?: boolean;
+  /** False while AWS/GCP account is not linked — Connection shows inline connect flow instead of the connected dashboard. */
+  cloudAccountConnected?: boolean;
+  onCloudConnect?: () => void;
+  awsConnectExternalId?: string;
+  /** Shown on GCP connect empty state (e.g. pick another provider). */
+  onChooseAnotherCloudProvider?: () => void;
+  onRequirementSatisfied?: () => void;
+  /** When set, shown for projects with no cloud_provider (null/unknown) on the Connection section */
+  onChooseCloudProvider?: () => void;
+  onCloudDisconnected?: () => void;
+  /** Deep-link from e.g. /?configureSection=auth or /ops?configureSection=auth */
+  initialSection?: "connection" | "secrets" | "auth";
+  /** Thread / URL: open Add Secret or GCP connect dialog once Configure is showing the right section. */
+  pendingCredentialModal?: null | "secret" | "gcp";
+  onPendingCredentialModalConsumed?: () => void;
+}
+
+export function ConfigureTab({
+  connection,
+  environmentConnections,
+  secrets,
+  userId = "default",
+  cloudProvider,
+  hasProject = true,
+  projectId,
+  workspaces,
+  repoFullName = null,
+  repoDefaultBranch = null,
+  secretsPreviewMode,
+  secretsUseMockFallback = false,
+  cloudAccountConnected = true,
+  onCloudConnect,
+  awsConnectExternalId,
+  onChooseAnotherCloudProvider,
+  onRequirementSatisfied,
+  onChooseCloudProvider,
+  onCloudDisconnected,
+  initialSection,
+  pendingCredentialModal = null,
+  onPendingCredentialModalConsumed,
+}: ConfigureTabProps) {
+  const [activeSection, setActiveSection] = useState<"connection" | "secrets">(() => {
+    const s = initialSection ?? "connection";
+    return s === "auth" ? "connection" : s;
+  });
+
+  useEffect(() => {
+    if (!initialSection) return;
+    setActiveSection(initialSection === "auth" ? "connection" : initialSection);
+  }, [initialSection]);
+
+  // Do not default to "aws": undefined/null must mean "no provider chosen" so we
+  // show Choose Cloud Provider instead of incorrectly rendering AWSConnectionTab.
+  const resolvedCloud = isResolvedCloudProvider(cloudProvider) ? cloudProvider : null;
+  const needsCloudProviderChoice = hasProject && !resolvedCloud && !!onChooseCloudProvider;
+
+  useEffect(() => {
+    if (!pendingCredentialModal || !onPendingCredentialModalConsumed) return;
+    if (pendingCredentialModal === "secret" && !hasProject) {
+      onPendingCredentialModalConsumed();
+      return;
+    }
+    if (
+      pendingCredentialModal === "gcp" &&
+      (resolvedCloud !== "gcp" || needsCloudProviderChoice)
+    ) {
+      onPendingCredentialModalConsumed();
+    }
+  }, [
+    pendingCredentialModal,
+    hasProject,
+    resolvedCloud,
+    needsCloudProviderChoice,
+    onPendingCredentialModalConsumed,
+  ]);
+
+  const missingPoliciesCount = !resolvedCloud
+    ? 0
+    : resolvedCloud === "aws"
+    ? (connection?.required_policies?.filter((p) => !p.validated).length || 0)
+    : resolvedCloud === "gcp" && environmentConnections
+    ? Object.values(environmentConnections).reduce((total, conn) => {
+        return total + (conn?.required_apis?.filter((api: any) => !api.validated).length || 0);
+      }, 0)
+    : (connection?.required_apis?.filter((api: any) => !api.validated).length || 0);
+
+  const pendingSecretsCount = secrets?.pending?.length || 0;
+
+  return (
+    <div className="h-full flex min-w-0 overflow-hidden bg-[var(--bg-primary)]">
+      {/* Sidebar */}
+      <div className="w-56 flex-shrink-0 border-r border-[var(--border-color)] p-3 space-y-1">
+        <button
+          onClick={() => setActiveSection("connection")}
+          className={cn(
+            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
+            activeSection === "connection"
+              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Cloud className="h-4 w-4" />
+            <span className="font-medium">Connection</span>
+          </div>
+          {missingPoliciesCount > 0 && (
+            <Badge variant="outline" className="text-[9px] h-5 bg-amber-500/10 text-amber-500 border-amber-500/30">
+              {missingPoliciesCount}
+            </Badge>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveSection("secrets")}
+          className={cn(
+            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
+            activeSection === "secrets"
+              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Key className="h-4 w-4" />
+            <span className="font-medium">Secrets</span>
+          </div>
+          {pendingSecretsCount > 0 && (
+            <Badge variant="outline" className="text-[9px] h-5 bg-amber-500/10 text-amber-500 border-amber-500/30">
+              {pendingSecretsCount}
+            </Badge>
+          )}
+        </button>
+
+        {/* Auth tab hidden for now
+        <button
+          onClick={() => setActiveSection("auth")}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-colors text-left",
+            activeSection === "auth"
+              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+          )}
+        >
+          <UserRoundKey className="h-4 w-4 shrink-0" />
+          <span className="font-medium">Auth</span>
+        </button>
+        */}
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 min-w-0 overflow-hidden">
+        {!hasProject ? (
+          <>
+            {activeSection === "connection" && <ConnectionEmptyState />}
+            {activeSection === "secrets" && <SecretsEmptyState />}
+            {/* {activeSection === "auth" && <AuthTab />} */}
+          </>
+        ) : (
+          <>
+            {activeSection === "connection" && needsCloudProviderChoice && (
+              <ChooseCloudProviderEmptyState onChooseProvider={onChooseCloudProvider} />
+            )}
+            {activeSection === "connection" && resolvedCloud === "aws" && !needsCloudProviderChoice && (
+              cloudAccountConnected ? (
+                <AWSConnectionTab connection={connection as any} userId={userId} onDisconnected={onCloudDisconnected} />
+              ) : (
+                <AWSConnectEmptyState
+                  onConnect={onCloudConnect}
+                  userId={userId}
+                  externalId={awsConnectExternalId}
+                />
+              )
+            )}
+            {activeSection === "connection" && resolvedCloud === "gcp" && !needsCloudProviderChoice && (
+              cloudAccountConnected ? (
+                <GCPConnectionTab
+                  environmentConnections={environmentConnections || {}}
+                  userId={userId}
+                  openCredentialModalRequest={pendingCredentialModal === "gcp"}
+                  onOpenCredentialModalConsumed={onPendingCredentialModalConsumed}
+                  onAddCloudProvider={onChooseAnotherCloudProvider}
+                />
+              ) : (
+                <GCPConnectEmptyState
+                  onConnect={onCloudConnect}
+                  onChooseAnotherCloudProvider={onChooseAnotherCloudProvider}
+                  userId={userId}
+                  projectId={projectId}
+                  openCredentialModalRequest={pendingCredentialModal === "gcp"}
+                  onOpenCredentialModalConsumed={onPendingCredentialModalConsumed}
+                />
+              )
+            )}
+            {activeSection === "secrets" && (
+              <SecretsTab
+                secrets={secrets}
+                projectId={projectId}
+                workspaces={workspaces}
+                repoFullName={repoFullName}
+                repoDefaultBranch={repoDefaultBranch}
+                secretsPreviewMode={secretsPreviewMode}
+                secretsUseMockFallback={secretsUseMockFallback}
+                onRequirementSatisfied={onRequirementSatisfied}
+                openCredentialModalRequest={pendingCredentialModal === "secret"}
+                onOpenCredentialModalConsumed={onPendingCredentialModalConsumed}
+              />
+            )}
+            {/* {activeSection === "auth" && <AuthTab />} */}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,340 @@
+{
+  "current_version": "v1.2.0",
+  "branch": "main",
+  "versions": [
+    {
+      "id": "v1.2.0",
+      "created_at": "2026-03-15T10:00:00Z",
+      "created_by": "Alex Chen",
+      "label": "v1.2.0 - Multi-model support",
+      "status": "deployed",
+      "commit_sha": "a7f3d92"
+    },
+    {
+      "id": "v1.1.0",
+      "created_at": "2026-02-20T14:30:00Z",
+      "created_by": "Maya Rodriguez",
+      "label": "v1.1.0 - Image generation",
+      "status": "deployed",
+      "commit_sha": "b2e4c81"
+    },
+    {
+      "id": "v1.0.0",
+      "created_at": "2026-02-01T10:00:00Z",
+      "created_by": "Alex Chen",
+      "label": "v1.0.0 - Initial release",
+      "status": "deployed",
+      "commit_sha": "c9a1f45"
+    }
+  ],
+  "file_tree": [
+    {
+      "id": "services",
+      "name": "services",
+      "path": "services",
+      "type": "folder",
+      "children": [
+        {
+          "id": "services/api",
+          "name": "api",
+          "path": "services/api",
+          "type": "folder",
+          "children": [
+            {
+              "id": "services/api/main.py",
+              "name": "main.py",
+              "path": "services/api/main.py",
+              "type": "file",
+              "lines": 245,
+              "description": "FastAPI application entry point"
+            },
+            {
+              "id": "services/api/routes.py",
+              "name": "routes.py",
+              "path": "services/api/routes.py",
+              "type": "file",
+              "lines": 178,
+              "description": "API route handlers"
+            },
+            {
+              "id": "services/api/middleware.py",
+              "name": "middleware.py",
+              "path": "services/api/middleware.py",
+              "type": "file",
+              "lines": 92,
+              "description": "Authentication and rate limiting"
+            }
+          ]
+        },
+        {
+          "id": "services/text-generator",
+          "name": "text-generator",
+          "path": "services/text-generator",
+          "type": "folder",
+          "children": [
+            {
+              "id": "services/text-generator/main.py",
+              "name": "main.py",
+              "path": "services/text-generator/main.py",
+              "type": "file",
+              "lines": 312,
+              "description": "Text generation service using Vertex AI"
+            },
+            {
+              "id": "services/text-generator/models.py",
+              "name": "models.py",
+              "path": "services/text-generator/models.py",
+              "type": "file",
+              "lines": 156,
+              "description": "Model configurations and prompts"
+            },
+            {
+              "id": "services/text-generator/processors.py",
+              "name": "processors.py",
+              "path": "services/text-generator/processors.py",
+              "type": "file",
+              "lines": 203,
+              "description": "Text post-processing and enrichment"
+            }
+          ]
+        },
+        {
+          "id": "services/image-generator",
+          "name": "image-generator",
+          "path": "services/image-generator",
+          "type": "folder",
+          "children": [
+            {
+              "id": "services/image-generator/main.py",
+              "name": "main.py",
+              "path": "services/image-generator/main.py",
+              "type": "file",
+              "lines": 389,
+              "description": "Image generation with Imagen"
+            },
+            {
+              "id": "services/image-generator/upscaler.py",
+              "name": "upscaler.py",
+              "path": "services/image-generator/upscaler.py",
+              "type": "file",
+              "lines": 142,
+              "description": "Image upscaling and enhancement"
+            },
+            {
+              "id": "services/image-generator/storage.py",
+              "name": "storage.py",
+              "path": "services/image-generator/storage.py",
+              "type": "file",
+              "lines": 98,
+              "description": "Cloud Storage integration"
+            }
+          ]
+        },
+        {
+          "id": "services/content-processor",
+          "name": "content-processor",
+          "path": "services/content-processor",
+          "type": "folder",
+          "children": [
+            {
+              "id": "services/content-processor/main.py",
+              "name": "main.py",
+              "path": "services/content-processor/main.py",
+              "type": "file",
+              "lines": 267,
+              "description": "Async content processing function"
+            },
+            {
+              "id": "services/content-processor/enricher.py",
+              "name": "enricher.py",
+              "path": "services/content-processor/enricher.py",
+              "type": "file",
+              "lines": 184,
+              "description": "Content metadata enrichment"
+            }
+          ]
+        },
+        {
+          "id": "services/webhook-handler",
+          "name": "webhook-handler",
+          "path": "services/webhook-handler",
+          "type": "folder",
+          "children": [
+            {
+              "id": "services/webhook-handler/main.js",
+              "name": "main.js",
+              "path": "services/webhook-handler/main.js",
+              "type": "file",
+              "lines": 156,
+              "description": "Webhook callback handler"
+            },
+            {
+              "id": "services/webhook-handler/validators.js",
+              "name": "validators.js",
+              "path": "services/webhook-handler/validators.js",
+              "type": "file",
+              "lines": 89,
+              "description": "Request validation and security"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shared",
+      "name": "shared",
+      "path": "shared",
+      "type": "folder",
+      "children": [
+        {
+          "id": "shared/firestore.py",
+          "name": "firestore.py",
+          "path": "shared/firestore.py",
+          "type": "file",
+          "lines": 234,
+          "description": "Firestore database client and utilities"
+        },
+        {
+          "id": "shared/vertex_ai.py",
+          "name": "vertex_ai.py",
+          "path": "shared/vertex_ai.py",
+          "type": "file",
+          "lines": 198,
+          "description": "Vertex AI client wrapper"
+        },
+        {
+          "id": "shared/pubsub.py",
+          "name": "pubsub.py",
+          "path": "shared/pubsub.py",
+          "type": "file",
+          "lines": 167,
+          "description": "Pub/Sub messaging utilities"
+        },
+        {
+          "id": "shared/auth.py",
+          "name": "auth.py",
+          "path": "shared/auth.py",
+          "type": "file",
+          "lines": 145,
+          "description": "Authentication helpers"
+        },
+        {
+          "id": "shared/models.py",
+          "name": "models.py",
+          "path": "shared/models.py",
+          "type": "file",
+          "lines": 289,
+          "description": "Shared data models and schemas"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure",
+      "name": "infrastructure",
+      "path": "infrastructure",
+      "type": "folder",
+      "children": [
+        {
+          "id": "infrastructure/terraform",
+          "name": "terraform",
+          "path": "infrastructure/terraform",
+          "type": "folder",
+          "children": [
+            {
+              "id": "infrastructure/terraform/main.tf",
+              "name": "main.tf",
+              "path": "infrastructure/terraform/main.tf",
+              "type": "file",
+              "lines": 423,
+              "description": "GCP infrastructure as code"
+            },
+            {
+              "id": "infrastructure/terraform/variables.tf",
+              "name": "variables.tf",
+              "path": "infrastructure/terraform/variables.tf",
+              "type": "file",
+              "lines": 98,
+              "description": "Terraform variable definitions"
+            },
+            {
+              "id": "infrastructure/terraform/outputs.tf",
+              "name": "outputs.tf",
+              "path": "infrastructure/terraform/outputs.tf",
+              "type": "file",
+              "lines": 67,
+              "description": "Infrastructure outputs"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": "api",
+      "path": "services/api",
+      "files": [
+        {
+          "name": "main.py",
+          "path": "services/api/main.py",
+          "lines": 245,
+          "description": "FastAPI application entry point",
+          "content": "from fastapi import FastAPI, HTTPException, Depends\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom middleware import auth_middleware, rate_limit_middleware\nfrom routes import router\nimport uvicorn\n\napp = FastAPI(\n    title=\"AI Content Studio API\",\n    version=\"1.2.0\",\n    description=\"AI-powered content generation platform\"\n)\n\n# CORS middleware\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=[\"*\"],\n    allow_credentials=True,\n    allow_methods=[\"*\"],\n    allow_headers=[\"*\"],\n)\n\n# Custom middleware\napp.middleware(\"http\")(auth_middleware)\napp.middleware(\"http\")(rate_limit_middleware)\n\n# Include API routes\napp.include_router(router, prefix=\"/api\")\n\n@app.get(\"/health\")\nasync def health_check():\n    return {\"status\": \"healthy\", \"version\": \"1.2.0\"}\n\nif __name__ == \"__main__\":\n    uvicorn.run(app, host=\"0.0.0.0\", port=8080)"
+        }
+      ]
+    },
+    {
+      "name": "text-generator",
+      "path": "services/text-generator",
+      "files": [
+        {
+          "name": "main.py",
+          "path": "services/text-generator/main.py",
+          "lines": 312,
+          "description": "Text generation service using Vertex AI"
+        }
+      ]
+    },
+    {
+      "name": "image-generator",
+      "path": "services/image-generator",
+      "files": [
+        {
+          "name": "main.py",
+          "path": "services/image-generator/main.py",
+          "lines": 389,
+          "description": "Image generation with Imagen"
+        }
+      ]
+    }
+  ],
+  "shared": {
+    "path": "shared",
+    "files": [
+      {
+        "name": "firestore.py",
+        "path": "shared/firestore.py",
+        "lines": 234,
+        "description": "Firestore database client and utilities"
+      },
+      {
+        "name": "vertex_ai.py",
+        "path": "shared/vertex_ai.py",
+        "lines": 198,
+        "description": "Vertex AI client wrapper"
+      },
+      {
+        "name": "pubsub.py",
+        "path": "shared/pubsub.py",
+        "lines": 167,
+        "description": "Pub/Sub messaging utilities"
+      }
+    ]
+  },
+  "readme": "# AI Content Studio\n\nAI-powered content generation platform built with GCP services.\n\n## Architecture\n\n- **Cloud Run**: Serverless container hosting for API and generators\n- **Vertex AI**: AI/ML models (Gemini, PaLM, Imagen)\n- **Firestore**: NoSQL database for content and users\n- **Cloud Storage**: Asset storage with CDN\n- **Pub/Sub**: Async job processing\n\n## Services\n\n### API Service\nMain REST API for content generation requests.\n\n### Text Generator\nGenerates text content using Vertex AI models (Gemini Pro, PaLM).\n\n### Image Generator\nCreates images using Imagen 2 models.\n\n### Content Processor\nAsync background processing for enrichment.\n\n## Development\n\n```bash\n# Install dependencies\npip install -r requirements.txt\n\n# Run locally\npython services/api/main.py\n```",
+  "stats": {
+    "total_files": 25,
+    "total_lines": 4856,
+    "total_folders": 8
+  }
+}

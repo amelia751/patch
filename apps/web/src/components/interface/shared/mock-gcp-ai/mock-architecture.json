@@ -1,0 +1,498 @@
+{
+  "project": {
+    "id": "proj_ai_studio_001",
+    "name": "AI Content Studio",
+    "description": "AI-powered content generation platform with text, image, and video creation capabilities",
+    "created_at": "2025-02-01T10:00:00Z",
+    "active_version_id": "v1",
+    "cloud_provider": "gcp",
+    "versions": [
+      {
+        "id": "v1",
+        "label": "AI-First Serverless",
+        "description": "Serverless architecture leveraging Google's AI/ML services",
+        "created_at": "2025-02-01T10:00:00Z",
+        "parent_version_id": null,
+        "status": "deployed",
+        "design": {
+          "architecture_type": "serverless",
+          "cloud_provider": "gcp",
+          "graph": {
+            "nodes": [
+              {
+                "id": "api-gateway",
+                "service": "Cloud Run",
+                "label": "ai-studio-api",
+                "resource_name": "ai-studio-api",
+                "logical_id": "AIStudioAPI",
+                "description": "Main API service for content generation requests",
+                "config": {
+                  "cpu": "2",
+                  "memory": "2Gi",
+                  "min_instances": 1,
+                  "max_instances": 10,
+                  "concurrency": 80
+                }
+              },
+              {
+                "id": "text-generation-service",
+                "service": "Cloud Run",
+                "label": "text-generator",
+                "resource_name": "text-generator-service",
+                "logical_id": "TextGeneratorService",
+                "description": "Text content generation using Vertex AI",
+                "config": {
+                  "cpu": "4",
+                  "memory": "4Gi",
+                  "min_instances": 0,
+                  "max_instances": 20,
+                  "concurrency": 10
+                }
+              },
+              {
+                "id": "image-generation-service",
+                "service": "Cloud Run",
+                "label": "image-generator",
+                "resource_name": "image-generator-service",
+                "logical_id": "ImageGeneratorService",
+                "description": "Image generation using Imagen models",
+                "config": {
+                  "cpu": "4",
+                  "memory": "8Gi",
+                  "min_instances": 0,
+                  "max_instances": 15,
+                  "gpu": "nvidia-l4"
+                }
+              },
+              {
+                "id": "content-processor",
+                "service": "Cloud Functions",
+                "label": "content-processor-fn",
+                "resource_name": "content-processor",
+                "logical_id": "ContentProcessor",
+                "description": "Async content processing and enrichment",
+                "config": {
+                  "runtime": "python312",
+                  "memory": "1024Mi",
+                  "timeout": 540,
+                  "trigger": "pubsub"
+                }
+              },
+              {
+                "id": "webhook-handler",
+                "service": "Cloud Functions",
+                "label": "webhook-handler-fn",
+                "resource_name": "webhook-handler",
+                "logical_id": "WebhookHandler",
+                "description": "Handle external webhooks and integrations",
+                "config": {
+                  "runtime": "nodejs20",
+                  "memory": "512Mi",
+                  "timeout": 60,
+                  "trigger": "http"
+                }
+              },
+              {
+                "id": "vertex-ai",
+                "service": "Vertex AI",
+                "label": "ai-models",
+                "resource_name": "vertex-ai-models",
+                "logical_id": "VertexAIModels",
+                "description": "Managed AI/ML models for content generation",
+                "config": {
+                  "models": ["text-bison", "imagen-2", "gemini-pro"],
+                  "region": "us-central1"
+                }
+              },
+              {
+                "id": "content-db",
+                "service": "Firestore",
+                "label": "content-firestore",
+                "resource_name": "content-database",
+                "logical_id": "ContentDatabase",
+                "description": "Document database for generated content and metadata",
+                "config": {
+                  "mode": "native",
+                  "location": "us-central1"
+                }
+              },
+              {
+                "id": "user-db",
+                "service": "Firestore",
+                "label": "users-firestore",
+                "resource_name": "user-database",
+                "logical_id": "UserDatabase",
+                "description": "User profiles, preferences, and usage tracking",
+                "config": {
+                  "mode": "native",
+                  "location": "us-central1"
+                }
+              },
+              {
+                "id": "asset-storage",
+                "service": "Cloud Storage",
+                "label": "generated-assets",
+                "resource_name": "ai-studio-assets",
+                "logical_id": "AssetStorage",
+                "description": "Storage for generated images, videos, and files",
+                "config": {
+                  "location": "US",
+                  "storage_class": "STANDARD",
+                  "versioning": true
+                }
+              },
+              {
+                "id": "training-data",
+                "service": "Cloud Storage",
+                "label": "training-datasets",
+                "resource_name": "training-data-bucket",
+                "logical_id": "TrainingData",
+                "description": "Storage for ML training datasets",
+                "config": {
+                  "location": "US",
+                  "storage_class": "STANDARD"
+                }
+              },
+              {
+                "id": "job-queue",
+                "service": "Pub/Sub",
+                "label": "content-jobs",
+                "resource_name": "content-generation-queue",
+                "logical_id": "JobQueue",
+                "description": "Message queue for async content generation jobs",
+                "config": {
+                  "message_retention": "7d",
+                  "ack_deadline": "600s"
+                }
+              },
+              {
+                "id": "event-bus",
+                "service": "Pub/Sub",
+                "label": "event-notifications",
+                "resource_name": "event-notification-topic",
+                "logical_id": "EventBus",
+                "description": "Event notifications for completed jobs",
+                "config": {
+                  "message_retention": "1d"
+                }
+              },
+              {
+                "id": "cdn",
+                "service": "Cloud CDN",
+                "label": "asset-cdn",
+                "resource_name": "ai-studio-cdn",
+                "logical_id": "AssetCDN",
+                "description": "Global CDN for serving generated content",
+                "config": {
+                  "cache_mode": "CACHE_ALL_STATIC",
+                  "default_ttl": 3600
+                }
+              },
+              {
+                "id": "load-balancer",
+                "service": "Cloud Load Balancing",
+                "label": "global-lb",
+                "resource_name": "ai-studio-lb",
+                "logical_id": "LoadBalancer",
+                "description": "Global load balancer for API traffic",
+                "config": {
+                  "type": "HTTPS",
+                  "backend_services": 3
+                }
+              },
+              {
+                "id": "secrets",
+                "service": "Secret Manager",
+                "label": "api-secrets",
+                "resource_name": "ai-studio-secrets",
+                "logical_id": "SecretManager",
+                "description": "API keys and sensitive configuration",
+                "config": {
+                  "replication": "automatic",
+                  "rotation_period": "90d"
+                }
+              }
+            ],
+            "edges": [
+              {
+                "from": "load-balancer",
+                "to": "api-gateway",
+                "label": "routes requests"
+              },
+              {
+                "from": "api-gateway",
+                "to": "text-generation-service",
+                "label": "text requests"
+              },
+              {
+                "from": "api-gateway",
+                "to": "image-generation-service",
+                "label": "image requests"
+              },
+              {
+                "from": "api-gateway",
+                "to": "user-db",
+                "label": "reads/writes user data"
+              },
+              {
+                "from": "api-gateway",
+                "to": "job-queue",
+                "label": "publishes async jobs"
+              },
+              {
+                "from": "text-generation-service",
+                "to": "vertex-ai",
+                "label": "calls AI models"
+              },
+              {
+                "from": "text-generation-service",
+                "to": "content-db",
+                "label": "stores content"
+              },
+              {
+                "from": "image-generation-service",
+                "to": "vertex-ai",
+                "label": "calls Imagen"
+              },
+              {
+                "from": "image-generation-service",
+                "to": "asset-storage",
+                "label": "uploads images"
+              },
+              {
+                "from": "image-generation-service",
+                "to": "content-db",
+                "label": "stores metadata"
+              },
+              {
+                "from": "job-queue",
+                "to": "content-processor",
+                "label": "triggers processing"
+              },
+              {
+                "from": "content-processor",
+                "to": "vertex-ai",
+                "label": "enriches content"
+              },
+              {
+                "from": "content-processor",
+                "to": "content-db",
+                "label": "updates content"
+              },
+              {
+                "from": "content-processor",
+                "to": "event-bus",
+                "label": "publishes completion"
+              },
+              {
+                "from": "event-bus",
+                "to": "webhook-handler",
+                "label": "triggers webhooks"
+              },
+              {
+                "from": "cdn",
+                "to": "asset-storage",
+                "label": "caches assets"
+              },
+              {
+                "from": "text-generation-service",
+                "to": "secrets",
+                "label": "reads API keys"
+              },
+              {
+                "from": "image-generation-service",
+                "to": "secrets",
+                "label": "reads API keys"
+              }
+            ]
+          },
+          "api": {
+            "routes": [
+              {
+                "id": "generate-text",
+                "path": "/api/generate/text",
+                "method": "POST",
+                "description": "Generate text content using AI models",
+                "handler": "text-generator",
+                "auth_required": true,
+                "rate_limit": "100/minute"
+              },
+              {
+                "id": "generate-image",
+                "path": "/api/generate/image",
+                "method": "POST",
+                "description": "Generate images using Imagen models",
+                "handler": "image-generator",
+                "auth_required": true,
+                "rate_limit": "20/minute"
+              },
+              {
+                "id": "get-content",
+                "path": "/api/content/:id",
+                "method": "GET",
+                "description": "Retrieve generated content by ID",
+                "handler": "ai-studio-api",
+                "auth_required": true
+              },
+              {
+                "id": "list-content",
+                "path": "/api/content",
+                "method": "GET",
+                "description": "List all generated content",
+                "handler": "ai-studio-api",
+                "auth_required": true
+              },
+              {
+                "id": "delete-content",
+                "path": "/api/content/:id",
+                "method": "DELETE",
+                "description": "Delete generated content",
+                "handler": "ai-studio-api",
+                "auth_required": true
+              },
+              {
+                "id": "get-user",
+                "path": "/api/users/me",
+                "method": "GET",
+                "description": "Get current user profile",
+                "handler": "ai-studio-api",
+                "auth_required": true
+              },
+              {
+                "id": "update-user",
+                "path": "/api/users/me",
+                "method": "PATCH",
+                "description": "Update user preferences",
+                "handler": "ai-studio-api",
+                "auth_required": true
+              },
+              {
+                "id": "get-usage",
+                "path": "/api/usage",
+                "method": "GET",
+                "description": "Get usage statistics and quotas",
+                "handler": "ai-studio-api",
+                "auth_required": true
+              },
+              {
+                "id": "webhook-callback",
+                "path": "/api/webhooks/:provider",
+                "method": "POST",
+                "description": "Handle external webhook callbacks",
+                "handler": "webhook-handler",
+                "auth_required": false
+              }
+            ]
+          },
+          "databases": [
+            {
+              "id": "content-db",
+              "name": "content-firestore",
+              "engine": "firestore",
+              "description": "Document database for generated content and metadata",
+              "collections": [
+                {
+                  "name": "content",
+                  "description": "Generated content items",
+                  "schema": {
+                    "id": "string (auto)",
+                    "user_id": "string",
+                    "type": "string (text|image|video)",
+                    "prompt": "string",
+                    "result": "object",
+                    "model": "string",
+                    "status": "string (pending|completed|failed)",
+                    "created_at": "timestamp",
+                    "updated_at": "timestamp",
+                    "metadata": "map"
+                  },
+                  "indexes": ["user_id", "type", "status", "created_at"]
+                },
+                {
+                  "name": "jobs",
+                  "description": "Content generation jobs queue",
+                  "schema": {
+                    "id": "string (auto)",
+                    "content_id": "string",
+                    "type": "string",
+                    "status": "string (queued|processing|completed|failed)",
+                    "priority": "number",
+                    "created_at": "timestamp",
+                    "started_at": "timestamp",
+                    "completed_at": "timestamp",
+                    "error": "string"
+                  },
+                  "indexes": ["content_id", "status", "priority", "created_at"]
+                },
+                {
+                  "name": "assets",
+                  "description": "Metadata for generated assets",
+                  "schema": {
+                    "id": "string (auto)",
+                    "content_id": "string",
+                    "storage_path": "string",
+                    "file_type": "string",
+                    "size_bytes": "number",
+                    "cdn_url": "string",
+                    "created_at": "timestamp"
+                  },
+                  "indexes": ["content_id", "created_at"]
+                }
+              ]
+            },
+            {
+              "id": "user-db",
+              "name": "users-firestore",
+              "engine": "firestore",
+              "description": "User profiles, preferences, and usage tracking",
+              "collections": [
+                {
+                  "name": "users",
+                  "description": "User profiles and settings",
+                  "schema": {
+                    "id": "string (auto)",
+                    "email": "string",
+                    "name": "string",
+                    "plan": "string (free|pro|enterprise)",
+                    "preferences": "map",
+                    "created_at": "timestamp",
+                    "last_login": "timestamp"
+                  },
+                  "indexes": ["email", "plan", "created_at"]
+                },
+                {
+                  "name": "usage",
+                  "description": "Usage tracking and quotas",
+                  "schema": {
+                    "id": "string (auto)",
+                    "user_id": "string",
+                    "month": "string",
+                    "text_generations": "number",
+                    "image_generations": "number",
+                    "total_cost": "number",
+                    "quota_remaining": "number"
+                  },
+                  "indexes": ["user_id", "month"]
+                },
+                {
+                  "name": "api_keys",
+                  "description": "User API keys for external integrations",
+                  "schema": {
+                    "id": "string (auto)",
+                    "user_id": "string",
+                    "key_hash": "string",
+                    "name": "string",
+                    "last_used": "timestamp",
+                    "created_at": "timestamp",
+                    "revoked": "boolean"
+                  },
+                  "indexes": ["user_id", "key_hash"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

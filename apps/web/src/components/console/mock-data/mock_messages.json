@@ -1,0 +1,22 @@
+[
+  {
+    "id": "msg-1",
+    "author": "agent",
+    "content": "Creating serverless backend infrastructure with authentication, database, and API layers.\n\nThis deployment includes:\n- 3 Lambda functions (auth, movies, user management)\n- DynamoDB tables for data persistence\n- Cognito for user authentication\n- API Gateway for routing requests",
+    "timestamp": "2 min ago",
+    "activities": "__MOCK_ACTIVITIES__",
+    "clarification": "__MOCK_CLARIFICATION__"
+  },
+  {
+    "id": "msg-2",
+    "author": "user",
+    "content": "Can we use a more restrictive IAM policy? I don't want full DynamoDB access.",
+    "timestamp": "1 min ago"
+  },
+  {
+    "id": "msg-3",
+    "author": "agent",
+    "content": "Good catch! I've updated the policy to only allow access to tables prefixed with `netflix-clone-`. The change is reflected in the IAM activity above.",
+    "timestamp": "30 sec ago"
+  }
+]

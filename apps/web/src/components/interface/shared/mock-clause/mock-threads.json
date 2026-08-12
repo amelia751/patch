@@ -1,0 +1,35 @@
+[
+  {
+    "id": "0",
+    "threadNumber": 0,
+    "title": "Welcome",
+    "status": "open",
+    "createdAt": "Just now",
+    "updatedAt": "Just now",
+    "messageCount": 1,
+    "activityCount": 0,
+    "preview": "Welcome! I'm ready to help you deploy and manage your Clause infrastructure."
+  },
+  {
+    "id": "1",
+    "threadNumber": 1,
+    "title": "Analyzing clause",
+    "status": "open",
+    "createdAt": "2 hours ago",
+    "updatedAt": "1 hour ago",
+    "messageCount": 3,
+    "activityCount": 5,
+    "preview": "Analyzed legal document workbench and designed GCP serverless architecture with Cloud Run, Elasticsearch, Vertex AI, and Document AI."
+  },
+  {
+    "id": "2",
+    "threadNumber": 2,
+    "title": "Deploy clause-backend to GCP",
+    "status": "in_progress",
+    "createdAt": "10 min ago",
+    "updatedAt": "Just now",
+    "messageCount": 4,
+    "activityCount": 12,
+    "preview": "Provisioning GCP resources: Cloud Run, GCS buckets, Firestore, Document AI, and Elasticsearch integration."
+  }
+]
