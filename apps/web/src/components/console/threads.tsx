@@ -37,6 +37,7 @@ import {
   Cloud,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/interface/shared/user-avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { uiTheme } from "@/lib/ui-theme";
@@ -287,7 +288,7 @@ const DEMO_THREADS: Thread[] = [
     messageCount: 4,
     activityCount: 3,
     preview: "Testing the intake workflow...",
-    branch: "jetrun/fix-intake-ws",
+    branch: "patchapi/fix-intake-ws",
   },
   {
     id: "2",
@@ -299,7 +300,7 @@ const DEMO_THREADS: Thread[] = [
     messageCount: 2,
     activityCount: 1,
     preview: "Investigating missing live_update events...",
-    branch: "jetrun/debug-ws-events",
+    branch: "patchapi/debug-ws-events",
   },
   {
     id: "3",
@@ -1164,11 +1165,8 @@ function MessageBlock({
         )}>
           {isAgent ? (
             <Omega className="h-2.5 w-2.5" />
-          ) : userAvatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={userAvatar} alt="User avatar" className="w-full h-full object-cover" />
           ) : (
-            "Y"
+            <UserAvatar src={userAvatar} name={userName || "You"} fallback="Y" />
           )}
         </div>
 
@@ -1198,11 +1196,8 @@ function MessageBlock({
       )}>
         {isAgent ? (
           <Omega className="h-3.5 w-3.5" />
-        ) : userAvatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={userAvatar} alt="User avatar" className="w-full h-full object-cover" />
         ) : (
-          "Y"
+          <UserAvatar src={userAvatar} name={userName || "You"} fallback="Y" />
         )}
       </div>
 
@@ -3825,7 +3820,7 @@ export function Threads({ project, onAnalysisComplete, initialThreadId, onThread
                         {thread.branch && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded bg-primary/10 text-primary text-[10px] font-mono">
                             <GitBranch className="h-2.5 w-2.5" />
-                            {thread.branch.replace(/^jetrun\//, "")}
+                            {thread.branch.replace(/^patchapi\//, "")}
                           </span>
                         )}
                       </div>
@@ -4310,8 +4305,7 @@ export function Threads({ project, onAnalysisComplete, initialThreadId, onThread
             {/* User Avatar */}
             <div className="w-5 h-5 @lg:w-7 @lg:h-7 rounded-full bg-[#c026a6] flex items-center justify-center text-[9px] @lg:text-[11px] font-medium text-white flex-shrink-0 overflow-hidden">
               {user?.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatar_url} alt="User avatar" className="w-full h-full object-cover" />
+                <UserAvatar src={user.avatar_url} name={user.display_name || "You"} fallback="Y" />
               ) : (
                 "Y"
               )}

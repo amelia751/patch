@@ -15,7 +15,7 @@ export default function HubPage() {
               <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center transition-all group-hover:scale-105">
                 <Rocket className="h-5 w-5 text-white" />
               </div>
-              <span className="text-base font-semibold text-[var(--text-primary)]">JetRun</span>
+              <span className="text-base font-semibold text-[var(--text-primary)]">PatchAPI</span>
             </Link>
 
             <Link href="/">
@@ -114,7 +114,8 @@ export default function HubPage() {
               Everything you need
             </h2>
             <p className="text-sm text-[var(--text-secondary)] max-w-2xl mx-auto">
-              From infrastructure graphs to database schemas, JetRun handles every aspect of cloud architecture.
+              From provider deprecations to verified pull requests, PatchAPI
+              finds the affected code and stops at human review.
             </p>
           </div>
 
@@ -233,7 +234,7 @@ export default function HubPage() {
             </p>
             <Link href="/">
               <Button className="bg-primary hover:bg-primary-hover text-primary-foreground px-8 h-10">
-                Open JetRun
+                Open PatchAPI
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
@@ -249,7 +250,7 @@ export default function HubPage() {
               <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center">
                 <Rocket className="h-4 w-4 text-white" />
               </div>
-              <span className="text-sm font-semibold text-[var(--text-primary)]">JetRun</span>
+              <span className="text-sm font-semibold text-[var(--text-primary)]">PatchAPI</span>
             </div>
             <div className="flex items-center gap-6">
               <Link href="#" className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
@@ -263,7 +264,7 @@ export default function HubPage() {
               </Link>
             </div>
             <div className="text-xs text-[var(--text-tertiary)]">
-              © 2026 JetRun
+              © 2026 PatchAPI
             </div>
           </div>
         </div>

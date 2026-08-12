@@ -29,7 +29,7 @@ const LEARN_SLIDES: {
     image: { src: LOGIN_ASSET("secure-platform.png"), alt: "Secure platform" },
   },
   {
-    title: "What JetRun does",
+    title: "What PatchAPI does",
     body: "You sign in with Google the way your app already does. We store the session your backend issues and attach it in sandbox runs—a stable, logged-in tester inside your app.",
     image: { src: LOGIN_ASSET("secure-browser.png"), alt: "Secure browser" },
   },

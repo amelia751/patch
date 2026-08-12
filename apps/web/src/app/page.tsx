@@ -697,7 +697,7 @@ function SystemPageContent() {
         <Dialog open={showHowItWorks} onOpenChange={setShowHowItWorks}>
           <DialogContent className="sm:max-w-[500px] bg-[var(--bg-primary)] border-[var(--border-color)]">
             <DialogHeader>
-              <DialogTitle className="text-[var(--text-primary)]">How JetRun works</DialogTitle>
+              <DialogTitle className="text-[var(--text-primary)]">How PatchAPI works</DialogTitle>
               <DialogDescription className="text-[var(--text-secondary)]">
                 Test, debug, and fix your backend — end to end.
               </DialogDescription>

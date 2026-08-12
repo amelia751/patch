@@ -8,8 +8,8 @@
   "aws_connection": {
     "status": "connected",
     "method": "iam_role",
-    "role_arn": "arn:aws:iam::123456789012:role/JetRunDeploymentRole",
-    "external_id": "jetrun-ext-7f3a9b2c",
+    "role_arn": "arn:aws:iam::123456789012:role/PatchAPIDeploymentRole",
+    "external_id": "patchapi-ext-7f3a9b2c",
     "region": "us-east-1",
     "account_id": "123456789012",
     "connected_at": "2025-01-10T12:00:00Z",
@@ -29,7 +29,7 @@
           {
             "type": "terraform",
             "label": "Terraform Snippet",
-            "snippet": "module \"jetrun_role\" {\n  source = \"jetrun/iam-role/aws\"\n  external_id = \"jetrun-ext-7f3a9b2c\"\n}"
+            "snippet": "module \"patchapi_role\" {\n  source = \"patchapi/iam-role/aws\"\n  external_id = \"patchapi-ext-7f3a9b2c\"\n}"
           },
           {
             "type": "manual",
@@ -48,7 +48,7 @@
               "Action": "sts:AssumeRole",
               "Condition": {
                 "StringEquals": {
-                  "sts:ExternalId": "jetrun-ext-7f3a9b2c"
+                  "sts:ExternalId": "patchapi-ext-7f3a9b2c"
                 }
               }
             }
@@ -78,9 +78,9 @@
     },
     "roles": {
       "planner": {
-        "name": "JetRunPlannerRole",
+        "name": "PatchAPIPlannerRole",
         "description": "Read-only access for architecture planning",
-        "arn": "arn:aws:iam::123456789012:role/JetRunPlannerRole",
+        "arn": "arn:aws:iam::123456789012:role/PatchAPIPlannerRole",
         "status": "active",
         "permissions": [
           "Read infrastructure state",
@@ -89,9 +89,9 @@
         ]
       },
       "executor": {
-        "name": "JetRunDeploymentRole",
+        "name": "PatchAPIDeploymentRole",
         "description": "Create and update resources",
-        "arn": "arn:aws:iam::123456789012:role/JetRunDeploymentRole",
+        "arn": "arn:aws:iam::123456789012:role/PatchAPIDeploymentRole",
         "status": "active",
         "permissions": [
           "Create Lambda functions",
@@ -101,9 +101,9 @@
         ]
       },
       "observer": {
-        "name": "JetRunObserverRole",
+        "name": "PatchAPIObserverRole",
         "description": "Logs and metrics only",
-        "arn": "arn:aws:iam::123456789012:role/JetRunObserverRole",
+        "arn": "arn:aws:iam::123456789012:role/PatchAPIObserverRole",
         "status": "not_configured",
         "permissions": [
           "Read CloudWatch logs",
@@ -130,7 +130,7 @@
                 "lambda:GetFunction",
                 "lambda:ListFunctions"
               ],
-              "Resource": "arn:aws:lambda:*:*:function:jetrun-*"
+              "Resource": "arn:aws:lambda:*:*:function:patchapi-*"
             }
           ]
         }
@@ -193,7 +193,7 @@
                 "s3:ListBucket"
               ],
               "Resource": [
-                "arn:aws:s3:::jetrun-*"
+                "arn:aws:s3:::patchapi-*"
               ]
             }
           ]
@@ -213,7 +213,7 @@
                 "iam:AttachRolePolicy",
                 "iam:PassRole"
               ],
-              "Resource": "arn:aws:iam::*:role/jetrun-*"
+              "Resource": "arn:aws:iam::*:role/patchapi-*"
             }
           ]
         }
@@ -224,7 +224,7 @@
     "status": "connected",
     "project_id": "ecommerce-prod",
     "project_number": "123456789012",
-    "service_account_email": "jetrun-deployer@ecommerce-prod.iam.gserviceaccount.com",
+    "service_account_email": "patchapi-deployer@ecommerce-prod.iam.gserviceaccount.com",
     "region": "us-central1",
     "zone": "us-central1-a",
     "connected_at": "2025-01-10T12:00:00Z",
@@ -268,7 +268,7 @@
       {
         "id": "v10",
         "created_at": "2026-02-05T15:30:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Add Stripe payment integration' • 2 hours ago",
         "status": "current",
         "commit_sha": "a7f3e2d"
@@ -276,7 +276,7 @@
       {
         "id": "v9",
         "created_at": "2026-02-04T10:15:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Implement user notification system' • Yesterday",
         "status": "deployed",
         "commit_sha": "f8a2c1b"
@@ -284,7 +284,7 @@
       {
         "id": "v8",
         "created_at": "2026-02-02T14:20:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Add Redis caching layer for sessions' • Feb 2",
         "status": "deployed",
         "commit_sha": "e3d9f7a"
@@ -292,7 +292,7 @@
       {
         "id": "v7",
         "created_at": "2026-01-30T09:45:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Optimize Lambda cold starts with provisioned concurrency' • Jan 30",
         "status": "deployed",
         "commit_sha": "d2b5c8e"
@@ -300,7 +300,7 @@
       {
         "id": "v6",
         "created_at": "2026-01-25T16:00:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Add SQS queue for async order processing' • Jan 25",
         "status": "archived",
         "commit_sha": "c9a4d6f"
@@ -308,7 +308,7 @@
       {
         "id": "v5",
         "created_at": "2026-01-20T11:30:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Implement S3 event triggers for image processing' • Jan 20",
         "status": "archived",
         "commit_sha": "b8f3e2a"
@@ -316,7 +316,7 @@
       {
         "id": "v4",
         "created_at": "2026-01-15T13:45:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Add CloudWatch dashboards and alarms' • Jan 15",
         "status": "archived",
         "commit_sha": "a1e7d9c"
@@ -324,7 +324,7 @@
       {
         "id": "v3",
         "created_at": "2026-01-10T08:00:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Setup API Gateway with custom domain' • Jan 10",
         "status": "archived",
         "commit_sha": "9f2c8b5"
@@ -332,7 +332,7 @@
       {
         "id": "v2",
         "created_at": "2026-01-08T14:30:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Refactor order processing for better performance' • Jan 8",
         "status": "archived",
         "commit_sha": "b9e1c4f"
@@ -340,7 +340,7 @@
       {
         "id": "v1",
         "created_at": "2026-01-05T10:00:00Z",
-        "created_by": "jetrun-ai",
+        "created_by": "patchapi",
         "label": "From: 'Generate initial Lambda infrastructure' • Jan 5",
         "status": "archived",
         "commit_sha": "c2d5a8e"
@@ -787,7 +787,7 @@
         "workspace_id": "ws_orch_ecom",
         "workspace_name": "orchestrator",
         "type": "database",
-        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/orchestrator/db-url",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/orchestrator/db-url",
         "created_at": "2026-01-05T10:00:00Z",
         "last_rotated": "2026-01-05T10:00:00Z",
         "referenced_by": ["orchestrator", "api"],
@@ -799,7 +799,7 @@
         "workspace_id": "ws_web_ecom",
         "workspace_name": "web",
         "type": "database",
-        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/web/db-url",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/web/db-url",
         "created_at": "2026-01-06T09:00:00Z",
         "last_rotated": null,
         "referenced_by": ["nextjs"],
@@ -811,7 +811,7 @@
         "workspace_id": "ws_orch_ecom",
         "workspace_name": "orchestrator",
         "type": "api_key",
-        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/stripe-key",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/stripe-key",
         "created_at": "2026-01-05T10:05:00Z",
         "last_rotated": null,
         "referenced_by": ["order-service", "payment-service"],
@@ -823,7 +823,7 @@
         "workspace_id": null,
         "workspace_name": null,
         "type": "encryption",
-        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/jwt-secret",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/jwt-secret",
         "created_at": "2026-01-05T10:02:00Z",
         "last_rotated": "2026-01-05T10:02:00Z",
         "referenced_by": ["auth-service", "orchestrator", "web"],
@@ -835,7 +835,7 @@
         "workspace_id": null,
         "workspace_name": null,
         "type": "api_key",
-        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/sentry",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/sentry",
         "created_at": "2026-01-07T11:00:00Z",
         "last_rotated": null,
         "referenced_by": ["all-services"],
@@ -847,7 +847,7 @@
         "workspace_id": "ws_core_ecom",
         "workspace_name": "core",
         "type": "database",
-        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/core/aurora",
+        "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/core/aurora",
         "created_at": "2026-01-08T14:00:00Z",
         "last_rotated": null,
         "referenced_by": ["migrations"],
@@ -869,7 +869,7 @@
     "dev": {
       "status": "deployed",
       "last_deployed": "2026-01-10T08:20:00Z",
-      "endpoint_url": "https://dev-api.ecommerce-a3f2k.jetrun.app"
+      "endpoint_url": "https://dev-api.ecommerce-a3f2k.patchapi.dev"
     },
     "staging": {
       "status": "pending_approval",
@@ -1083,7 +1083,7 @@
       "updated_at": "2024-01-25T16:30:00Z",
       "version": "v2",
       "dependencies": [],
-      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/jwt-secret",
+      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/jwt-secret",
       "cloud_provider": "aws",
       "metadata": {
         "rotation_enabled": false,
@@ -1101,7 +1101,7 @@
       "updated_at": "2024-01-08T14:20:00Z",
       "version": "v1",
       "dependencies": [],
-      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/stripe-key",
+      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/stripe-key",
       "cloud_provider": "aws",
       "metadata": {
         "rotation_enabled": false,
@@ -1119,7 +1119,7 @@
       "updated_at": "2024-01-05T10:00:00Z",
       "version": "v1",
       "dependencies": [],
-      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:jetrun/ecommerce/db-url",
+      "cloud_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:patchapi/ecommerce/db-url",
       "cloud_provider": "aws",
       "metadata": {
         "rotation_enabled": true,

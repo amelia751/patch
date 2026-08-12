@@ -66,7 +66,7 @@ export function TestResourceDialog({ resource, open, onClose }: TestResourceDial
         resource_id: resource.id,
         test_type: 'quick',
         params: testParams,
-        project_id: 'jetrun-ai', // TODO: Get from context
+        project_id: 'patchapi', // TODO: Get from context
       };
 
       const response = await fetch(`${API_URL}/api/resources/test`, {

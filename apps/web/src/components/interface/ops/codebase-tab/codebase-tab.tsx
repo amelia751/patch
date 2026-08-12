@@ -961,8 +961,8 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
 
   // Demo thread branch mapping (unauthenticated mode)
   const DEMO_THREAD_BRANCHES: Record<string, string> = {
-    "1": "jetrun/fix-intake-ws",
-    "2": "jetrun/debug-ws-events",
+    "1": "patchapi/fix-intake-ws",
+    "2": "patchapi/debug-ws-events",
   };
 
   // Fetch codebase: thread context → default branch

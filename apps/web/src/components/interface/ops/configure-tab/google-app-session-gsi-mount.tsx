@@ -380,7 +380,7 @@ export function GoogleAppSessionGsiMount({
           <p className="text-[10px] text-[var(--text-tertiary)] leading-relaxed text-center">
             Ensure{" "}
             <code className="rounded bg-[var(--bg-tertiary)] px-1 py-0.5 text-[9px] text-[var(--text-secondary)]">
-              {typeof window !== "undefined" ? window.location.origin : "https://app.jetrun.sh"}
+              {typeof window !== "undefined" ? window.location.origin : "https://patchapi-web-913371146929.us-central1.run.app"}
             </code>{" "}
             is added as an{" "}
             <a

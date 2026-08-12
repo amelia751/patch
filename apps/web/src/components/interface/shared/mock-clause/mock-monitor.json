@@ -10,7 +10,7 @@
       "dev": {
         "status": "healthy",
         "last_deployed": "2026-02-09T08:15:00Z",
-        "deployed_by": "jetrun-agent",
+        "deployed_by": "patchapi-agent",
         "endpoint_url": "https://clause-api-dev-1005432364863.us-central1.run.app",
         "services": [
           { "name": "clause-api", "type": "cloudrun", "status": "healthy", "requests_24h": 8920, "errors_24h": 5, "avg_duration_ms": 125, "memory_mb": 2048 }
@@ -29,7 +29,7 @@
       "staging": {
         "status": "healthy",
         "last_deployed": "2026-02-08T14:20:00Z",
-        "deployed_by": "jetrun-agent",
+        "deployed_by": "patchapi-agent",
         "endpoint_url": "https://clause-api-staging-1005432364863.us-central1.run.app",
         "services": [
           { "name": "clause-api", "type": "cloudrun", "status": "healthy", "requests_24h": 3450, "errors_24h": 3, "avg_duration_ms": 132, "memory_mb": 2048 }
@@ -42,7 +42,7 @@
       "prod": {
         "status": "healthy",
         "last_deployed": "2026-02-09T09:45:00Z",
-        "deployed_by": "jetrun-agent",
+        "deployed_by": "patchapi-agent",
         "endpoint_url": "https://app.clause.legal/api",
         "services": [
           { "name": "clause-api", "type": "cloudrun", "status": "healthy", "requests_24h": 156780, "errors_24h": 45, "avg_duration_ms": 98, "memory_mb": 2048 }

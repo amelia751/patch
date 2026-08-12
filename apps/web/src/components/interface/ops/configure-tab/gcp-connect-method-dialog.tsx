@@ -56,9 +56,9 @@ const REGION_OPTIONS = [
   { value: "asia-east1", label: "asia-east1 (Taiwan)" },
 ] as const;
 
-const JETRUN_AWS_ACCOUNT_ID = "093955289594";
-const JETRUN_AWS_ROLE_NAME = "JetRunPlatformRole";
-const JETRUN_AWS_STS_ROLE_ARN = `arn:aws:sts::${JETRUN_AWS_ACCOUNT_ID}:assumed-role/${JETRUN_AWS_ROLE_NAME}`;
+const PATCHAPI_AWS_ACCOUNT_ID = "093955289594";
+const PATCHAPI_AWS_ROLE_NAME = "PatchAPIPlatformRole";
+const PATCHAPI_AWS_STS_ROLE_ARN = `arn:aws:sts::${PATCHAPI_AWS_ACCOUNT_ID}:assumed-role/${PATCHAPI_AWS_ROLE_NAME}`;
 
 const tabTriggerClass =
   "text-xs font-medium rounded-md px-2 py-1.5 text-[var(--text-secondary)] data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-primary)] data-[state=active]:shadow-sm";
@@ -132,10 +132,10 @@ export function GCPConnectMethodDialog({
     ? `https://console.cloud.google.com/iam-admin/workload-identity-pools?project=${encodeURIComponent(consoleProject)}`
     : "https://console.cloud.google.com/iam-admin/workload-identity-pools";
   const gcpConsoleWifPoolDetailUrl = consoleProject
-    ? `https://console.cloud.google.com/iam-admin/workload-identity-pools/pool/jetrun-pool?project=${encodeURIComponent(consoleProject)}`
+    ? `https://console.cloud.google.com/iam-admin/workload-identity-pools/pool/patchapi-pool?project=${encodeURIComponent(consoleProject)}`
     : "https://console.cloud.google.com/iam-admin/workload-identity-pools";
   const gcpConsoleWifProviderUrl = consoleProject
-    ? `https://console.cloud.google.com/iam-admin/workload-identity-pools/pool/jetrun-pool/provider/jetrun-aws?project=${encodeURIComponent(consoleProject)}`
+    ? `https://console.cloud.google.com/iam-admin/workload-identity-pools/pool/patchapi-pool/provider/patchapi-aws?project=${encodeURIComponent(consoleProject)}`
     : "https://console.cloud.google.com/iam-admin/workload-identity-pools";
 
   const resetForm = () => {
@@ -436,7 +436,7 @@ export function GCPConnectMethodDialog({
             </DialogTitle>
           </div>
           <DialogDescription className="text-xs text-[var(--text-secondary)]">
-            Choose how JetRun authenticates to your GCP project. All methods
+            Choose how PatchAPI authenticates to your GCP project. All methods
             store credentials securely and scope access to agent-created
             resources.
           </DialogDescription>
@@ -468,19 +468,19 @@ export function GCPConnectMethodDialog({
                   <span className="font-medium text-primary">
                     Federated trust:
                   </span>{" "}
-                  JetRun&apos;s own AWS identity exchanges tokens with your GCP
+                  PatchAPI&apos;s own AWS identity exchanges tokens with your GCP
                   project — no long-lived keys, no human dependency. Google
                   recommends WIF for cross-cloud workloads. Setup takes ~15 min
                   in the GCP Console.
                 </p>
               </div>
 
-              {/* JetRun identity to share */}
+              {/* PatchAPI identity to share */}
               <div className="border border-[var(--border-color)] rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <Link2 className="h-3.5 w-3.5 text-primary" />
                   <h3 className="text-xs font-medium text-[var(--text-primary)]">
-                    JetRun&apos;s AWS identity
+                    PatchAPI&apos;s AWS identity
                   </h3>
                 </div>
                 <p className="text-[10px] text-[var(--text-secondary)]">
@@ -490,13 +490,13 @@ export function GCPConnectMethodDialog({
                 <div className="space-y-2">
                   <CopyableValue
                     label="AWS Account ID"
-                    value={JETRUN_AWS_ACCOUNT_ID}
+                    value={PATCHAPI_AWS_ACCOUNT_ID}
                     field="aws-account"
                     mono
                   />
                   <CopyableValue
                     label="Assumed Role ARN"
-                    value={JETRUN_AWS_STS_ROLE_ARN}
+                    value={PATCHAPI_AWS_STS_ROLE_ARN}
                     field="aws-role"
                     mono
                   />
@@ -527,15 +527,15 @@ export function GCPConnectMethodDialog({
                     <li>Click <GcpUiLabel>Create Pool</GcpUiLabel></li>
                     <li>
                       Set <GcpFieldLabel>Name</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="jetrun-pool" field="pool-name" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="patchapi-pool" field="pool-name" mono /></div>
                     </li>
                     <li>
                       Set <GcpFieldLabel>Pool ID</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="jetrun-pool" field="pool-id" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="patchapi-pool" field="pool-id" mono /></div>
                     </li>
                     <li>
                       Set <GcpFieldLabel>Description</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="Allows JetRun to access GCP resources via AWS federation" field="pool-desc" /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="Allows PatchAPI to access GCP resources via AWS federation" field="pool-desc" /></div>
                     </li>
                     <li>Leave the <GcpUiLabel>Enabled pool</GcpUiLabel> toggle on</li>
                     <li>Click <GcpUiLabel>Continue</GcpUiLabel></li>
@@ -560,7 +560,7 @@ export function GCPConnectMethodDialog({
                   </a>
                 </div>
                 <p className="text-[10px] text-[var(--text-secondary)]">
-                  This tells GCP to trust JetRun&apos;s AWS identity for token exchange.
+                  This tells GCP to trust PatchAPI&apos;s AWS identity for token exchange.
                 </p>
                 <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-3 space-y-3">
                   <ol className="text-[10px] text-[var(--text-primary)] space-y-3 list-decimal list-inside">
@@ -569,15 +569,15 @@ export function GCPConnectMethodDialog({
                     </li>
                     <li>
                       Set <GcpFieldLabel>Provider name</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="jetrun-aws" field="provider-name" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="patchapi-aws" field="provider-name" mono /></div>
                     </li>
                     <li>
                       Set <GcpFieldLabel>Provider ID</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="jetrun-aws" field="provider-id" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="patchapi-aws" field="provider-id" mono /></div>
                     </li>
                     <li>
                       Set <GcpFieldLabel>AWS Account ID</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value={JETRUN_AWS_ACCOUNT_ID} field="aws-account-step2" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value={PATCHAPI_AWS_ACCOUNT_ID} field="aws-account-step2" mono /></div>
                     </li>
                     <li>Leave <GcpFieldLabel>Audiences</GcpFieldLabel> as default</li>
                     <li>Click <GcpUiLabel>Continue</GcpUiLabel></li>
@@ -602,7 +602,7 @@ export function GCPConnectMethodDialog({
                   </a>
                 </div>
                 <p className="text-[10px] text-[var(--text-secondary)]">
-                  Map AWS attributes so GCP can identify JetRun&apos;s role, then add a condition
+                  Map AWS attributes so GCP can identify PatchAPI&apos;s role, then add a condition
                   that restricts the pool to only that role.
                 </p>
 
@@ -630,7 +630,7 @@ export function GCPConnectMethodDialog({
                     </div>
                   </div>
                   <p className="text-[9px] text-[var(--text-secondary)] mt-1">
-                    This extracts just the role name (e.g. <code className="text-[8px] bg-[var(--bg-tertiary)] px-0.5 rounded">{JETRUN_AWS_ROLE_NAME}</code>) from the full AWS ARN.
+                    This extracts just the role name (e.g. <code className="text-[8px] bg-[var(--bg-tertiary)] px-0.5 rounded">{PATCHAPI_AWS_ROLE_NAME}</code>) from the full AWS ARN.
                   </p>
                 </div>
 
@@ -643,7 +643,7 @@ export function GCPConnectMethodDialog({
                       Click <GcpUiLabel>Add Condition</GcpUiLabel>
                     </li>
                     <li>
-                      Paste the condition below — this restricts the pool to only JetRun&apos;s IAM role
+                      Paste the condition below — this restricts the pool to only PatchAPI&apos;s IAM role
                     </li>
                   </ol>
                 </div>
@@ -654,12 +654,12 @@ export function GCPConnectMethodDialog({
                   </label>
                   <div className="relative bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-md p-3">
                     <pre className="text-[10px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-all select-all leading-relaxed">
-{`attribute.aws_role == "${JETRUN_AWS_ROLE_NAME}"`}
+{`attribute.aws_role == "${PATCHAPI_AWS_ROLE_NAME}"`}
                     </pre>
                     <button
                       type="button"
                       onClick={() => handleCopy(
-                        `attribute.aws_role == "${JETRUN_AWS_ROLE_NAME}"`,
+                        `attribute.aws_role == "${PATCHAPI_AWS_ROLE_NAME}"`,
                         "attr-condition"
                       )}
                       className="absolute top-2 right-2 p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
@@ -705,24 +705,24 @@ export function GCPConnectMethodDialog({
                   </a>
                 </div>
                 <p className="text-[10px] text-[var(--text-secondary)]">
-                  JetRun will impersonate this service account. Create <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">jetrun-viewer</code> here if needed, or open it to add missing project roles.
+                  PatchAPI will impersonate this service account. Create <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">patchapi-viewer</code> here if needed, or open it to add missing project roles.
                 </p>
                 <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-3 space-y-3">
                   <ol className="text-[10px] text-[var(--text-primary)] space-y-3 list-decimal list-inside">
                     <li>
-                      Open the link above, then either click <GcpUiLabel>Create service account</GcpUiLabel> or open <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">jetrun-viewer</code> → <GcpUiLabel>Permissions</GcpUiLabel> → <GcpUiLabel>Grant access</GcpUiLabel> to add roles
+                      Open the link above, then either click <GcpUiLabel>Create service account</GcpUiLabel> or open <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">patchapi-viewer</code> → <GcpUiLabel>Permissions</GcpUiLabel> → <GcpUiLabel>Grant access</GcpUiLabel> to add roles
                     </li>
                     <li>
                       Set <GcpFieldLabel>Service account name</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="jetrun-viewer" field="sa-name" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="patchapi-viewer" field="sa-name" mono /></div>
                     </li>
                     <li>
                       Set <GcpFieldLabel>Service account ID</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="jetrun-viewer" field="sa-id" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="patchapi-viewer" field="sa-id" mono /></div>
                     </li>
                     <li>
                       Set <GcpFieldLabel>Service account description</GcpFieldLabel>:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="Read-only access for JetRun to observe services, logs, and config" field="sa-desc" /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value="Read-only access for PatchAPI to observe services, logs, and config" field="sa-desc" /></div>
                     </li>
                     <li>Click <GcpUiLabel>Create and continue</GcpUiLabel></li>
                     <li>
@@ -737,7 +737,7 @@ export function GCPConnectMethodDialog({
                         <CopyableValue label="" value="Secret Manager Secret Accessor" field="role-sm" mono />
                       </div>
                       <p className="text-[9px] text-[var(--text-secondary)] mt-1.5 ml-1">
-                        Secret Manager access lets JetRun pull Cloud Run secrets at sandbox boot — no secrets are stored, only read transiently.
+                        Secret Manager access lets PatchAPI pull Cloud Run secrets at sandbox boot — no secrets are stored, only read transiently.
                       </p>
                     </li>
                     <li>Click <GcpUiLabel>Continue</GcpUiLabel>, then <GcpUiLabel>Done</GcpUiLabel></li>
@@ -765,7 +765,7 @@ export function GCPConnectMethodDialog({
                   <ol className="text-[10px] text-[var(--text-primary)] space-y-3 list-decimal list-inside">
                     <li>
                       Open <GcpUiLabel>Workload Identity Federation</GcpUiLabel> and select pool{" "}
-                      <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">jetrun-pool</code>
+                      <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">patchapi-pool</code>
                     </li>
                     <li>Click <GcpUiLabel>Grant Access</GcpUiLabel></li>
                     <li>
@@ -774,7 +774,7 @@ export function GCPConnectMethodDialog({
                     </li>
                     <li>
                       For <GcpFieldLabel>Service account</GcpFieldLabel>, select{" "}
-                      <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">jetrun-viewer</code>
+                      <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">patchapi-viewer</code>
                     </li>
                     <li>
                       For <GcpFieldLabel>attribute name</GcpFieldLabel>, select{" "}
@@ -782,7 +782,7 @@ export function GCPConnectMethodDialog({
                     </li>
                     <li>
                       For <GcpFieldLabel>attribute value</GcpFieldLabel>, paste:
-                      <div className="mt-1.5 ml-1"><CopyableValue label="" value={JETRUN_AWS_ROLE_NAME} field="aws-role-step5" mono /></div>
+                      <div className="mt-1.5 ml-1"><CopyableValue label="" value={PATCHAPI_AWS_ROLE_NAME} field="aws-role-step5" mono /></div>
                     </li>
                     <li>Click <GcpUiLabel>Save</GcpUiLabel></li>
                     <li>
@@ -811,7 +811,7 @@ export function GCPConnectMethodDialog({
                 <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-3 space-y-3">
                   <ol className="text-[10px] text-[var(--text-primary)] space-y-3 list-decimal list-inside">
                     <li>
-                      Click the link above to open the <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">jetrun-pool</code> detail page
+                      Click the link above to open the <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">patchapi-pool</code> detail page
                     </li>
                     <li>
                       Find the <GcpFieldLabel>IAM principal</GcpFieldLabel> value and copy it
@@ -840,11 +840,11 @@ export function GCPConnectMethodDialog({
                       if (match) {
                         const [, projectNumber, poolId] = match;
                         setWifProviderResource(
-                          `projects/${projectNumber}/locations/global/workloadIdentityPools/${poolId}/providers/jetrun-aws`
+                          `projects/${projectNumber}/locations/global/workloadIdentityPools/${poolId}/providers/patchapi-aws`
                         );
                       }
                     }}
-                    placeholder="principal://iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/jetrun-pool/subject/..."
+                    placeholder="principal://iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/patchapi-pool/subject/..."
                     className="h-9 text-xs font-mono bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]"
                   />
                   <p className="text-[9px] text-[var(--text-secondary)]">
@@ -889,7 +889,7 @@ export function GCPConnectMethodDialog({
                     onChange={(e) =>
                       setWifServiceAccountEmail(e.target.value)
                     }
-                    placeholder="jetrun-viewer@your-project.iam.gserviceaccount.com"
+                    placeholder="patchapi-viewer@your-project.iam.gserviceaccount.com"
                     className="h-9 text-xs font-mono bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]"
                   />
                 </div>
@@ -904,7 +904,7 @@ export function GCPConnectMethodDialog({
                     Service account consent:
                   </span>{" "}
                   You create a dedicated read-only identity in GCP and download a
-                  JSON key. JetRun stores it encrypted in AWS Secrets Manager.
+                  JSON key. PatchAPI stores it encrypted in AWS Secrets Manager.
                   Stable for small teams, but many organizations{" "}
                   <a
                     href="https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts#disable_service_account_key_creation"
@@ -969,7 +969,7 @@ export function GCPConnectMethodDialog({
                     <li>
                       Enter name:{" "}
                       <code className="text-[9px] bg-[var(--bg-tertiary)] px-1 rounded">
-                        jetrun-viewer
+                        patchapi-viewer
                       </code>
                     </li>
                     <li>
@@ -984,7 +984,7 @@ export function GCPConnectMethodDialog({
                         <CopyableValue label="" value="Secret Manager Secret Accessor" field="sa-role-sm" mono />
                       </div>
                       <p className="text-[9px] text-[var(--text-secondary)] mt-1.5 ml-1">
-                        Secret Manager access lets JetRun pull Cloud Run secrets at sandbox boot — no secrets are stored, only read transiently.
+                        Secret Manager access lets PatchAPI pull Cloud Run secrets at sandbox boot — no secrets are stored, only read transiently.
                       </p>
                     </li>
                     <li>

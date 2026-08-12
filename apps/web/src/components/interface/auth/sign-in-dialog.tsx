@@ -117,7 +117,7 @@ export function SignInPanel({
             type="button"
             onClick={onGoogleSignIn}
             variant="outline"
-            data-jetrun-purpose="jetrun-account-google-oauth"
+            data-patchapi-purpose="patchapi-account-google-oauth"
             className={cn(
               "w-full h-10 text-sm flex items-center justify-center gap-2",
               authOutlineButton

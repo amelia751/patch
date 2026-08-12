@@ -10,7 +10,7 @@
       "status": "connected",
       "project_id": "ai-content-studio-dev",
       "project_number": "123456789012",
-      "service_account_email": "jetrun-deployer@ai-content-studio-dev.iam.gserviceaccount.com",
+      "service_account_email": "patchapi-deployer@ai-content-studio-dev.iam.gserviceaccount.com",
       "region": "us-central1",
       "zone": "us-central1-a",
       "connected_at": "2025-02-01T10:00:00Z",
@@ -64,7 +64,7 @@
       "status": "connected",
       "project_id": "ai-content-studio-staging",
       "project_number": "234567890123",
-      "service_account_email": "jetrun-deployer@ai-content-studio-staging.iam.gserviceaccount.com",
+      "service_account_email": "patchapi-deployer@ai-content-studio-staging.iam.gserviceaccount.com",
       "region": "us-central1",
       "zone": "us-central1-a",
       "connected_at": "2025-02-01T10:00:00Z",
@@ -473,7 +473,7 @@
     "dev": {
       "status": "deployed",
       "last_deployed": "2026-03-20T08:20:00Z",
-      "endpoint_url": "https://dev-api.ai-studio.jetrun.app"
+      "endpoint_url": "https://dev-api.ai-studio.patchapi.dev"
     },
     "staging": {
       "status": "deployed",
@@ -482,7 +482,7 @@
     "prod": {
       "status": "deployed",
       "last_deployed": "2026-03-18T10:00:00Z",
-      "endpoint_url": "https://api.ai-studio.jetrun.app"
+      "endpoint_url": "https://api.ai-studio.patchapi.dev"
     }
   }
 }

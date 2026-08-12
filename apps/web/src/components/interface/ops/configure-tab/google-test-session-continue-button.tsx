@@ -7,8 +7,8 @@ import { useTestGoogleSessionOptional } from "@/lib/test-google-session-context"
 /**
  * Captures a Google session for the **customer’s app** (sandbox / Configure → Auth).
  *
- * Distinct from JetRun account OAuth (`sign-in-dialog.tsx`, `sign-up-dialog.tsx`): those use `GoogleIcon`
- * and no `data-jetrun-purpose` attribute.
+ * Distinct from PatchAPI account OAuth (`sign-in-dialog.tsx`, `sign-up-dialog.tsx`): those use `GoogleIcon`
+ * and no `data-patchapi-purpose` attribute.
  */
 const TEST_APP_SESSION_BUTTON_CLASS =
   "w-full h-10 text-sm shadow-sm transition-colors duration-150 " +
@@ -29,7 +29,7 @@ export function GoogleTestSessionContinueButton({
   children = "Continue with Google",
   iconSize = 18,
   type = "button",
-  title = "Captures a Google login for testing your app in the sandbox. This is not JetRun account sign-in.",
+  title = "Captures a Google login for testing your app in the sandbox. This is not PatchAPI account sign-in.",
   "aria-label": ariaLabel,
   ...props
 }: GoogleTestSessionContinueButtonProps) {
@@ -38,14 +38,14 @@ export function GoogleTestSessionContinueButton({
 
   const label =
     ariaLabel ??
-    "Continue with Google — capture a test session for your app (not JetRun login)";
+    "Continue with Google — capture a test session for your app (not PatchAPI login)";
 
   return (
     <button
       type={type}
       title={title}
       aria-label={label}
-      data-jetrun-purpose="google-test-app-session"
+      data-patchapi-purpose="google-test-app-session"
       className={cn(
         "inline-flex items-center justify-center rounded-md font-medium",
         TEST_APP_SESSION_BUTTON_CLASS,

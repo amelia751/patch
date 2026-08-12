@@ -19,8 +19,9 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "JetRun — AI System Architect & DevOps · jetrun.sh",
-  description: "AI-powered system design tool",
+  title: "PatchAPI — Dependabot for APIs",
+  description:
+    "When an external API changes, PatchAPI finds the affected code, verifies a migration, and opens a pull request.",
 };
 
 export default function RootLayout({

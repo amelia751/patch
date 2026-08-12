@@ -104,7 +104,7 @@ export function CreateTeamDialog({ open, onOpenChange }: { open: boolean; onOpen
           <div className="grid gap-2">
             <Label className="text-xs text-[var(--text-secondary)]">Team URL</Label>
             <div className="flex items-center">
-              <span className="text-xs text-[var(--text-secondary)] px-3 py-2.5 bg-[var(--bg-tertiary)] border border-r-0 border-[var(--border-color)] rounded-l-md h-10 flex items-center">jetrun.sh/</span>
+              <span className="text-xs text-[var(--text-secondary)] px-3 py-2.5 bg-[var(--bg-tertiary)] border border-r-0 border-[var(--border-color)] rounded-l-md h-10 flex items-center">patchapi/</span>
               <Input placeholder="cloudcraft" className="h-10 text-sm bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] rounded-l-none focus:border-primary focus:ring-primary/20" />
             </div>
           </div>
@@ -608,7 +608,7 @@ export function OrganizationSettingsDialog({ open, onOpenChange, organization, o
                   <div className="grid gap-2">
                     <Label className="text-xs text-[var(--text-secondary)]">Organization Slug</Label>
                     <div className="flex items-center">
-                      <span className="text-xs text-[var(--text-secondary)] px-3 py-2 bg-[var(--bg-tertiary)] border border-r-0 border-[var(--border-color)] rounded-l-md h-9 flex items-center">jetrun.sh/</span>
+                      <span className="text-xs text-[var(--text-secondary)] px-3 py-2 bg-[var(--bg-tertiary)] border border-r-0 border-[var(--border-color)] rounded-l-md h-9 flex items-center">patchapi/</span>
                       <Input
                         value={slug}
                         onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}

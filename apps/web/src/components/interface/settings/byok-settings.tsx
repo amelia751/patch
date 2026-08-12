@@ -304,7 +304,7 @@ export function ByokSettings() {
           Bring your own API key
         </h2>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          Add your cloud provider API key so JetRun can run models on your behalf. Traffic uses the model
+          Add your cloud provider API key so PatchAPI can run models on your behalf. Traffic uses the model
           gateway your organization runs, so billing and credentials stay under your control.
         </p>
       </div>
@@ -312,7 +312,7 @@ export function ByokSettings() {
       <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
         <div className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
           <span className="font-medium text-primary">Your keys stay protected:</span> Encrypted at rest and
-          used only with your gateway. JetRun does not call provider APIs directly.
+          used only with your gateway. PatchAPI does not call provider APIs directly.
         </div>
       </div>
 
@@ -385,7 +385,7 @@ export function ByokSettings() {
             className={fieldInputClass}
           />
           <p className="text-[10px] text-[var(--text-secondary)]">
-            Optional label for your gateway and for finding this key in JetRun later.
+            Optional label for your gateway and for finding this key in PatchAPI later.
           </p>
         </div>
       </div>

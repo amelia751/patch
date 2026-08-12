@@ -169,7 +169,7 @@ export function GoogleTestConnectDialog({
               </div>
 
               <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-                Requests from sandbox runs include this login. Disconnect removes the session from JetRun.
+                Requests from sandbox runs include this login. Disconnect removes the session from PatchAPI.
               </p>
             </div>
 
@@ -228,7 +228,7 @@ export function GoogleTestConnectDialog({
               <div>
                 <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1.5">Your app stays in charge</h3>
                 <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                  JetRun stores it encrypted for this project, using your linked Google client ID—so validation matches
+                  PatchAPI stores it encrypted for this project, using your linked Google client ID—so validation matches
                   production.
                 </p>
               </div>

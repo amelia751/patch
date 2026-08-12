@@ -11,7 +11,7 @@
         "status": "healthy",
         "last_deployed": "2026-01-10T08:20:00Z",
         "deployed_by": "john@example.com",
-        "endpoint_url": "https://dev-api.ecommerce-a3f2k.jetrun.app",
+        "endpoint_url": "https://dev-api.ecommerce-a3f2k.patchapi.dev",
         "services": [
           { "name": "auth-service", "type": "lambda", "status": "healthy", "invocations_24h": 1250, "errors_24h": 3, "avg_duration_ms": 45, "memory_mb": 256 },
           { "name": "product-service", "type": "lambda", "status": "healthy", "invocations_24h": 3420, "errors_24h": 0, "avg_duration_ms": 32, "memory_mb": 512 },
@@ -31,7 +31,7 @@
         "status": "degraded",
         "last_deployed": "2026-01-08T14:40:00Z",
         "deployed_by": "sarah@example.com",
-        "endpoint_url": "https://staging-api.ecommerce-a3f2k.jetrun.app",
+        "endpoint_url": "https://staging-api.ecommerce-a3f2k.patchapi.dev",
         "services": [
           { "name": "auth-service", "type": "lambda", "status": "healthy", "invocations_24h": 450, "errors_24h": 0, "avg_duration_ms": 42, "memory_mb": 512 },
           { "name": "product-service", "type": "lambda", "status": "healthy", "invocations_24h": 1200, "errors_24h": 2, "avg_duration_ms": 28, "memory_mb": 1024 },
@@ -125,10 +125,10 @@
     "audit_log": [
       { "id": "audit_001", "timestamp": "2026-01-10T10:30:00Z", "user": "john@example.com", "action": "sandbox.start", "resource": "sandbox/ecommerce-a3f2k", "status": "success", "ip": "192.168.1.100" },
       { "id": "audit_002", "timestamp": "2026-01-10T09:00:00Z", "user": "john@example.com", "action": "approval.request", "resource": "deployment/staging", "status": "success", "ip": "192.168.1.100" },
-      { "id": "audit_003", "timestamp": "2026-01-10T08:15:00Z", "user": "jetrun-ci", "action": "deploy.lambda", "resource": "lambda/auth-service", "status": "success", "ip": null },
-      { "id": "audit_004", "timestamp": "2026-01-10T08:00:00Z", "user": "jetrun-ai", "action": "code.generate", "resource": "version/v3", "status": "success", "ip": null },
+      { "id": "audit_003", "timestamp": "2026-01-10T08:15:00Z", "user": "patchapi-ci", "action": "deploy.lambda", "resource": "lambda/auth-service", "status": "success", "ip": null },
+      { "id": "audit_004", "timestamp": "2026-01-10T08:00:00Z", "user": "patchapi", "action": "code.generate", "resource": "version/v3", "status": "success", "ip": null },
       { "id": "audit_005", "timestamp": "2026-01-08T14:40:00Z", "user": "sarah@example.com", "action": "approval.approve", "resource": "deployment/staging", "status": "success", "ip": "192.168.1.105" },
-      { "id": "audit_006", "timestamp": "2026-01-08T14:35:00Z", "user": "jetrun-ci", "action": "deploy.terraform", "resource": "terraform/staging", "status": "success", "ip": null },
+      { "id": "audit_006", "timestamp": "2026-01-08T14:35:00Z", "user": "patchapi-ci", "action": "deploy.terraform", "resource": "terraform/staging", "status": "success", "ip": null },
       { "id": "audit_007", "timestamp": "2026-01-06T11:20:00Z", "user": "john@example.com", "action": "secret.create", "resource": "secret/DATABASE_URL", "status": "success", "ip": "192.168.1.100" },
       { "id": "audit_008", "timestamp": "2026-01-05T10:00:00Z", "user": "john@example.com", "action": "project.create", "resource": "project/ecommerce-a3f2k", "status": "success", "ip": "192.168.1.100" }
     ],
