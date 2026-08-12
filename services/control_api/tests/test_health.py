@@ -22,7 +22,7 @@ def test_readyz_fails_closed_when_dependencies_are_missing(unwired_client: TestC
     body = response.json()
     assert body["status"] == "not_ready"
     not_ready = {check["name"] for check in body["checks"] if not check["ready"]}
-    assert not_ready == {"event_transport", "workflow_state_store"}
+    assert not_ready == {"event_transport", "workflow_state_store", "dashboard_read_model"}
 
 
 def test_readyz_is_ready_once_every_port_is_wired(client: TestClient) -> None:
@@ -58,6 +58,12 @@ def test_openapi_document_describes_the_whole_surface(unwired_client: TestClient
         "/healthz",
         "/readyz",
         "/v1/provider-checks",
+        "/v1/runs",
         "/v1/runs/{run_id}",
+        "/v1/runs/{run_id}/detail",
+        "/v1/changes",
+        "/v1/changes/{change_id}",
+        "/v1/repositories",
+        "/v1/fleet",
     }
     assert document["info"]["version"] == SERVICE_VERSION

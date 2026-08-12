@@ -20,6 +20,14 @@ from packages.schemas.fields import (
     Sha256Hex,
 )
 from packages.schemas.run_state import RunState
+from patchapi_control_api.ports import (
+    AuditEventRecord,
+    ChangeRecord,
+    FleetActorRecord,
+    RepositoryImpactRecord,
+    RunDetailRecord,
+    RunSummaryRecord,
+)
 
 
 class HealthResponse(StrictModel):
@@ -67,6 +75,50 @@ class ProviderCheckResponse(StrictModel):
     idempotency_key: Sha256Hex
     created: bool
     run_id: RunId | None = None
+
+
+class ChangeListResponse(StrictModel):
+    """Provider changes, newest first."""
+
+    changes: tuple[ChangeRecord, ...]
+
+
+class RepositoryImpactResponse(StrictModel):
+    """Per-repository exposure for one change, or across all known changes.
+
+    Unaffected repositories are included rather than filtered out: "we looked
+    and found nothing" is a different, weaker claim than "we did not look", and
+    the organization view has to be able to tell them apart.
+    """
+
+    change_id: NonEmptyLine | None
+    repositories: tuple[RepositoryImpactRecord, ...]
+
+
+class RunListResponse(StrictModel):
+    """Remediation runs, most recently started first."""
+
+    runs: tuple[RunSummaryRecord, ...]
+
+
+class RunDetailResponse(StrictModel):
+    """One run's full evidence bundle, plus what the state machine allows next."""
+
+    detail: RunDetailRecord
+    terminal: bool
+    allowed_next: tuple[RunState, ...]
+
+
+class FleetResponse(StrictModel):
+    """Observed fleet behaviour and refused actions.
+
+    Named `observed_actors` rather than `registered_agents` on purpose: this is
+    aggregated from the audit trail, not read from Agent Registry.
+    """
+
+    observed_actors: tuple[FleetActorRecord, ...]
+    denials: tuple[AuditEventRecord, ...]
+    policy_versions: tuple[str, ...]
 
 
 class RunStateResponse(StrictModel):

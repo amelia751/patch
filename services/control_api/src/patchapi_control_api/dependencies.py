@@ -10,12 +10,17 @@ from typing import Final
 from fastapi import Request
 
 from patchapi_control_api.errors import dependency_unavailable
-from patchapi_control_api.ports import ProviderCheckDispatcher, RunStateReader
+from patchapi_control_api.ports import (
+    DashboardReader,
+    ProviderCheckDispatcher,
+    RunStateReader,
+)
 
 # Dependency labels shared by the readiness report and the 503 payloads, so an
 # operator sees the same name in both places.
 EVENT_TRANSPORT: Final[str] = "event_transport"
 WORKFLOW_STATE_STORE: Final[str] = "workflow_state_store"
+DASHBOARD_READ_MODEL: Final[str] = "dashboard_read_model"
 
 
 def get_provider_check_dispatcher(request: Request) -> ProviderCheckDispatcher:
@@ -31,4 +36,11 @@ def get_run_state_reader(request: Request) -> RunStateReader:
         raise dependency_unavailable(
             WORKFLOW_STATE_STORE, "no authoritative run-state reader is configured"
         )
+    return reader
+
+
+def get_dashboard_reader(request: Request) -> DashboardReader:
+    reader: DashboardReader | None = request.app.state.dashboard_reader
+    if reader is None:
+        raise dependency_unavailable(DASHBOARD_READ_MODEL, "no dashboard read model is configured")
     return reader

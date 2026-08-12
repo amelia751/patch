@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 DEPENDENCY_UNAVAILABLE: Final[str] = "dependency_unavailable"
 DISPATCH_INTEGRITY: Final[str] = "dispatch_integrity"
 RUN_NOT_FOUND: Final[str] = "run_not_found"
+CHANGE_NOT_FOUND: Final[str] = "change_not_found"
 
 
 def dependency_unavailable(dependency: str, reason: str) -> HTTPException:
@@ -48,4 +49,11 @@ def run_not_found(run_id: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail={"error": RUN_NOT_FOUND, "run_id": run_id},
+    )
+
+
+def change_not_found(change_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"error": CHANGE_NOT_FOUND, "change_id": change_id},
     )

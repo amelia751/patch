@@ -1,26 +1,203 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+@plugin "tailwindcss-animate";
+
+@source "./src/**/*.{js,ts,jsx,tsx,mdx}";
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand. Change the three values below to retheme the whole dashboard. */
+  --brand-h: 10;
+  --brand-s: 67%;
+  --brand-l: 55%;
+  --primary: var(--brand-h) var(--brand-s) var(--brand-l);
+  --primary-hover: var(--brand-h) var(--brand-s) calc(var(--brand-l) - 6%);
+  --primary-strong: var(--brand-h) calc(var(--brand-s) + 5%) calc(var(--brand-l) - 10%);
+  --ring: var(--primary);
+
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --radius: 0.5rem;
+
+  /* Run-state and verdict semantics. Deliberately not brand-derived: a
+     verdict must not change meaning when the brand hue changes. */
+  --state-pass: 152 55% 36%;
+  --state-fail: 0 72% 45%;
+  --state-blocked: 0 72% 45%;
+  --state-human: 38 92% 42%;
+  --state-running: 217 75% 52%;
+  --state-idle: 215 16% 47%;
+
+  /* Neutral surfaces, referenced by the shell chrome. */
+  --surface-primary: #ffffff;
+  --surface-secondary: #f7f7f8;
+  --surface-tertiary: #ededf0;
+  --line: #e3e3e7;
+  --ink-primary: #1c1c1f;
+  --ink-secondary: #64646e;
+  --ink-strong: #000000;
 }
 
+.dark {
+  --background: 224 32% 6%;
+  --foreground: 210 40% 98%;
+  --card: 224 30% 8%;
+  --card-foreground: 210 40% 98%;
+  --popover: 224 30% 8%;
+  --popover-foreground: 210 40% 98%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 217.2 24% 15%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 24% 15%;
+  --muted-foreground: 215 18% 62%;
+  --accent: 217.2 24% 15%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 40%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 20% 18%;
+  --input: 217.2 20% 18%;
+
+  --state-pass: 152 50% 48%;
+  --state-fail: 0 70% 60%;
+  --state-blocked: 0 70% 60%;
+  --state-human: 38 92% 58%;
+  --state-running: 217 80% 66%;
+  --state-idle: 215 16% 60%;
+
+  --surface-primary: #0b0d12;
+  --surface-secondary: #11141b;
+  --surface-tertiary: #181c25;
+  --line: #262b36;
+  --ink-primary: #e6e8ee;
+  --ink-secondary: #9aa1b1;
+  --ink-strong: #ffffff;
+}
+
+/* Every custom property above is a bare HSL triplet, so each one has to be
+   wrapped in `hsl()` here. Passing the triplet through unwrapped yields an
+   invalid colour that the browser silently drops, which shows up as unstyled
+   white surfaces rather than as an error. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-hover: hsl(var(--primary-hover));
+  --color-primary-strong: hsl(var(--primary-strong));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-state-pass: hsl(var(--state-pass));
+  --color-state-fail: hsl(var(--state-fail));
+  --color-state-blocked: hsl(var(--state-blocked));
+  --color-state-human: hsl(var(--state-human));
+  --color-state-running: hsl(var(--state-running));
+  --color-state-idle: hsl(var(--state-idle));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer utilities {
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Tabular figures keep counts, SHAs and timestamps from shifting width
+     between renders while a run is streaming. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--state-running) / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px hsl(var(--state-running) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--state-running) / 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
 }

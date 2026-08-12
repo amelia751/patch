@@ -1,0 +1,48 @@
+[project]
+name = "patchapi-state"
+version = "0.1.0"
+description = "Read-only access to PatchAPI's authoritative workflow state in Postgres."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# asyncpg rather than a sync driver: the control plane is ASGI, and a blocking
+# read would stall the event loop that serves every other request.
+dependencies = [
+    "asyncpg>=0.30,<0.31",
+    "patchapi-control-api",
+    "patchapi-schemas",
+    "uvicorn>=0.30,<0.40",
+]
+
+# The wired control plane. `patchapi-control-api` remains the unwired service;
+# this entry point is the composition root that connects it to Postgres.
+[project.scripts]
+patchapi-serve = "packages.state.serve:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=1.0,<2",
+]
+
+[tool.uv.sources]
+patchapi-schemas = { workspace = true }
+patchapi-control-api = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Flat modules, matching the other `packages/` members: the in-tree checkout is
+# itself `packages.state`, so a `src/` layout would be shadowed by this
+# directory once the repo root is on `sys.path`. The wheel re-adds the prefix,
+# and every module is listed so a new file cannot ship unnoticed.
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/state/__init__.py"
+"config.py" = "packages/state/config.py"
+"dashboard.py" = "packages/state/dashboard.py"
+"pool.py" = "packages/state/pool.py"
+"runs.py" = "packages/state/runs.py"
+"serve.py" = "packages/state/serve.py"
