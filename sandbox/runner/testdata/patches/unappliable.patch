@@ -1,0 +1,16 @@
+Candidate generated against source that is not the pinned revision: the context
+does not exist. The run must stop at PATCH_FAILED rather than land a partial
+edit and then report on tests that never covered the intended change.
+
+diff --git a/image_service/client.py b/image_service/client.py
+--- a/image_service/client.py
++++ b/image_service/client.py
+@@ -4,7 +4,7 @@
+
+ from . import legacy_provider
+
+-MODEL_ID = "imagen-3.0-generate-002"
++MODEL_ID = "gemini-3.1-flash-image"
+
+
+ def render(prompt: str) -> dict[str, str]:

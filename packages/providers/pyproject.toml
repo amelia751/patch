@@ -1,0 +1,40 @@
+[project]
+name = "patchapi-providers"
+version = "0.1.0"
+description = "Adapters that normalize untrusted provider evidence into typed PatchAPI contracts."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "patchapi-schemas",
+    "pydantic>=2.9,<3",
+    # Live Vertex calls: ADC/service-account credentials plus the HTTP transport
+    # google-auth uses to refresh them.
+    "google-auth>=2.38,<3",
+    "requests>=2.32,<3",
+]
+
+[tool.uv.sources]
+patchapi-schemas = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Same layout constraint as packages/schemas: the modules live flat in this
+# directory so the in-tree checkout is itself `packages.providers`, and the
+# wheel re-adds the prefix. Each module is listed so a new file cannot ship
+# without being noticed here.
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/providers/__init__.py"
+"dotenv.py" = "packages/providers/dotenv.py"
+"google/__init__.py" = "packages/providers/google/__init__.py"
+"google/config.py" = "packages/providers/google/config.py"
+"google/deprecation_feed.py" = "packages/providers/google/deprecation_feed.py"
+"google/errors.py" = "packages/providers/google/errors.py"
+"google/normalize.py" = "packages/providers/google/normalize.py"
+"google/smoke.py" = "packages/providers/google/smoke.py"
+"google/snapshot.py" = "packages/providers/google/snapshot.py"
+"google/vertex.py" = "packages/providers/google/vertex.py"

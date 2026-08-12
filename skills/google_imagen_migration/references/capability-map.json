@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "allowed_dispositions": ["MAP", "HUMAN_REQUIRED"],
+  "string_replace_is_sufficient": false,
+  "families": {
+    "imagen": {
+      "surface": "dedicated image-generation model API (AI SDK image model / Vertex predict)",
+      "dispatch": "strategy 'image' -> generateWithImageModel(...)",
+      "carries_options": [
+        "seed",
+        "count",
+        "maskImage",
+        "negativePrompt",
+        "quality",
+        "resolution",
+        "outputFormat",
+        "aspectRatio",
+        "inputImages"
+      ]
+    },
+    "gemini_image": {
+      "surface": "generative multimodal text call; image bytes arrive as response files",
+      "dispatch": "strategy 'text' -> generateText(..., providerOptions.google.responseModalities ['TEXT','IMAGE']) then read image parts off result.files",
+      "carries_options": ["prompt", "inputImages", "imageSize", "aspectRatio"]
+    }
+  },
+  "options": [
+    {
+      "option": "seed",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "Deterministic reseeding has no equivalent on the multimodal surface. Dropping it silently changes reproducibility guarantees a caller may depend on."
+    },
+    {
+      "option": "multipleImages",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "The image surface returns n candidates per call; the text surface does not take a count."
+    },
+    {
+      "option": "inpainting",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "Mask-guided edit semantics are not expressible as a multimodal prompt without changing behaviour."
+    },
+    {
+      "option": "maskImage",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "Carrier for inpainting; the text path never forwards it."
+    },
+    {
+      "option": "negativePrompt",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "No provider-level negative prompt on the multimodal surface. Folding it into the positive prompt is a behaviour change, not a mapping."
+    },
+    {
+      "option": "quality",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "Image-model-only knob."
+    },
+    {
+      "option": "resolution",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "Closest analogue is `imageConfig.imageSize` ('1K' | '2K' | '4K'), which is a different value space. Requires a human decision, not a rename."
+    },
+    {
+      "option": "outputFormat",
+      "imagen": true,
+      "gemini": false,
+      "disposition": "HUMAN_REQUIRED",
+      "note": "The multimodal path reports the media type it produced; it does not accept a requested container."
+    },
+    {
+      "option": "aspectRatio",
+      "imagen": true,
+      "gemini": true,
+      "gemini_option": "imageConfig.aspectRatio",
+      "disposition": "MAP",
+      "note": "Supported on both surfaces; the multimodal surface accepts a wider ratio set."
+    },
+    {
+      "option": "inputImages",
+      "imagen": true,
+      "gemini": true,
+      "gemini_option": "messages[].content[].image",
+      "disposition": "MAP",
+      "note": "Reference images move from a dedicated argument to multimodal message content."
+    }
+  ],
+  "escalation_rule": "Every HUMAN_REQUIRED option that the affected call sites actually use must appear in the pull request body as an explicit capability-loss callout. A green build with a silently dropped option is a failed migration, not a passing one."
+}

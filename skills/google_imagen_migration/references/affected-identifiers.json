@@ -1,0 +1,33 @@
+{
+  "version": "1.0.0",
+  "provider": "google",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "effective_at": "2026-08-17",
+  "affected_identifiers": [
+    "imagen-4.0-generate-001",
+    "imagen-4.0-ultra-generate-001",
+    "imagen-4.0-fast-generate-001"
+  ],
+  "route_prefixes": ["", "vertex/"],
+  "route_note": "A `vertex/` prefix is a routing decision inside the consumer repository, not a distinct model. Both routes retire together, so a migration that only fixes the bare identifiers leaves Vertex-routed callers broken.",
+  "recommended_replacement": "gemini-3.1-flash-image",
+  "replacement_resolution_rule": "The provider identifier is a claim, not a usable constant. Resolve it against the target repository's own model catalog and its installed SDK before writing it into code. At the pinned Egaki baseline the resolvable identifier is `gemini-3.1-flash-image-preview`; the bare provider identifier exits with `Unknown model`.",
+  "not_covered": [
+    {
+      "identifier": "fal-ai/imagen4/preview",
+      "reason": "Third-party fal.ai-hosted model whose id merely contains the substring `imagen4`. Not a Google first-party endpoint and not covered by this retirement. Editing it is an unnecessary change."
+    }
+  ],
+  "immutable_paths": [
+    {
+      "glob": "**/CHANGELOG.md",
+      "reason": "A changelog records what shipped. Rewriting history to remove a retired identifier falsifies the record; add a new entry instead."
+    }
+  ],
+  "allowed_source_hosts": [
+    "ai.google.dev",
+    "cloud.google.com",
+    "docs.cloud.google.com",
+    "developers.googleblog.com"
+  ]
+}

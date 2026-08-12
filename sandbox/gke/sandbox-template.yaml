@@ -1,0 +1,102 @@
+# Shape of every sandbox that runs generated code (roadmap §13.2).
+#
+# The image reference is substituted from sandbox/gke/config.env at apply time,
+# so the pinned runner build lives in configuration rather than in this manifest.
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: patchapi-node22
+  namespace: patchapi-sandbox-dev
+  labels:
+    app.kubernetes.io/part-of: patchapi
+    app.kubernetes.io/component: agent-sandbox
+spec:
+  # With this field unset the controller writes its own NetworkPolicy for
+  # sandbox pods that permits egress to every public address — verified on
+  # GKE 1.35.6, and additive with ours, so it would silently defeat the
+  # default deny in network-policy.yaml. Unmanaged leaves the namespace
+  # policies as the only source of truth for what a sandbox may reach.
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: patchapi-sandbox-runner
+    spec:
+      # gVisor intercepts syscalls in userspace, which is the isolation boundary
+      # this whole design rests on. Without it a container escape is a node
+      # compromise.
+      runtimeClassName: gvisor
+      nodeSelector:
+        sandbox.gke.io/runtime: gvisor
+      tolerations:
+        - key: sandbox.gke.io/runtime
+          operator: Equal
+          value: gvisor
+          effect: NoSchedule
+      serviceAccountName: patchapi-sandbox-runner
+      automountServiceAccountToken: false
+      # Nothing in a sandbox needs to resolve another pod by name, and the
+      # cluster DNS suffix search path leaks the topology of the namespace.
+      enableServiceLinks: false
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          image: PATCHAPI_SANDBOX_IMAGE
+          # The sandbox is driven step by step over the exec API — checkout,
+          # patch, install, build, test — so the container itself must not run
+          # the workload on start.
+          command: ["sleep"]
+          args: ["infinity"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+          # Limits are mandatory under Agent Sandbox and bound the damage a
+          # generated build loop can do to the node.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 8Gi
+          env:
+            - name: PATCHAPI_SANDBOX_ROOT
+              value: /sandbox
+            - name: HOME
+              value: /sandbox
+            - name: npm_config_cache
+              value: /sandbox/.npm
+            - name: XDG_CACHE_HOME
+              value: /sandbox/.cache
+          # The root filesystem is read-only, so every writable path is an
+          # explicit, size-capped emptyDir that dies with the sandbox. No
+          # hostPath anywhere.
+          volumeMounts:
+            - name: workspace
+              mountPath: /sandbox
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

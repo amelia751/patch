@@ -51,7 +51,7 @@ can disqualify the submission or break the enterprise trust model.
 ## Layout
 
 ```
-apps/dashboard/          Next.js + TypeScript control UI
+apps/web/                Next.js + TypeScript control UI
 services/control_api/    FastAPI control plane
 services/github_tools/   Narrow GitHub App capability adapter
 services/repo_indexer/   API usage inventory indexer
@@ -73,7 +73,7 @@ after updating the roadmap in the same change.
 
 - Python 3.12 with type hints on public functions; `ruff` for lint and format;
   `uv` for package management.
-- TypeScript strict mode; `pnpm` for the dashboard and for Egaki demo work.
+- TypeScript strict mode; `npm` for the dashboard (`apps/web`). Egaki demo work follows the pinned fork’s package manager.
 - Schemas are Pydantic; every agent I/O contract is versioned.
 - Model IDs, prompt versions, and schema versions live in configuration and are
   pinned, never inlined at a call site.

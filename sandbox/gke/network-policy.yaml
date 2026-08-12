@@ -1,0 +1,57 @@
+# Baseline network posture for the sandbox namespace (roadmap §13.3): deny
+# everything, resolve names, nothing else.
+#
+# Phase allowances are *not* here. They are separate, run-scoped objects
+# (`phase-dependency-install.yaml`, `phase-live-verification.yaml`) that the
+# orchestrator creates immediately before a step and deletes immediately after,
+# so an allowance exists only for as long as the step that needs it.
+#
+# Phase switching cannot be done by relabelling the sandbox pod: the Agent
+# Sandbox controller reconciles pod labels back to the SandboxTemplate, so a
+# label written by the orchestrator is reverted within seconds. Creating and
+# deleting the policy object is the mechanism the controller does not fight.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: patchapi-sandbox-dev
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Nothing in the cluster needs to dial a sandbox pod: the orchestrator drives a
+# sandbox through the Kubernetes exec API, which is a control-plane path and not
+# pod ingress. Ingress therefore has no allow rule at all.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: patchapi-sandbox-dev
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        # NodeLocal DNSCache answers on the node itself, so the request never
+        # reaches a pod the selector above can match. Both resolver addresses
+        # are substituted from sandbox/gke/config.env, and no other address in
+        # 169.254.0.0/16 — the metadata server included — is reachable.
+        - ipBlock:
+            cidr: PATCHAPI_NODELOCAL_DNS_IP/32
+        - ipBlock:
+            cidr: PATCHAPI_CLUSTER_DNS_IP/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

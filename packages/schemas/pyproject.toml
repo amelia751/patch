@@ -1,0 +1,35 @@
+[project]
+name = "patchapi-schemas"
+version = "0.1.0"
+description = "Versioned Pydantic contracts exchanged between PatchAPI agents and services."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.9,<3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# The modules live flat in this directory so the in-tree checkout is itself
+# `packages.schemas`; a `src/` layout would be shadowed by this very directory
+# when the repo root is on `sys.path`. The wheel therefore has to re-add the
+# `packages/schemas/` prefix, and each module is listed so a new file cannot be
+# shipped without being noticed here.
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/schemas/__init__.py"
+"base.py" = "packages/schemas/base.py"
+"change_manifest.py" = "packages/schemas/change_manifest.py"
+"config.py" = "packages/schemas/config.py"
+"enums.py" = "packages/schemas/enums.py"
+"evidence.py" = "packages/schemas/evidence.py"
+"fields.py" = "packages/schemas/fields.py"
+"impact_report.py" = "packages/schemas/impact_report.py"
+"patch_plan.py" = "packages/schemas/patch_plan.py"
+"policy_decision.py" = "packages/schemas/policy_decision.py"
+"run_state.py" = "packages/schemas/run_state.py"
+"verification_report.py" = "packages/schemas/verification_report.py"

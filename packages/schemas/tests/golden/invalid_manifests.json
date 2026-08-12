@@ -1,0 +1,38 @@
+{
+  "no-affected-identifiers.json": {
+    "loc": ["affected_identifiers"],
+    "message_contains": "at least 1 item"
+  },
+  "no-source-urls.json": {
+    "loc": ["source_urls"],
+    "message_contains": "at least 1 item"
+  },
+  "retirement-without-effective-date.json": {
+    "loc": [],
+    "message_contains": "requires an effective_at date"
+  },
+  "replacement-also-retired.json": {
+    "loc": [],
+    "message_contains": "also listed as retired"
+  },
+  "duplicate-identifiers.json": {
+    "loc": [],
+    "message_contains": "must not repeat an identifier"
+  },
+  "announced-after-effective.json": {
+    "loc": [],
+    "message_contains": "must not be later than effective_at"
+  },
+  "smuggled-remediation-field.json": {
+    "loc": ["auto_merge"],
+    "message_contains": "Extra inputs are not permitted"
+  },
+  "wrong-schema-version.json": {
+    "loc": [],
+    "message_contains": "pinned at schema_version"
+  },
+  "unknown-change-type.json": {
+    "loc": ["change_type"],
+    "message_contains": "Input should be"
+  }
+}

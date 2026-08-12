@@ -1,0 +1,9 @@
+{
+  "image": {
+    "default": "imagen-4.0-generate-001",
+    "fast": "imagen-4.0-fast-generate-001"
+  },
+  "text": {
+    "default": "gemini-3.5-flash"
+  }
+}

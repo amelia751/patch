@@ -1,0 +1,35 @@
+{
+  "schema_version": "sandbox.plan.v1",
+  "plan_id": "testdata-good",
+  "description": "Known-good candidate patch: migrates the fixture to a model identifier the provider serves. Expected outcome PASS.",
+  "source": {
+    "kind": "path",
+    "location": "sandbox/runner/testdata/image_service",
+    "sha": null
+  },
+  "patch": {
+    "kind": "file",
+    "location": "sandbox/runner/testdata/patches/good.patch",
+    "strip": 1
+  },
+  "steps": [
+    {
+      "name": "install",
+      "argv": ["python3", "-m", "compileall", "-q", "image_service", "tests", "build.py"],
+      "phase": "none",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "build",
+      "argv": ["python3", "build.py"],
+      "phase": "none",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "test",
+      "argv": ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"],
+      "phase": "none",
+      "timeout_seconds": 300
+    }
+  ]
+}

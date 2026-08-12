@@ -1,0 +1,56 @@
+[project]
+name = "patchapi"
+version = "0.1.0"
+description = "PatchAPI monorepo root — uv workspace for the Python trees."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+# The root is a workspace anchor, never a distributable. Runtime code lives in
+# the members listed below.
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+# Members are listed literally rather than as `packages/*` globs: a literal that
+# does not exist yet is skipped, whereas a glob that matches a directory without
+# a `pyproject.toml` fails `uv sync` for the whole workspace. Each member owns
+# its own `pyproject.toml`; adding a tree means adding a line here.
+members = [
+    "packages/schemas",
+    "packages/providers",
+    "packages/github",
+    "packages/repo_scan",
+    "packages/policy",
+    "packages/events",
+    "packages/memory",
+    "packages/observability",
+    "services/control_api",
+    "services/github_tools",
+    "services/repo_indexer",
+    "agents",
+    "db",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14,<0.15",
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=1.0,<2",
+]
+
+[tool.pytest.ini_options]
+# No `testpaths`: collection starts at the repo root so a member tree added by
+# another worker is picked up without editing this file.
+norecursedirs = [
+    ".*",
+    "apps",
+    "build",
+    "dist",
+    "infra",
+    "node_modules",
+    "sandbox/runner/testdata",
+    "demo/egaki/checkout",
+]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"

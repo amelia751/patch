@@ -1,0 +1,17 @@
+# Every sandbox object lives in one namespace so cleanup is a single scoped
+# delete and no PatchAPI control-plane workload shares a policy boundary with
+# generated code.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: patchapi-sandbox-dev
+  labels:
+    app.kubernetes.io/part-of: patchapi
+    app.kubernetes.io/component: agent-sandbox
+    # Pod Security Admission enforces the posture in roadmap §13.2 even for a
+    # pod created by a controller rather than by our manifests: no privilege
+    # escalation, no host namespaces, no hostPath, non-root only.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

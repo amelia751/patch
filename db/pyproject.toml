@@ -1,0 +1,26 @@
+[project]
+name = "patchapi-db"
+version = "0.1.0"
+description = "Forward-only SQL migrations, demo seeds, and their runner for PatchAPI's authoritative Postgres state."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Standard library only. The runner discovers and orders the SQL, then hands it
+# to `psql` — either inside the local compose container or against a DSN. No
+# driver dependency means the schema can be applied from any environment that
+# can reach the database, including a Cloud SQL Auth Proxy shell.
+dependencies = []
+
+[project.scripts]
+patchapi-db = "patchapi_db.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patchapi_db"]
+
+# The SQL is the product of this package; an installed copy must carry it.
+[tool.hatch.build.targets.wheel.force-include]
+"migrations" = "patchapi_db/_sql/migrations"
+"seeds" = "patchapi_db/_sql/seeds"

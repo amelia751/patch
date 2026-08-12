@@ -1,0 +1,22 @@
+[project]
+name = "patchapi-events"
+version = "0.1.0"
+description = "Versioned Pub/Sub event envelope and idempotency keys for PatchAPI."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Standard library only: the envelope must be constructible by any publisher,
+# including one running inside a sandbox with a minimal dependency set.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/events/__init__.py"
+"config.py" = "packages/events/config.py"
+"envelope.py" = "packages/events/envelope.py"
+"idempotency.py" = "packages/events/idempotency.py"

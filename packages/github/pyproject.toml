@@ -1,0 +1,24 @@
+[project]
+name = "patchapi-github"
+version = "0.1.0"
+description = "Narrow GitHub capability vocabulary and reference types shared by PatchAPI agents."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Deliberately dependency-free: this package describes the capability surface,
+# it never speaks HTTP and never holds the GitHub App private key.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Flat module layout, as in `packages/schemas`: the in-tree checkout is itself
+# `packages.github`, so the wheel re-adds the `packages/github/` prefix and
+# lists each module explicitly.
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/github/__init__.py"
+"capabilities.py" = "packages/github/capabilities.py"
+"types.py" = "packages/github/types.py"

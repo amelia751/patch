@@ -1,0 +1,23 @@
+{
+  "schema_version": "sandbox.plan.v1",
+  "plan_id": "testdata-unappliable",
+  "description": "Candidate patch generated against a different revision. Expected outcome PATCH_FAILED with no step executed.",
+  "source": {
+    "kind": "path",
+    "location": "sandbox/runner/testdata/image_service",
+    "sha": null
+  },
+  "patch": {
+    "kind": "file",
+    "location": "sandbox/runner/testdata/patches/unappliable.patch",
+    "strip": 1
+  },
+  "steps": [
+    {
+      "name": "test",
+      "argv": ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"],
+      "phase": "none",
+      "timeout_seconds": 300
+    }
+  ]
+}

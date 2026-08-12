@@ -1,0 +1,36 @@
+# Live-verification phase: the one call to the replacement Google model
+# (roadmap §13.3).
+#
+# Same L3/L4 surface as the install phase, because a NetworkPolicy selects on
+# addresses and ports only — it cannot express
+# "generativelanguage.googleapis.com and nothing else". What narrows this phase
+# is time and credentials: the orchestrator creates this object immediately
+# before the call, injects the narrow Google credential for that call alone, and
+# deletes both straight after. Hostname-level egress needs an authenticating
+# proxy or an FQDN policy; see README.md.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: PATCHAPI_PHASE_POLICY_NAME
+  namespace: patchapi-sandbox-dev
+  labels:
+    app.kubernetes.io/part-of: patchapi
+    patchapi.dev/phase: live-verification
+spec:
+  podSelector:
+    matchLabels:
+      agents.x-k8s.io/claim-uid: PATCHAPI_SANDBOX_CLAIM_UID
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

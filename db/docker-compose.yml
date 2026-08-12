@@ -1,0 +1,38 @@
+# Local Postgres for PatchAPI development and the `scripts/verify_db.sh` smoke.
+# This file is the single source of truth for the local database; no other tree
+# should declare a Postgres service.
+#
+# Production runs on Cloud SQL for PostgreSQL 16 (roadmap §10.1). Keeping the
+# major version identical here means a migration that applies locally applies
+# there without a version-gated surprise.
+name: patchapi-db
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    # The password is a local development default, not a credential. Cloud SQL
+    # auth comes from Secret Manager and is never read from this file.
+    environment:
+      POSTGRES_USER: ${PATCHAPI_DB_USER:-patchapi}
+      POSTGRES_PASSWORD: ${PATCHAPI_DB_PASSWORD:-patchapi_local_dev}
+      POSTGRES_DB: ${PATCHAPI_DB_NAME:-patchapi}
+      # Deterministic collation so ordering assertions match Cloud SQL.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # High port so a developer's own Postgres on 5432 keeps working.
+    ports:
+      - "127.0.0.1:${PATCHAPI_DB_PORT:-55432}:5432"
+    volumes:
+      - patchapi-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${PATCHAPI_DB_USER:-patchapi} -d ${PATCHAPI_DB_NAME:-patchapi}",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+      start_period: 3s
+
+volumes:
+  patchapi-db-data:

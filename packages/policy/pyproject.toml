@@ -1,0 +1,26 @@
+[project]
+name = "patchapi-policy"
+version = "0.1.0"
+description = "Deterministic forbidden-path and prompt-injection gates for PatchAPI."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Standard library only, and deliberately so: roadmap §8.3 requires that hard
+# controls do not depend on an LLM. Adding an inference dependency here would
+# make the safety barrier probabilistic.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/policy/__init__.py"
+"config.py" = "packages/policy/config.py"
+"decision.py" = "packages/policy/decision.py"
+"gate.py" = "packages/policy/gate.py"
+"globs.py" = "packages/policy/globs.py"
+"injection.py" = "packages/policy/injection.py"
+"paths.py" = "packages/policy/paths.py"

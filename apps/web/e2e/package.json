@@ -1,0 +1,14 @@
+{
+  "name": "web-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser smoke tests for apps/web. Kept as a nested npm package so the Playwright toolchain never enters the dashboard's production dependency graph.",
+  "scripts": {
+    "test": "playwright test --config ../playwright.config.ts",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.57.0"
+  }
+}

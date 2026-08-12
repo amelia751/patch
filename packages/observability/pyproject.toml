@@ -1,0 +1,25 @@
+[project]
+name = "patchapi-observability"
+version = "0.1.0"
+description = "OpenTelemetry tracing setup for PatchAPI agents and services."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Standards-based instrumentation first (roadmap §14): OpenTelemetry here, and
+# the Cloud Trace exporter added by the deployment, so nothing in the runtime
+# path is tied to one backend.
+dependencies = [
+    "opentelemetry-api>=1.30,<2",
+    "opentelemetry-sdk>=1.30,<2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "packages/observability/__init__.py"
+"config.py" = "packages/observability/config.py"
+"tracing.py" = "packages/observability/tracing.py"

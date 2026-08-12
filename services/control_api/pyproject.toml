@@ -1,0 +1,33 @@
+[project]
+name = "patchapi-control-api"
+version = "0.1.0"
+description = "FastAPI control plane for PatchAPI runs, provider checks, and dashboard reads."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115,<0.130",
+    "patchapi-schemas",
+    "pydantic>=2.9,<3",
+    "uvicorn>=0.30,<0.40",
+]
+
+[project.scripts]
+patchapi-control-api = "patchapi_control_api.__main__:main"
+
+[dependency-groups]
+# Starlette's test client speaks ASGI through httpx; it is the only way these
+# tests exercise the real routing and validation stack rather than calling the
+# handlers directly.
+dev = [
+    "httpx>=0.27,<0.29",
+]
+
+[tool.uv.sources]
+patchapi-schemas = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patchapi_control_api"]

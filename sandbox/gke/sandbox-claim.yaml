@@ -1,0 +1,21 @@
+# A single sandbox allocated from the template. The verifier applies this,
+# execs into the sandbox, and deletes it; the orchestrator will create claims
+# with run-scoped names generated from the run id.
+#
+# Name is substituted from PATCHAPI_SANDBOX_CLAIM at apply time so concurrent
+# runs never contend for one object.
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxClaim
+metadata:
+  name: PATCHAPI_SANDBOX_CLAIM
+  namespace: patchapi-sandbox-dev
+  labels:
+    app.kubernetes.io/part-of: patchapi
+    app.kubernetes.io/component: agent-sandbox
+spec:
+  sandboxTemplateRef:
+    name: patchapi-node22
+  lifecycle:
+    # Releasing the claim destroys the sandbox. Evidence is collected before the
+    # delete, so nothing is kept alive to be inspected later (roadmap §13.1).
+    shutdownPolicy: Delete

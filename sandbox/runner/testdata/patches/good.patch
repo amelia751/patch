@@ -1,0 +1,15 @@
+Known-good candidate: migrate to a model identifier the provider actually
+serves. The fixture suite stays green, so the run must report PASS.
+
+diff --git a/image_service/client.py b/image_service/client.py
+--- a/image_service/client.py
++++ b/image_service/client.py
+@@ -4,7 +4,7 @@
+
+ from . import provider
+
+-MODEL_ID = "imagen-4.0-generate-001"
++MODEL_ID = "gemini-3.1-flash-image"
+
+
+ def render(prompt: str) -> dict[str, str]:

@@ -1,0 +1,93 @@
+# patchapi-github-tools
+
+The narrow GitHub App capability adapter (roadmap §7.3, §14).
+
+This service owns the GitHub App private key so that agents and sandboxes never
+do. Agents receive **capabilities**, never tokens: they name an operation, this
+service decides whether that name is exposed at all, whether the calling agent
+holds it, and only then talks to GitHub.
+
+## The surface
+
+Everything goes through one choke point:
+
+```text
+GET  /healthz                             liveness
+GET  /readyz                              ready only when the App is wired
+GET  /v1/capabilities                     the catalog, the grants, the boundary
+POST /v1/capabilities/{capability_name}   invoke one capability
+```
+
+| Read | Write |
+|---|---|
+| `get_repository_metadata` | `create_patch_branch` |
+| `get_file` | `commit_verified_patch` |
+| `list_tree` | `open_pull_request` |
+| `get_commit` | `add_pr_comment` |
+| `get_pull_request` | |
+| `get_checks` | |
+
+**Never exposed:** `merge_pull_request`, `change_branch_protection`,
+`modify_actions_secrets`, `modify_repository_admin_settings`,
+`delete_repository`, and the rest of `packages.github.FORBIDDEN_CAPABILITIES`.
+They are not unimplemented — they are named, refused with a structured 403, and
+blocked a second time at the transport by URL shape.
+
+## Order of checks
+
+1. **Identity** — `X-PatchAPI-Agent` names a known agent, or 401.
+2. **Allowlist** — the capability is exposed, or 403 (forbidden) / 404 (unknown).
+3. **Grant** — that agent holds that capability, or 403. Only `patchapi.pr`
+   holds write capabilities; `patchapi.change_intelligence` holds none at all,
+   because it reads untrusted provider material (roadmap §8.1).
+4. **Credentials** — the App is configured, or 503 saying no call was attempted.
+5. **Arguments** — the contract is satisfied, or 422.
+
+Steps 1–3 never reach GitHub. Step 2 does not depend on step 4: an attempt to
+merge is refused as forbidden whether or not the App is wired.
+
+## Write-path guarantees
+
+- Writes only target branches under `patchapi/`. There is no code path that
+  commits to `main`.
+- Branch creation and commits pin a full 40-character SHA. A branch that moved
+  after verification produces a 409, never a commit onto an unverified tree.
+- `open_pull_request` is idempotent on (run, base SHA, title): a replay updates
+  its own pull request instead of opening a duplicate.
+- The pull request body is **rendered from evidence**, not supplied. Every body
+  carries why / affected usage / migration / verification / risk / evidence and
+  the automation boundary — PatchAPI did not merge, and cannot.
+- Evidence with a failed verification check is rejected before GitHub is
+  contacted (roadmap §8.6, CLAUDE.md §6).
+
+## Credentials
+
+Loaded from the environment, never from the repository:
+
+| Variable | Meaning |
+|---|---|
+| `GITHUB_APP_ID` | numeric App ID |
+| `GITHUB_APP_INSTALLATION_ID` | numeric installation ID |
+| `GITHUB_APP_PRIVATE_KEY_PATH` | PEM file, local development (`.secrets/`) |
+| `GITHUB_APP_PRIVATE_KEY_SECRET` | Secret Manager resource name, deployed |
+| `GITHUB_API_BASE` | optional, for GitHub Enterprise |
+
+Exactly one of the two key sources may be set. The key and every derived
+credential are carried in `Secret`, whose `repr`, `str`, and `format` all render
+`<redacted>`; the tree contains no logging and no printing, so there is nowhere
+for a token to leak into. Upstream error bodies are never forwarded.
+
+Unset credentials are a supported state: the service starts, serves the catalog,
+reports itself not ready, and fails every invocation closed.
+
+## Running and verifying
+
+```bash
+uv run --package patchapi-github-tools uvicorn patchapi_github_tools.asgi:app --port 8081
+./scripts/verify_services_github_tools.sh
+```
+
+The verifier lints, unit-tests, boots the app, and probes the boundary over
+HTTP. Its final leg reads the demo fork through a real installation token when
+App credentials are present, and prints an explicit `SKIP` when they are not. It
+is never faked.

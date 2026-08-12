@@ -1,0 +1,124 @@
+{"task":"T-root-workspace","status":"PASS","command":"./scripts/verify_root.sh","at":"2026-08-11T23:46:54Z"}
+{"task": "T-demo-baseline", "status": "PASS", "command": "scripts/verify_demo_egaki.sh (live image step)", "at": "2026-08-11T23:47:07Z"}
+{"task":"T-apps-web","status":"PASS","command":"./scripts/verify_apps_web.sh","at":"2026-08-11T23:48:10Z","notes":"npm ci + lint + next build + HTTP 200 smoke; port 3000 occupied by a pre-existing next-server so the probe used fallback port 3001"}
+{"task": "T-demo-baseline", "status": "FAIL", "command": "scripts/verify_demo_egaki.sh (live image step)", "at": "2026-08-11T23:49:19Z"}
+{"task": "T-demo-baseline", "status": "FAIL", "command": "scripts/verify_demo_egaki.sh (live image step)", "at": "2026-08-11T23:49:51Z"}
+{"task":"T-docs-scaffold","status":"PASS","command":"./scripts/verify_docs.sh","at":"2026-08-11T23:50:15Z"}
+{"task": "T-demo-baseline", "status": "PASS", "command": "scripts/verify_demo_egaki.sh (live image step)", "at": "2026-08-11T23:55:14Z"}
+{"task": "T-demo-baseline", "status": "PASS", "command": "scripts/verify_demo_egaki.sh (live image step)", "at": "2026-08-11T23:55:30Z"}
+{"task": "T-demo-baseline", "status": "PASS", "command": "scripts/verify_demo_egaki.sh", "last_step": "scripts/verify_demo_egaki.sh (live image step)", "steps": [{"status": "PASS", "detail": "checkout at pinned SHA c09e1a44200ff5e951746e013035e68aeb3a14b1"}, {"status": "PASS", "detail": "imagen-4.0-generate-001: 30 hits (see demo/egaki/artifacts/imagen-scan.txt)"}, {"status": "PASS", "detail": "pnpm install --frozen-lockfile"}, {"status": "PASS", "detail": "pnpm --dir cli build"}, {"status": "PASS", "detail": "pnpm --dir cli test"}, {"status": "SKIP", "detail": "live image step not requested (set PATCHAPI_LIVE_IMAGE=1 to run it)"}], "at": "2026-08-11T23:56:01Z"}
+{"task": "T-infra-terraform", "status": "FAIL", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-11T23:58:50Z", "notes": "terraform plan exited 1 in infra/terraform/environments/dev"}
+{"task": "T-infra-terraform", "status": "PASS", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-11T23:59:59Z", "notes": "fmt+init+validate+plan against infra/terraform/environments/dev (create=125 read=1); apply skipped, set APPLY_INFRA=1 to apply"}
+{"task": "T-infra-terraform", "status": "PASS", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-12T00:01:41Z", "notes": "fmt+init+validate+plan against infra/terraform/environments/dev (create=125 read=1); apply skipped, set APPLY_INFRA=1 to apply"}
+{"task": "T-infra-terraform", "status": "PASS", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-12T00:02:20Z", "notes": "fmt+init+validate+plan against infra/terraform/environments/dev (create=125 read=1); apply skipped, set APPLY_INFRA=1 to apply"}
+{"task": "T-infra-terraform", "status": "PASS", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-12T00:02:59Z", "notes": "fmt+init+validate+plan against infra/terraform/environments/dev (create=125 read=1); apply skipped, set APPLY_INFRA=1 to apply"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T00:03:58Z"}
+{"task":"T-skills","status":"FAIL","command":"./scripts/verify_skills.sh","at":"2026-08-12T00:05:31Z","notes":"0 skip(s)"}
+{"task":"T-db","status":"FAIL","command":"./scripts/verify_db.sh","at":"2026-08-12T00:05:44Z"}
+{"task":"T-skills","status":"PASS","command":"./scripts/verify_skills.sh","at":"2026-08-12T00:05:48Z","notes":"0 skip(s)"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T00:06:11Z"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T00:06:40Z"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T00:06:52Z"}
+{"task":"T-packages-schemas","status":"FAIL","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T00:07:42Z"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T00:08:12Z"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T00:08:46Z"}
+{"task":"T-apps-web-browser","status":"PASS","command":"./scripts/verify_apps_web_browser.sh","at":"2026-08-12T00:11:45Z"}
+{"task":"T-sandbox-local","status":"FAIL","command":"./scripts/verify_sandbox_local.sh","at":"2026-08-12T00:17:05Z","notes":"verification did not complete"}
+{"task":"T-sandbox-local","status":"PASS","command":"./scripts/verify_sandbox_local.sh","at":"2026-08-12T00:17:17Z","notes":"unit suite + no-op/good/bad/unappliable runs under /var/folders/1x/9g9q6kq57wz3hh2r2qk6txlh0000gn/T/patchapi-verify-XBKGFT; checkout digest unchanged; image built; good=PASS bad=FAIL non-root, no network, read-only rootfs, caps dropped"}
+{"task":"T-sandbox-local","status":"PASS","command":"./scripts/verify_sandbox_local.sh","at":"2026-08-12T00:18:25Z","notes":"unit suite + no-op/good/bad/unappliable runs under /var/folders/1x/9g9q6kq57wz3hh2r2qk6txlh0000gn/T/patchapi-verify-ysnAgS; checkout digest unchanged; image built; good=PASS bad=FAIL non-root, no network, read-only rootfs, caps dropped"}
+{"task":"T-services-control_api","status":"FAIL","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T00:21:33Z"}
+{"task":"T-services-control_api","status":"FAIL","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T00:22:51Z"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T00:23:15Z"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T00:23:23Z"}
+{"task":"T-packages-remaining","status":"PASS","command":"./scripts/verify_packages_remaining.sh (workspace)","at":"2026-08-12T00:23:42Z"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (isolated)","at":"2026-08-12T00:23:52Z"}
+{"task":"T-packages-providers-google","status":"PASS","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T00:24:24Z","notes":"offline PASS; live Vertex reasoning smoke PASS"}
+{"task":"T-packages-providers-google","status":"SKIP","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T00:25:10Z","notes":"offline PASS; live smoke SKIP (credentials absent)"}
+{"task":"T-packages-providers-google","status":"FAIL","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T00:25:10Z","notes":"live smoke SKIP while required"}
+{"task":"T-packages-providers-google","status":"PASS","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T00:25:20Z","notes":"offline PASS; live Vertex reasoning smoke PASS"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (workspace)","at":"2026-08-12T00:32:54Z"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (isolated)","at":"2026-08-12T00:33:00Z"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (workspace)","at":"2026-08-12T00:33:04Z"}
+{"task":"T-gemini-live","status":"FAIL","command":"./scripts/verify_gemini_live.sh (isolated)","at":"2026-08-12T00:37:25Z","notes":"did not complete"}
+{"task":"T-gemini-live","status":"FAIL","command":"./scripts/verify_gemini_live.sh (isolated)","at":"2026-08-12T00:37:31Z","notes":"did not complete"}
+{"task":"T-gemini-live","status":"PASS","command":"./scripts/verify_gemini_live.sh (isolated)","at":"2026-08-12T00:37:50Z","notes":"live reasoning PASS; live image PASS (872741 bytes)"}
+{"task":"T-gemini-live","status":"PASS","command":"./scripts/verify_gemini_live.sh (isolated)","at":"2026-08-12T00:38:51Z","notes":"live reasoning PASS; live image PASS (762731 bytes)"}
+{"task":"T-services-github_tools","status":"FAIL","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:39:27Z"}
+{"task":"T-services-github_tools","status":"FAIL","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:39:59Z"}
+{"task":"T-services-github_tools","status":"FAIL","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:40:08Z"}
+{"task":"T-services-github_tools","status":"FAIL","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:40:38Z"}
+{"task":"T-services-github_tools","status":"FAIL","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:41:29Z"}
+{"task":"T-services-github_tools","status":"PASS (live SKIP)","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:41:46Z"}
+{"task":"T-services-github_tools","status":"PASS (live SKIP)","command":"./scripts/verify_services_github_tools.sh (isolated)","at":"2026-08-12T00:42:17Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T00:43:19Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (isolated)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T00:43:47Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T00:44:09Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T00:44:42Z"}
+{"task":"T-agents-adk","status":"PASS","command":"./scripts/verify_agents_adk.sh (workspace)","at":"2026-08-12T00:51:37Z","notes":"compliance + offline PASS; live ChangeManifest turn PASS"}
+{"task":"T-agents-adk","status":"PASS","command":"./scripts/verify_agents_adk.sh (workspace)","at":"2026-08-12T00:51:56Z","notes":"compliance + offline PASS; live ChangeManifest turn PASS"}
+{"task":"T-sandbox-gke","status":"PASS","command":"./scripts/verify_sandbox_gke.sh","at":"2026-08-12T01:02:00Z","notes":"cluster patchapi-dev-agentsandbox (us-central1-a), context gke_patch-505223_us-central1-a_patchapi-dev-agentsandbox; sandbox claimed, exec + egress phase assertions, destroyed; evidence artifacts/sandbox-gke/20260812T005856Z-90524"}
+{"task":"T-qa-aggregate","status":"PASS","command":"./scripts/verify_all.sh","at":"2026-08-12T01:09:28Z","notes":"pass=1 skip=0 fail=0 timeout=0 missing=0 not_run=17 deferred=1 secret_scan=PASS"}
+{"task":"T-root-workspace","status":"FAIL","command":"./scripts/verify_root.sh","at":"2026-08-12T01:09:39Z"}
+{"task":"T-qa-aggregate","status":"FAIL","command":"./scripts/verify_all.sh","at":"2026-08-12T01:09:40Z","notes":"pass=0 skip=0 fail=1 timeout=0 missing=0 not_run=17 deferred=1 secret_scan=NOT RUN"}
+{"task":"T-qa-aggregate","status":"FAIL","command":"./scripts/verify_all.sh","at":"2026-08-12T01:10:47Z","notes":"pass=1 skip=0 fail=0 timeout=0 missing=0 not_run=17 deferred=1 secret_scan=FAIL"}
+{"task":"T-qa-aggregate","status":"PASS","command":"./scripts/verify_all.sh","at":"2026-08-12T01:11:58Z","notes":"pass=1 skip=0 fail=0 timeout=0 missing=0 not_run=17 deferred=1 secret_scan=PASS"}
+{"task":"T-root-workspace","status":"FAIL","command":"./scripts/verify_root.sh","at":"2026-08-12T01:13:43Z"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T01:13:46Z"}
+{"task":"T-packages-providers-google","status":"PASS","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T01:13:50Z","notes":"offline PASS; live Vertex reasoning smoke PASS"}
+{"task":"T-packages-remaining","status":"PASS","command":"./scripts/verify_packages_remaining.sh (workspace)","at":"2026-08-12T01:13:53Z"}
+{"task":"T-skills","status":"PASS","command":"./scripts/verify_skills.sh","at":"2026-08-12T01:13:54Z","notes":"0 skip(s)"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T01:13:57Z"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (workspace)","at":"2026-08-12T01:14:01Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T01:14:07Z"}
+{"task":"T-agents-adk","status":"PASS","command":"./scripts/verify_agents_adk.sh (workspace)","at":"2026-08-12T01:14:21Z","notes":"compliance + offline PASS; live ChangeManifest turn PASS"}
+{"task":"T-gemini-live","status":"PASS","command":"./scripts/verify_gemini_live.sh (workspace)","at":"2026-08-12T01:14:36Z","notes":"live reasoning PASS; live image PASS (806576 bytes)"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T01:14:44Z"}
+{"task":"T-qa-aggregate","status":"FAIL","command":"./scripts/verify_all.sh","at":"2026-08-12T01:14:48Z","notes":"pass=11 skip=0 fail=1 timeout=0 missing=0 not_run=0 deferred=0 secret_scan=PASS"}
+{"task":"T-root-workspace","status":"FAIL","command":"./scripts/verify_root.sh","at":"2026-08-12T01:15:41Z"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T01:15:44Z"}
+{"task":"T-packages-providers-google","status":"PASS","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T01:15:49Z","notes":"offline PASS; live Vertex reasoning smoke PASS"}
+{"task":"T-packages-remaining","status":"PASS","command":"./scripts/verify_packages_remaining.sh (workspace)","at":"2026-08-12T01:15:53Z"}
+{"task":"T-skills","status":"PASS","command":"./scripts/verify_skills.sh","at":"2026-08-12T01:15:53Z","notes":"0 skip(s)"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T01:15:57Z"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (workspace)","at":"2026-08-12T01:16:00Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T01:16:07Z"}
+{"task":"T-agents-adk","status":"PASS","command":"./scripts/verify_agents_adk.sh (workspace)","at":"2026-08-12T01:16:24Z","notes":"compliance + offline PASS; live ChangeManifest turn PASS"}
+{"task":"T-gemini-live","status":"PASS","command":"./scripts/verify_gemini_live.sh (workspace)","at":"2026-08-12T01:16:37Z","notes":"live reasoning PASS; live image PASS (200419 bytes)"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T01:16:44Z"}
+{"task":"T-sandbox-local","status":"PASS","command":"./scripts/verify_sandbox_local.sh","at":"2026-08-12T01:16:54Z","notes":"unit suite + no-op/good/bad/unappliable runs under /var/folders/1x/9g9q6kq57wz3hh2r2qk6txlh0000gn/T/patchapi-verify-VnX2yW; checkout digest unchanged; image built; good=PASS bad=FAIL non-root, no network, read-only rootfs, caps dropped"}
+{"task":"T-apps-web-browser","status":"PASS","command":"./scripts/verify_apps_web_browser.sh","at":"2026-08-12T01:17:29Z"}
+{"task": "T-demo-baseline", "status": "PASS", "command": "scripts/verify_demo_egaki.sh", "last_step": "scripts/verify_demo_egaki.sh (live image step)", "steps": [{"status": "PASS", "detail": "checkout at pinned SHA c09e1a44200ff5e951746e013035e68aeb3a14b1"}, {"status": "PASS", "detail": "imagen-4.0-generate-001: 30 hits (see demo/egaki/artifacts/imagen-scan.txt)"}, {"status": "PASS", "detail": "pnpm install --frozen-lockfile"}, {"status": "PASS", "detail": "pnpm --dir cli build"}, {"status": "PASS", "detail": "pnpm --dir cli test"}, {"status": "SKIP", "detail": "live image step not requested (set PATCHAPI_LIVE_IMAGE=1 to run it)"}], "at": "2026-08-12T01:17:42Z"}
+{"task": "T-infra-terraform", "status": "PASS", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-12T01:17:50Z", "notes": "fmt+init+validate+plan against infra/terraform/environments/dev (create=125 read=1); apply skipped, set APPLY_INFRA=1 to apply"}
+{"task":"T-qa-aggregate","status":"FAIL","command":"./scripts/verify_all.sh","at":"2026-08-12T01:21:41Z","notes":"pass=16 skip=1 fail=1 timeout=0 missing=0 not_run=0 deferred=1 secret_scan=PASS"}
+{"task":"T-root-workspace","status":"FAIL","command":"./scripts/verify_root.sh","at":"2026-08-12T01:22:04Z"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T01:22:08Z"}
+{"task":"T-packages-providers-google","status":"PASS","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T01:22:14Z","notes":"offline PASS; live Vertex reasoning smoke PASS"}
+{"task":"T-packages-remaining","status":"PASS","command":"./scripts/verify_packages_remaining.sh (workspace)","at":"2026-08-12T01:22:20Z"}
+{"task":"T-skills","status":"PASS","command":"./scripts/verify_skills.sh","at":"2026-08-12T01:22:23Z","notes":"0 skip(s)"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T01:22:39Z"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (workspace)","at":"2026-08-12T01:22:45Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T01:23:01Z"}
+{"task":"T-agents-adk","status":"PASS","command":"./scripts/verify_agents_adk.sh (workspace)","at":"2026-08-12T01:23:20Z","notes":"compliance + offline PASS; live ChangeManifest turn PASS"}
+{"task":"T-gemini-live","status":"PASS","command":"./scripts/verify_gemini_live.sh (workspace)","at":"2026-08-12T01:23:36Z","notes":"live reasoning PASS; live image PASS (741986 bytes)"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T01:23:42Z"}
+{"task":"T-sandbox-local","status":"PASS","command":"./scripts/verify_sandbox_local.sh","at":"2026-08-12T01:23:50Z","notes":"unit suite + no-op/good/bad/unappliable runs under /var/folders/1x/9g9q6kq57wz3hh2r2qk6txlh0000gn/T/patchapi-verify-5uKEBG; checkout digest unchanged; image built; good=PASS bad=FAIL non-root, no network, read-only rootfs, caps dropped"}
+{"task":"T-apps-web-browser","status":"FAIL","command":"./scripts/verify_apps_web_browser.sh","at":"2026-08-12T01:24:15Z"}
+{"task":"T-root-workspace","status":"FAIL","command":"./scripts/verify_root.sh","at":"2026-08-12T01:24:45Z"}
+{"task":"T-root-workspace","status":"FAIL","command":"./scripts/verify_root.sh","at":"2026-08-12T01:24:56Z"}
+{"task":"T-root-workspace","status":"PASS","command":"./scripts/verify_root.sh","at":"2026-08-12T01:25:05Z"}
+{"task":"T-root-workspace","status":"PASS","command":"./scripts/verify_root.sh","at":"2026-08-12T01:25:09Z"}
+{"task":"T-packages-schemas","status":"PASS","command":"./scripts/verify_packages_schemas.sh (workspace)","at":"2026-08-12T01:25:12Z"}
+{"task":"T-packages-providers-google","status":"PASS","command":"./scripts/verify_packages_providers_google.sh (workspace)","at":"2026-08-12T01:25:17Z","notes":"offline PASS; live Vertex reasoning smoke PASS"}
+{"task":"T-packages-remaining","status":"PASS","command":"./scripts/verify_packages_remaining.sh (workspace)","at":"2026-08-12T01:25:20Z"}
+{"task":"T-skills","status":"PASS","command":"./scripts/verify_skills.sh","at":"2026-08-12T01:25:21Z","notes":"0 skip(s)"}
+{"task":"T-services-control_api","status":"PASS","command":"./scripts/verify_services_control_api.sh (workspace)","at":"2026-08-12T01:25:24Z"}
+{"task":"T-services-repo_indexer","status":"PASS","command":"./scripts/verify_services_repo_indexer.sh (workspace)","at":"2026-08-12T01:25:28Z"}
+{"task":"T-services-github_tools","status":"PASS","command":"./scripts/verify_services_github_tools.sh (workspace)","note":"SKIP: live GitHub App read (App not configured)","at":"2026-08-12T01:25:35Z"}
+{"task":"T-agents-adk","status":"PASS","command":"./scripts/verify_agents_adk.sh (workspace)","at":"2026-08-12T01:25:51Z","notes":"compliance + offline PASS; live ChangeManifest turn PASS"}
+{"task":"T-gemini-live","status":"PASS","command":"./scripts/verify_gemini_live.sh (workspace)","at":"2026-08-12T01:26:05Z","notes":"live reasoning PASS; live image PASS (629456 bytes)"}
+{"task":"T-db","status":"PASS","command":"./scripts/verify_db.sh","at":"2026-08-12T01:26:11Z"}
+{"task":"T-sandbox-local","status":"PASS","command":"./scripts/verify_sandbox_local.sh","at":"2026-08-12T01:26:19Z","notes":"unit suite + no-op/good/bad/unappliable runs under /var/folders/1x/9g9q6kq57wz3hh2r2qk6txlh0000gn/T/patchapi-verify-UlVyd1; checkout digest unchanged; image built; good=PASS bad=FAIL non-root, no network, read-only rootfs, caps dropped"}
+{"task":"T-apps-web-browser","status":"PASS","command":"./scripts/verify_apps_web_browser.sh","at":"2026-08-12T01:26:50Z"}
+{"task": "T-demo-baseline", "status": "PASS", "command": "scripts/verify_demo_egaki.sh", "last_step": "scripts/verify_demo_egaki.sh (live image step)", "steps": [{"status": "PASS", "detail": "checkout at pinned SHA c09e1a44200ff5e951746e013035e68aeb3a14b1"}, {"status": "PASS", "detail": "imagen-4.0-generate-001: 30 hits (see demo/egaki/artifacts/imagen-scan.txt)"}, {"status": "PASS", "detail": "pnpm install --frozen-lockfile"}, {"status": "PASS", "detail": "pnpm --dir cli build"}, {"status": "PASS", "detail": "pnpm --dir cli test"}, {"status": "SKIP", "detail": "live image step not requested (set PATCHAPI_LIVE_IMAGE=1 to run it)"}], "at": "2026-08-12T01:27:07Z"}
+{"task": "T-infra-terraform", "status": "PASS", "command": "./scripts/verify_infra_terraform.sh", "at": "2026-08-12T01:27:19Z", "notes": "fmt+init+validate+plan against infra/terraform/environments/dev (create=125 read=1); apply skipped, set APPLY_INFRA=1 to apply"}
+{"task":"T-qa-aggregate","status":"PASS","command":"./scripts/verify_all.sh","at":"2026-08-12T01:31:08Z","notes":"pass=18 skip=0 fail=0 timeout=0 missing=0 not_run=0 deferred=1 secret_scan=PASS"}

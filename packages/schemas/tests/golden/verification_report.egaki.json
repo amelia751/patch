@@ -1,0 +1,31 @@
+{
+  "run_id": "run-egaki-imagen4-0001",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "repo": "amelia751/egaki",
+  "base_sha": "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+  "patched_sha_or_diff_hash": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "verdict": "pass",
+  "build": "pass",
+  "tests": "pass",
+  "live_api": "pass",
+  "policy": "pass",
+  "deprecated_identifiers_absent": true,
+  "unexpected_files": [],
+  "evidence": [
+    {
+      "kind": "build_log",
+      "uri": "gs://patchapi-evidence/run-egaki-imagen4-0001/build.log"
+    },
+    {
+      "kind": "test_log",
+      "uri": "gs://patchapi-evidence/run-egaki-imagen4-0001/vitest.log"
+    },
+    {
+      "kind": "live_api_artifact",
+      "uri": "gs://patchapi-evidence/run-egaki-imagen4-0001/verification.png",
+      "label": "gemini-3.1-flash-image output"
+    }
+  ],
+  "patch_agent_id": "patchapi.patch",
+  "verifier_agent_id": "patchapi.verification"
+}

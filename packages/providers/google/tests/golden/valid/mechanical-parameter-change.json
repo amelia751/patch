@@ -1,0 +1,23 @@
+{
+  "fixture_version": "1.0.0",
+  "provider": "google",
+  "change_id": "gemini-safety-parameter-rename-2026-09-01",
+  "change_type": "parameter_change",
+  "announced_at": "2026-07-01",
+  "effective_at": "2026-09-01",
+  "affected_identifiers": [
+    "safetySettings.threshold"
+  ],
+  "recommended_replacement": "safetySettings.blockThreshold",
+  "migration_character": "mechanical",
+  "source_urls": [
+    "https://ai.google.dev/gemini-api/docs/changelog"
+  ],
+  "source_snapshot": {
+    "status": "NOT_CAPTURED",
+    "reason": "Changelog entry not yet snapshotted."
+  },
+  "trust": {
+    "classification": "untrusted_provider_input"
+  }
+}

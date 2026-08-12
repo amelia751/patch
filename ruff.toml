@@ -1,0 +1,35 @@
+# Shared lint and format configuration for every Python tree in the workspace.
+# Kept in a standalone file so workspace members inherit it without each
+# repeating a [tool.ruff] block.
+
+target-version = "py312"
+line-length = 100
+
+extend-exclude = [
+    ".venv",
+    "apps",
+    "demo/egaki/checkout",
+    "node_modules",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "ANN", # missing annotations on public functions
+    "RUF",
+]
+ignore = [
+    "ANN401", # `Any` is allowed where a comment justifies it
+]
+
+[lint.per-file-ignores]
+# Tests are internal callers; annotating every fixture adds noise, not safety.
+"**/tests/**" = ["ANN"]
+"tests/**" = ["ANN"]
+
+[format]
+quote-style = "double"

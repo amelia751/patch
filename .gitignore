@@ -4,10 +4,12 @@
 .cursor/
 .claude/
 .fleet/
+.gemini/
 .codex/
 /fleet
 CLAUDE.local.md
 AGENTS.local.md
+GEMINI.local.md
 
 # ---------------------------------------------------------------------------
 # Secrets and credentials

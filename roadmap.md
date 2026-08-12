@@ -360,7 +360,7 @@ patchapi/
 ├── .env.example
 │
 ├── apps/
-│   └── dashboard/
+│   └── web/
 │       ├── package.json
 │       ├── src/
 │       └── ...

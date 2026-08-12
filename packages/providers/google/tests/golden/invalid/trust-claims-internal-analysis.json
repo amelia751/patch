@@ -1,0 +1,13 @@
+{
+  "fixture_version": "1.0.0",
+  "provider": "google",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "change_type": "model_retirement",
+  "effective_at": "2026-08-17",
+  "affected_identifiers": ["imagen-4.0-generate-001"],
+  "recommended_replacement": "gemini-3.1-flash-image",
+  "source_urls": ["https://ai.google.dev/gemini-api/docs/deprecations"],
+  "trust": {
+    "classification": "internal_analysis"
+  }
+}

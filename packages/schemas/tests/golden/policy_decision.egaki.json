@@ -1,0 +1,27 @@
+{
+  "run_id": "run-egaki-imagen4-0001",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "repo": "amelia751/egaki",
+  "risk": "medium",
+  "outcome": "allow",
+  "auto_patch": true,
+  "auto_pr": true,
+  "auto_merge": false,
+  "human_review_required": true,
+  "forbidden_globs": [
+    ".github/workflows/**",
+    "infra/**",
+    "terraform/**",
+    ".env*"
+  ],
+  "required_checks": [
+    "build",
+    "unit_tests",
+    "live_api_smoke_test"
+  ],
+  "rule_ids": [
+    "forbidden-paths.v1",
+    "semantic-migration-risk.v1"
+  ],
+  "reason": "Provider model-family migration changes runtime semantics."
+}

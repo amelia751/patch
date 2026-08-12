@@ -1,0 +1,27 @@
+{
+  "_note": "Recorded 2026-08-12 from a real gemini-3.5-flash call on projects/patch-505223/locations/global. The thoughtSignature blob was truncated; nothing else was edited.",
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "{\"ping\":\"pong\"}",
+            "thoughtSignature": "AY89a18RUertTUvCcIhzxeK6"
+          }
+        ]
+      },
+      "finishReason": "STOP"
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 14,
+    "candidatesTokenCount": 5,
+    "totalTokenCount": 129,
+    "trafficType": "ON_DEMAND",
+    "thoughtsTokenCount": 110
+  },
+  "modelVersion": "gemini-3.5-flash",
+  "createTime": "2026-08-12T00:12:34.451985Z",
+  "responseId": "crp7apHLG9-TsbwPjfTH-AU"
+}

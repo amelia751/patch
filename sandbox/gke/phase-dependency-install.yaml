@@ -1,0 +1,37 @@
+# Dependency-install phase: HTTPS out for the package registries and the GitHub
+# source endpoint (roadmap §13.3).
+#
+# Run-scoped in both name and selector. `claim-uid` is stamped on the pod by the
+# Agent Sandbox controller and is unique per claim, so one sandbox opening this
+# phase never opens it for another sandbox running beside it. Both placeholders
+# are substituted at apply time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: PATCHAPI_PHASE_POLICY_NAME
+  namespace: patchapi-sandbox-dev
+  labels:
+    app.kubernetes.io/part-of: patchapi
+    patchapi.dev/phase: dependency-install
+spec:
+  podSelector:
+    matchLabels:
+      agents.x-k8s.io/claim-uid: PATCHAPI_SANDBOX_CLAIM_UID
+  policyTypes:
+    - Egress
+  egress:
+    # The excluded blocks are what makes this narrower than "internet access":
+    # the GCE metadata server, the cluster network, and every RFC 1918 range
+    # stay unreachable, so generated code cannot pivot to a node credential or
+    # to another PatchAPI service.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

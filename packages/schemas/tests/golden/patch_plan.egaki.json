@@ -1,0 +1,25 @@
+{
+  "run_id": "run-egaki-imagen4-0001",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "repo": "amelia751/egaki",
+  "base_sha": "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+  "attempt": 1,
+  "author_agent_id": "patchapi.patch",
+  "files_expected": [
+    "cli/src/models.ts",
+    "cli/src/providers/vertex.ts",
+    "README.md"
+  ],
+  "migration_summary": "Move the default image model from the Imagen 4 family to gemini-3.1-flash-image and adapt the request surface, escalating Imagen-only options that have no Gemini equivalent.",
+  "assumptions": [
+    "The CLI reads its image model identifiers from cli/src/models.ts only."
+  ],
+  "verification_commands": [
+    "pnpm install --frozen-lockfile",
+    "pnpm --dir cli build",
+    "pnpm --dir cli test"
+  ],
+  "skill_id": "google_imagen_migration",
+  "skill_version": "1.0.0",
+  "diff_sha256": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+}

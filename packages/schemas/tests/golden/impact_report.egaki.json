@@ -1,0 +1,37 @@
+{
+  "run_id": "run-egaki-imagen4-0001",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "repo": "amelia751/egaki",
+  "base_sha": "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+  "affected": true,
+  "confidence": 0.98,
+  "findings": [
+    {
+      "identifier": "imagen-4.0-generate-001",
+      "file": "cli/src/models.ts",
+      "kind": "runtime_source",
+      "line": 42,
+      "symbol": "IMAGE_MODELS"
+    },
+    {
+      "identifier": "vertex/imagen-4.0-generate-001",
+      "file": "cli/src/providers/vertex.ts",
+      "kind": "runtime_source",
+      "line": 17
+    },
+    {
+      "identifier": "imagen-4.0-generate-001",
+      "file": "README.md",
+      "kind": "documentation_example"
+    }
+  ],
+  "migration_character": "semantic",
+  "required_checks": [
+    "typescript_build",
+    "vitest",
+    "live_google_image_generation"
+  ],
+  "owners": [
+    "amelia751"
+  ]
+}
