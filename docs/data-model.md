@@ -1,9 +1,9 @@
 # Data model
 
-**Status:** Scaffold (2026-08-11) — describes the intended storage split and
-table set. Migrations under `db/` are the authoritative DDL once they land; this
-document is a map, not a schema dump. Authoritative source:
-[`roadmap.md` §10](../roadmap.md#10-state-architecture).
+**Status:** Console tenancy (2026-08-12) — Postgres currently stores the
+dashboard's auth/import model. PatchAPI workflow tables from
+[`roadmap.md` §10](../roadmap.md#10-state-architecture) are deferred and will
+return as additive migrations. Authoritative DDL: [`db/migrations/`](../db/migrations/).
 
 ---
 
@@ -14,76 +14,45 @@ style preference.
 
 | Store | Holds | Rule |
 |---|---|---|
-| **Postgres** (Cloud SQL; SQLite for early local work) | authoritative workflow state | a run being `TESTING` versus `PR_CREATED` must be deterministic and queryable |
+| **Postgres** (Cloud SQL; local Docker Postgres 16) | console tenancy (users, GitHub App connection, projects, imported repos, secret *names*) | passwords stay in Identity Platform; tokens stay at GitHub; secret values stay in Secret Manager |
 | **Memory Bank** | institutional context across weeks | never the workflow database |
 | **Cloud Storage** | evidence and artifacts | immutable, referenced by URI from Postgres |
 | **Pub/Sub** | durable eventing between stages | messages carry IDs and URIs, never repository source |
 
-## Postgres — authoritative state
+## Postgres — console tenancy
 
-Table set from [`roadmap.md` §10.1](../roadmap.md#10-state-architecture):
+Current table set (what the frontend actually writes):
 
 ```text
-organizations
-repositories
-api_usages
-change_events
-remediation_runs
-run_state_transitions
-policy_decisions
-patch_attempts
-verification_results
-pull_requests
-audit_events
+users
+user_identities
+github_connections
+projects
+project_repositories
+workspaces
+project_secrets
 ```
-
-Roles in the flow:
 
 | Table | Role |
 |---|---|
-| `organizations`, `repositories` | tenancy and installation scope |
-| `api_usages` | the API usage inventory — identifier, file path, kind, commit SHA. This is what makes impact analysis cheap enough to run per announcement |
-| `change_events` | one row per normalized provider change, keyed by `change_id`, with source URIs and content hashes |
-| `remediation_runs` | one row per (change, repository) run; carries `base_sha`, current state, and idempotency keys |
-| `run_state_transitions` | append-only; written before and after every external side effect |
-| `policy_decisions` | risk tier, allowed and forbidden actions, required checks, reason |
-| `patch_attempts` | attempt number (capped at 2–3), diff hash, files touched |
-| `verification_results` | independent verdict plus per-check outcomes and evidence URIs |
-| `pull_requests` | PR number, URL, head SHA, the identity that opened it |
-| `audit_events` | actor, action, resource, policy verdict, trace ID — written even when no model was involved |
+| `users` | Dashboard profile. Identity Platform uid is optional until linked. No password column. |
+| `user_identities` | GitHub / Google login. `User.github_id` and `github_username` come from here. |
+| `github_connections` | GitHub App installation id. `github_app_installed` means this row exists. Tokens never stored. |
+| `projects` | Named working set (`POST /api/projects/`). |
+| `project_repositories` | Imported `owner/repo`. Live repo lists come from GitHub, not a cache of every visible repo. |
+| `workspaces` | Clone URL, branch, optional subfolder from import-repo. |
+| `project_secrets` | Secret name + ARN/resource pointer. Values live in Secret Manager. |
 
-### Run states
+Workflow tables from roadmap §10.1 (`change_events`, `remediation_runs`,
+`policy_decisions`, …) are not present. Add them later against `projects` /
+`project_repositories` rather than inventing a parallel tenancy model.
 
-The state machine in
-[`roadmap.md` §9](../roadmap.md#9-deterministic-orchestration) defines the
-enumerated values:
+### What does not go in Postgres
 
-```text
-RECEIVED → SANITIZED → NORMALIZED → IMPACT_SCANNING
-  ├─ UNAFFECTED                                   (terminal)
-  └─ POLICY_EVALUATION
-       ├─ HUMAN_REQUIRED                          (terminal)
-       ├─ BLOCKED                                 (terminal)
-       └─ PATCHING → BUILDING → TESTING → VERIFYING
-              ↑          │          │        ├─ FAILED       (terminal)
-              └─ RETRY_PATCH ───────┘        └─ PR_CREATING → PR_CREATED (terminal)
-```
-
-Four of the five terminal states — `UNAFFECTED`, `HUMAN_REQUIRED`, `BLOCKED`,
-`FAILED` — are *not* a pull request. That ratio is the point: fail closed is the
-default outcome, not the exception.
-
-### Idempotency
-
-Every external action is keyed:
-
-```text
-run_id + action_type + base_sha
-```
-
-Applied to PR creation, sandbox allocation, artifact writes, and Pub/Sub
-consumption. A resumed process checks persisted state before repeating a side
-effect.
+- Passwords and Identity Platform tokens
+- GitHub App private keys and installation tokens
+- Secret values / `.env` bodies
+- Live GitHub repo catalogs (fetched on demand via `/api/github/repos`)
 
 ## Memory Bank — institutional context
 
@@ -121,6 +90,5 @@ configuration, never inlined at a call site.
 
 ## Reality check
 
-No Cloud SQL instance is provisioned and no Pub/Sub topics are wired as of
-2026-08-11. Early local work uses SQLite or a Docker Postgres started from
+No Cloud SQL instance is provisioned. Local work uses Docker Postgres from
 `db/docker-compose.yml`. See [`operations.md`](./operations.md).

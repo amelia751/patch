@@ -4,8 +4,8 @@
 # Brings up local Postgres, applies the migrations twice to prove they are
 # forward-only and idempotent, applies the seeds twice to prove they converge,
 # then asserts against the live schema: expected tables exist, seeded rows are
-# present, and the constraints that encode PatchAPI's hard rules actually
-# reject the writes they are supposed to reject.
+# present, and the constraints that keep passwords, tokens, and secret values
+# out of this database actually reject the writes they are supposed to reject.
 #
 # Set DATABASE_URL to verify an external database (Cloud SQL through a proxy)
 # instead of the compose container; compose is then left untouched.
@@ -119,13 +119,12 @@ db sql <<'SQL'
 DO $assert$
 DECLARE
     expected_tables text[] := ARRAY[
-        'organizations', 'installations', 'repositories', 'api_usages',
-        'change_events', 'remediation_runs', 'run_state_transitions',
-        'external_action_keys', 'policy_decisions', 'patch_attempts',
-        'verification_results', 'artifacts', 'pull_requests', 'audit_events',
+        'users', 'user_identities', 'github_connections',
+        'projects', 'project_repositories', 'workspaces', 'project_secrets',
         'schema_migrations', 'seed_applications'
     ];
     missing text[];
+    forbidden text;
 BEGIN
     SELECT array_agg(t) INTO missing
     FROM unnest(expected_tables) AS t
@@ -134,32 +133,48 @@ BEGIN
     IF missing IS NOT NULL THEN
         RAISE EXCEPTION 'missing tables: %', missing;
     END IF;
+
+    -- Passwords, tokens, and secret payloads must not have a column to land in.
+    FOREACH forbidden IN ARRAY ARRAY[
+        'users.password', 'users.password_hash', 'users.hashed_password',
+        'github_connections.token', 'github_connections.access_token',
+        'github_connections.installation_token',
+        'project_secrets.value', 'project_secrets.secret_value',
+        'project_secrets.ciphertext'
+    ]
+    LOOP
+        IF to_regclass('public.' || split_part(forbidden, '.', 1)) IS NOT NULL
+           AND EXISTS (
+               SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public'
+                 AND table_name = split_part(forbidden, '.', 1)
+                 AND column_name = split_part(forbidden, '.', 2)
+           ) THEN
+            RAISE EXCEPTION 'forbidden column present: %', forbidden;
+        END IF;
+    END LOOP;
 END
 $assert$;
 
--- Every migration on disk is recorded exactly once.
 DO $assert$
 DECLARE
     recorded integer;
 BEGIN
     SELECT count(*) INTO recorded FROM schema_migrations;
-    IF recorded < 10 THEN
-        RAISE EXCEPTION 'expected at least 10 recorded migrations, found %', recorded;
+    IF recorded < 5 THEN
+        RAISE EXCEPTION 'expected at least 5 recorded migrations, found %', recorded;
     END IF;
 END
 $assert$;
 
--- Seed rows are present in every table a fixture run touches.
 DO $assert$
 DECLARE
     t text;
     n integer;
 BEGIN
     FOREACH t IN ARRAY ARRAY[
-        'organizations', 'installations', 'repositories', 'api_usages',
-        'change_events', 'remediation_runs', 'run_state_transitions',
-        'external_action_keys', 'policy_decisions', 'patch_attempts',
-        'verification_results', 'artifacts', 'pull_requests', 'audit_events'
+        'users', 'user_identities', 'github_connections',
+        'projects', 'project_repositories', 'workspaces'
     ]
     LOOP
         EXECUTE format('SELECT count(*) FROM %I', t) INTO n;
@@ -170,29 +185,27 @@ BEGIN
 END
 $assert$;
 
--- Seeds converge: applying twice must not duplicate the demo run's history.
 DO $assert$
 DECLARE
-    transitions integer;
-    runs integer;
-    usages integer;
+    users_n integer;
+    projects_n integer;
+    repos_n integer;
     applications integer;
 BEGIN
-    SELECT count(*) INTO transitions FROM run_state_transitions
-    WHERE run_id = '5eedda7a-0005-4000-8000-000000000001';
-    SELECT count(*) INTO runs FROM remediation_runs;
-    SELECT count(*) INTO usages FROM api_usages;
+    SELECT count(*) INTO users_n FROM users;
+    SELECT count(*) INTO projects_n FROM projects;
+    SELECT count(*) INTO repos_n FROM project_repositories;
     SELECT apply_count INTO applications FROM seed_applications
-    WHERE name = '0001_demo_egaki.sql';
+    WHERE name = '0001_demo_console.sql';
 
-    IF transitions <> 11 THEN
-        RAISE EXCEPTION 'expected 11 seeded transitions, found %', transitions;
+    IF users_n <> 1 THEN
+        RAISE EXCEPTION 'expected 1 seeded user, found %', users_n;
     END IF;
-    IF runs <> 2 THEN
-        RAISE EXCEPTION 'expected 2 seeded runs, found %', runs;
+    IF projects_n <> 1 THEN
+        RAISE EXCEPTION 'expected 1 seeded project, found %', projects_n;
     END IF;
-    IF usages <> 10 THEN
-        RAISE EXCEPTION 'expected 10 seeded api_usages, found %', usages;
+    IF repos_n <> 1 THEN
+        RAISE EXCEPTION 'expected 1 seeded repository, found %', repos_n;
     END IF;
     IF applications < 2 THEN
         RAISE EXCEPTION 'seed ledger recorded % applications, expected at least 2', applications;
@@ -200,82 +213,79 @@ BEGIN
 END
 $assert$;
 
--- The queries a fixture run actually issues.
 DO $assert$
 DECLARE
-    hits integer;
-    state text;
-    verdict text;
+    login text;
+    full_name text;
+    installed boolean;
 BEGIN
-    SELECT count(*) INTO hits FROM api_usages
-    WHERE provider = 'google' AND identifier = 'imagen-4.0-generate-001'
-      AND removed_at IS NULL;
-    IF hits = 0 THEN
-        RAISE EXCEPTION 'inventory lookup for imagen-4.0-generate-001 returned nothing';
+    SELECT i.username INTO login
+    FROM user_identities i
+    WHERE i.provider = 'github'
+      AND i.user_id = '5eedda7a-0001-4000-8000-000000000001';
+    IF login <> 'amelia751' THEN
+        RAISE EXCEPTION 'github username is %, expected amelia751', login;
     END IF;
 
-    SELECT r.state::text INTO state FROM remediation_runs r
-    JOIN repositories repo ON repo.id = r.repository_id
-    WHERE repo.owner = 'amelia751' AND repo.name = 'egaki';
-    IF state <> 'PR_CREATED' THEN
-        RAISE EXCEPTION 'demo run is in state %, expected PR_CREATED', state;
+    SELECT r.full_name INTO full_name FROM project_repositories r
+    WHERE r.project_id = '5eedda7a-0004-4000-8000-000000000001';
+    IF full_name <> 'amelia751/egaki' THEN
+        RAISE EXCEPTION 'imported repo is %, expected amelia751/egaki', full_name;
     END IF;
 
-    SELECT v.verdict::text INTO verdict FROM verification_results v
-    JOIN patch_attempts p ON p.id = v.patch_attempt_id
-    WHERE p.status = 'SUCCEEDED';
-    IF verdict <> 'PASS' THEN
-        RAISE EXCEPTION 'verification verdict is %, expected PASS', verdict;
+    SELECT EXISTS (
+        SELECT 1 FROM github_connections c
+        WHERE c.user_id = '5eedda7a-0001-4000-8000-000000000001'
+          AND c.suspended_at IS NULL
+    ) INTO installed;
+    IF NOT installed THEN
+        RAISE EXCEPTION 'seed user has no GitHub App connection';
     END IF;
 END
 $assert$;
 
--- Hard controls: the schema must reject writes that violate the product rules.
 DO $assert$
 BEGIN
     BEGIN
-        UPDATE policy_decisions SET auto_merge = true
-        WHERE id = '5eedda7a-0006-4000-8000-000000000001';
-        RAISE EXCEPTION 'policy_decisions accepted auto_merge = true';
+        INSERT INTO users (email, display_name)
+        VALUES ('not-an-email', 'x');
+        RAISE EXCEPTION 'users accepted an email without @';
     EXCEPTION WHEN check_violation THEN
         NULL;
     END;
 
     BEGIN
-        UPDATE pull_requests SET merged_by_patchapi = true
-        WHERE id = '5eedda7a-000a-4000-8000-000000000001';
-        RAISE EXCEPTION 'pull_requests accepted merged_by_patchapi = true';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
-
-    BEGIN
-        INSERT INTO verification_results (
-            run_id, patch_attempt_id, verdict, verifier_agent, verifier_model,
-            patch_agent, patch_model, report_schema_version, report
-        ) VALUES (
-            '5eedda7a-0005-4000-8000-000000000001',
-            '5eedda7a-0007-4000-8000-000000000002',
-            'PASS', 'patch_agent', 'gemini-3.5-flash',
-            'patch_agent', 'gemini-3.5-flash', '1.0.0', '{}'::jsonb
+        INSERT INTO user_identities (user_id, provider, provider_user_id)
+        VALUES (
+            '5eedda7a-0001-4000-8000-000000000001',
+            'github',
+            '0'
         );
-        RAISE EXCEPTION 'verification_results accepted a self-grading verifier';
+        RAISE EXCEPTION 'user_identities accepted a duplicate github account';
+    EXCEPTION WHEN unique_violation THEN
+        NULL;
+    END;
+
+    BEGIN
+        INSERT INTO project_repositories (
+            project_id, name, full_name
+        ) VALUES (
+            '5eedda7a-0004-4000-8000-000000000001',
+            'egaki',
+            'not-a-full-name'
+        );
+        RAISE EXCEPTION 'project_repositories accepted a full_name without owner/repo';
     EXCEPTION WHEN check_violation THEN
         NULL;
     END;
 
     BEGIN
-        UPDATE patch_attempts SET status = 'SUCCEEDED', sandbox_ref = NULL
-        WHERE id = '5eedda7a-0007-4000-8000-000000000001';
-        RAISE EXCEPTION 'patch_attempts accepted SUCCEEDED without an isolated run';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
-
-    BEGIN
-        UPDATE remediation_runs SET state = 'PR_CREATED', ended_at = NULL
-        WHERE id = '5eedda7a-0005-4000-8000-000000000002';
-        RAISE EXCEPTION 'remediation_runs accepted a terminal state with no end timestamp';
+        INSERT INTO project_secrets (project_id, secret_name)
+        VALUES (
+            '5eedda7a-0004-4000-8000-000000000001',
+            '   '
+        );
+        RAISE EXCEPTION 'project_secrets accepted a blank secret_name';
     EXCEPTION WHEN check_violation THEN
         NULL;
     END;
@@ -284,12 +294,13 @@ $assert$;
 
 SELECT 'rows: ' || t || '=' || n
 FROM (
-    SELECT 'api_usages' AS t, count(*) AS n FROM api_usages
-    UNION ALL SELECT 'remediation_runs', count(*) FROM remediation_runs
-    UNION ALL SELECT 'run_state_transitions', count(*) FROM run_state_transitions
-    UNION ALL SELECT 'audit_events', count(*) FROM audit_events
-    UNION ALL SELECT 'artifacts', count(*) FROM artifacts
-    UNION ALL SELECT 'pull_requests', count(*) FROM pull_requests
+    SELECT 'users' AS t, count(*) AS n FROM users
+    UNION ALL SELECT 'user_identities', count(*) FROM user_identities
+    UNION ALL SELECT 'github_connections', count(*) FROM github_connections
+    UNION ALL SELECT 'projects', count(*) FROM projects
+    UNION ALL SELECT 'project_repositories', count(*) FROM project_repositories
+    UNION ALL SELECT 'workspaces', count(*) FROM workspaces
+    UNION ALL SELECT 'project_secrets', count(*) FROM project_secrets
 ) AS counts
 ORDER BY t;
 SQL

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Dynamic verifier for the dashboard read path (packages/state + control_api).
+# Dynamic verifier for the console schema + control plane reachability.
 #
-# Proves the queries are real: it brings up the local Postgres, applies the
-# migrations and the demo seed, serves the wired control plane, and asserts on
-# rows that came out of the database. Nothing here is mocked — if the SQL is
-# wrong, this fails.
+# Brings up local Postgres, applies the console migrations and seed, serves
+# the wired control plane, and asserts the store answers. Workflow dashboard
+# reads (/v1/changes, /v1/runs, /v1/fleet) are not in this schema yet.
 #
 # When Docker is unavailable it SKIPS with exit 0 and says so. A skipped
 # integration check is honest; one that "passes" without ever connecting is not.
@@ -122,99 +121,18 @@ for name in ("workflow_state_store", "dashboard_read_model", "postgres"):
 print("store probes ready:", ", ".join(sorted(checks)))
 '
 
-step "GET /v1/changes returns the seeded provider change"
-curl -fsS "$BASE/v1/changes" -o /tmp/patchapi_reads_body
-uv run --quiet python -c '
-import json
-
-changes = json.load(open("/tmp/patchapi_reads_body"))["changes"]
-assert changes, "no changes returned"
-change = next(c for c in changes if c["change_id"] == "imagen4-retirement-2026-08-17")
-assert change["recommended_replacement"] == "gemini-3.1-flash-image", change
-assert len(change["affected_identifiers"]) == 3, change
-# The seed captures no provider snapshot; the API must report that as null
-# rather than as an empty string a dashboard could render as evidence.
-assert change["source_sha256"] is None, change
-assert change["affected_repositories"] >= 1, change
-print("change:", change["change_id"], "->", change["recommended_replacement"])
-'
-
-step "GET /v1/repositories reports inventory findings with their commit"
-curl -fsS "$BASE/v1/repositories?change_id=imagen4-retirement-2026-08-17" \
-  -o /tmp/patchapi_reads_body
-uv run --quiet python -c '
-import json
-
-body = json.load(open("/tmp/patchapi_reads_body"))
-repositories = body["repositories"]
-assert repositories, "no repositories returned"
-egaki = next(r for r in repositories if r["repository"].endswith("/egaki"))
-assert egaki["affected"] is True, egaki
-assert egaki["usage_count"] > 0, egaki
-assert egaki["indexed_sha"], "a finding with no commit is unfalsifiable"
-assert egaki["usages"], egaki
-layers = {u["detection_layer"] for u in egaki["usages"]}
-assert "A_DETERMINISTIC" in layers, layers
-print("affected:", egaki["repository"], egaki["usage_count"], "usages")
-'
-
-step "GET /v1/runs/{id}/detail assembles the evidence bundle"
-RUN_ID="$(uv run --quiet python -c '
-import json, urllib.request
-
-with urllib.request.urlopen("'"$BASE"'/v1/runs") as response:
-    runs = json.load(response)["runs"]
-print(next(r["run_id"] for r in runs if r["state"] == "PR_CREATED"))
-')"
-curl -fsS "$BASE/v1/runs/${RUN_ID}/detail" -o /tmp/patchapi_reads_body
-uv run --quiet python -c '
-import json
-
-body = json.load(open("/tmp/patchapi_reads_body"))
-detail = body["detail"]
-assert body["terminal"] is True, body
-assert detail["transitions"], "no transition log"
-policy = detail["policy"]
-# Constraint 3, read back out of the database rather than asserted in prose.
-assert policy["auto_merge"] is False, policy
-assert policy["forbidden_globs"], policy
-verification = detail["verification"]
-assert verification["verdict"] == "PASS", verification
-# Constraint 6: the verifier is not the agent that wrote the patch.
-assert verification["verifier_agent"] != verification["patch_agent"], verification
-assert detail["artifacts"], "no evidence recorded"
-pull_request = detail["pull_request"]
-assert pull_request["merged_by_patchapi"] is False, pull_request
-attempts = {a["attempt_number"]: a for a in detail["attempts"]}
-assert attempts[1]["test_exit_code"] == 1, attempts[1]
-assert attempts[2]["test_exit_code"] == 0, attempts[2]
-print("run:", detail["summary"]["run_id"], "->", detail["summary"]["state"])
-print("verification:", verification["verdict"], "by", verification["verifier_agent"])
-'
-
-step "GET /v1/fleet surfaces refused actions"
-curl -fsS "$BASE/v1/fleet" -o /tmp/patchapi_reads_body
-uv run --quiet python -c '
-import json
-
-body = json.load(open("/tmp/patchapi_reads_body"))
-denials = body["denials"]
-assert denials, "no denials returned; the governance evidence is missing"
-actions = {d["action"] for d in denials}
-assert "github_tools.merge_pull_request" in actions, actions
-for denial in denials:
-    assert denial["outcome"] == "DENIED", denial
-    # The schema requires a reason on every denial; the API must carry it.
-    assert denial["reason"], denial
-print("denials:", ", ".join(sorted(actions)))
-'
-
-step "an unknown run is 404, not an empty bundle"
-CODE="$(curl -s -o /dev/null -w '%{http_code}' \
-  "$BASE/v1/runs/00000000-0000-4000-8000-000000000000/detail")"
-[[ "$CODE" == "404" ]] || fail "unknown run returned $CODE, expected 404"
-
-rm -f /tmp/patchapi_reads_body
+step "console seed is queryable"
+PYTHONPATH=db/src uv run --quiet python -m patchapi_db sql <<'SQL'
+SELECT u.email, i.username, c.account_login, p.name, r.full_name
+FROM users u
+JOIN user_identities i ON i.user_id = u.id AND i.provider = 'github'
+JOIN github_connections c ON c.user_id = u.id
+JOIN projects p ON p.owner_id = u.id
+JOIN project_repositories r ON r.project_id = p.id
+WHERE u.id = '5eedda7a-0001-4000-8000-000000000001';
+SQL
 
 echo
-echo "PASS: the dashboard read path serves real rows from authoritative Postgres"
+echo "PASS: console schema is applied and the control plane reaches Postgres"
+echo "SKIP: /v1/changes /v1/runs /v1/fleet — workflow tables are not in this schema yet"
+

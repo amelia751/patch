@@ -1,9 +1,12 @@
-# `db/` — authoritative workflow state
+# `db/` — console tenancy state
 
-Postgres holds the deterministic truth about PatchAPI runs: what state a run is
-in, which external actions have already happened, what policy decided, what the
-sandbox produced, and who verified it. Memory Bank holds institutional context
-across weeks and is **not** consulted for any of the above (roadmap §10.1).
+Postgres holds what the dashboard persists: who the user is, whether a GitHub
+App is connected, which projects they imported, and secret *names* (not
+values). Identity Platform holds passwords. GitHub holds tokens. Secret Manager
+holds secret payloads.
+
+PatchAPI workflow tables (runs, policy, patches, PRs) are not in this schema
+yet. They come back as additive migrations when that product surface is wired.
 
 ## Layout
 
@@ -40,6 +43,28 @@ against that DSN — the Cloud SQL path, via the Auth Proxy. With `DATABASE_URL`
 unset it runs `psql` inside the compose container, so a developer needs Docker
 but not a matching client install.
 
+## Tables
+
+```text
+users
+user_identities
+github_connections
+projects
+project_repositories
+workspaces
+project_secrets
+```
+
+| Table | Role |
+|---|---|
+| `users` | Console profile. `identity_platform_uid` links Identity Platform. No password column. |
+| `user_identities` | Linked logins (`github` / `google`). Supplies `github_id` / `github_username`. |
+| `github_connections` | GitHub App installation id only. `github_app_installed` means a row exists. |
+| `projects` | `POST /api/projects/` — name, status, owner, optional `cloud_provider`. |
+| `project_repositories` | Imported `owner/repo`. Listing live GitHub repos is an API call, not this table. |
+| `workspaces` | `POST …/workspaces/import-repo` — clone URL, branch, optional subfolder. |
+| `project_secrets` | Secret name + remote ARN/resource. Values stay in Secret Manager. |
+
 ## Migration rules
 
 1. **Forward-only.** To change an applied migration, add a new one. The runner
@@ -49,38 +74,22 @@ but not a matching client install.
    determines apply order; versions are contiguous from `0001`.
 3. **No transaction control inside a script.** The runner wraps each script and
    its ledger row in one transaction, so a failed migration leaves nothing.
-4. **No business logic in triggers.** Every state change an agent makes must be
-   visible in that agent's trace, not hidden in the database. The only
-   database-side logic is `CHECK` constraints, and each one encodes a product
-   rule rather than a workflow step.
+4. **No business logic in triggers.** The only database-side logic is `CHECK`
+   constraints.
 
-## Constraints that encode product rules
-
-These are enforced by the schema so a miswired or prompt-injected agent cannot
-record the thing the rule forbids. `scripts/verify_db.sh` proves each of them
-still rejects the write it is supposed to reject.
+## Constraints
 
 | Constraint | Rule |
 |---|---|
-| `policy_decisions_never_auto_merge` | PatchAPI stops at the pull request. |
-| `pull_requests_never_self_merged` | Any merge came from a human, through CODEOWNERS. |
-| `verification_results_independent_verifier` | The patching agent cannot grade its own patch. |
-| `patch_attempts_success_ran_in_sandbox` | A succeeded attempt has an isolated run with exit code 0. |
-| `remediation_runs_terminal_has_ended_at` | A run is either live or finished, never both. |
-| `policy_decisions_blocked_authorizes_nothing` | A BLOCKED verdict authorizes no patching or PR. |
-| `audit_events_denied_has_reason` | A denial records why it was denied. |
-
-## Idempotency
-
-`external_action_keys` is keyed on `run_id + action_type + base_sha`
-(roadmap §9). A row is `CLAIMED` before an external call and `COMPLETED` after,
-so a process that crashes between the two resumes with the fact visible rather
-than repeating a pull request or a sandbox allocation.
+| `users.email` unique + must contain `@` | Profile email is a real address, not a display string |
+| `users.settings` is a JSON object | Matches the `User.settings` blob the UI sends |
+| `user_identities` unique `(provider, provider_user_id)` | One GitHub account cannot attach to two users |
+| `github_connections.user_id` unique | One App installation per user for now |
+| `project_repositories.full_name` is `owner/repo` | Import payload shape |
+| `project_secrets` has no value column | Secret payloads never persist here |
 
 ## Seed data
 
-`seeds/0001_demo_egaki.sql` populates the pinned Egaki scenario from
-`demo/fixtures/google-imagen4-deprecation.json`, `demo/egaki/baseline.json`, and
-`demo/egaki/artifacts/imagen-inventory.json`. Every seeded row uses a UUID in
-the reserved `5eedda7a-` prefix, and the seeded pull request URL is on
-`example.invalid` — no pull request has been opened.
+`seeds/0001_demo_console.sql` inserts a labelled demo user, a GitHub connection
+for `amelia751`, and a draft project importing `amelia751/egaki`. Every seeded
+row uses a UUID in the reserved `5eedda7a-` prefix.
