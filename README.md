@@ -30,6 +30,52 @@ links above. Region is `us-central1`. Push to `main` deploys into these names
 Local remains `http://localhost:3000` (dashboard) and `http://localhost:8080`
 (control API).
 
+## Google Cloud
+
+Project **`patch-505223`** (number `913371146929`). Compute and hosting are
+**`us-central1`**. Gemini model IDs on this project resolve under Vertex
+**`locations/global`** — they 404 in `us-central1`. See [`setup.md`](./setup.md)
+§8 and [`.env.example`](./.env.example).
+
+Google ADK is the agent runtime (hard constraint: no LangChain / LangGraph in
+the product path). Reasoning model: **Gemini 3.5 Flash**. Flagship migration
+target: **Imagen 4 → Gemini 3.1 Flash Image**.
+
+### In use
+
+| Service | What |
+|---|---|
+| Cloud Run | `patchapi-web` (dashboard) and `patchapi-api` (control plane). Push to `main` deploys via `.github/workflows/deploy-cloud-run.yml`. |
+| Artifact Registry | `us-central1-docker.pkg.dev/patch-505223/patchapi` — web and api images. |
+| Cloud SQL (Postgres 16) | Instance `patchapi-console`. Authoritative workflow state (constraint 7). Local talks to it through the Cloud SQL Auth Proxy (`127.0.0.1:5433`). |
+| Secret Manager | `patchapi-database-url`, `patchapi-identity-api-key`, `patchapi-session-secret`, Google OAuth client id/secret. Values never land in the repo. |
+| Identity Platform | Email/password and Google sign-in (`identitytoolkit.googleapis.com`). Firebase auth domain `patch-505223.firebaseapp.com`. |
+| Google OAuth | Web client in APIs & Services → Credentials. Continue with Google; origins/redirects below. |
+| IAM + Workload Identity Federation | Pool `github-actions` / provider `github`. GitHub Actions impersonates `patchapi-github-deploy@…` — no JSON key in CI. Workload SAs: `patchapi-web@…`, `patchapi-api@…`. |
+| Vertex AI / Gemini Enterprise Agent Platform | `aiplatform.googleapis.com`. `gemini-3.5-flash` (agent reasoning) and `gemini-3.1-flash-image` (demo image path). |
+| Memory Bank | Agent Engine resource created; name in `.secrets/memory_bank_name.txt`. Institutional context, not run state. |
+| Cloud Logging | Cloud Run service accounts write logs. |
+
+### Enabled, not on the request path yet
+
+APIs are on in the project. These are not serving console traffic today.
+
+| Service | Role when wired |
+|---|---|
+| GKE Agent Sandbox | Isolated patch execution (gVisor). Local temp workspace stands in until then. |
+| Pub/Sub | Durable remediation events (`roadmap.md` §10.4). |
+| Cloud Storage | Run evidence bucket. |
+| Model Armor | Sanitize untrusted provider text. |
+| Agent Registry / Agent Gateway / Agent Identity | Fleet discovery, egress deny-by-tool, SPIFFE per agent. |
+| Cloud Trace | One OTLP trace per remediation run. |
+| Cloud Scheduler | Provider-check polling. |
+| Cloud Build | Optional; GitHub Actions builds images today. |
+
+Terraform for the same surface: [`infra/terraform/README.md`](./infra/terraform/README.md)
+(`dev` plans clean; gated GKE / SQL / Run modules are off there because those
+were bootstrapped with `./scripts/bootstrap_cloud_run.sh` and
+`./scripts/bootstrap_cloud_sql.sh`). Full service list: `roadmap.md` §20–§21.
+
 ## GitHub: OAuth login + import App
 
 Create **one** GitHub App (not a separate OAuth App). The App’s user-to-server
