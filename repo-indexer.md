@@ -556,7 +556,7 @@ the index.
 | `packages/events/` | `RepoPushEvent`, `ProjectRepoAdded`, `ProjectRepoRemoved`, `IndexUpdated` — all carrying `repository` **and** `branch`. |
 | `apps/web` project view | Read `project_provider_usages`, grouped by repository, with `kind` shown. A project with three repos is three groups, not one list. |
 | `apps/web/.../codebase-indexing-sign.tsx` | Flip `FORCE_SHOW_CODEBASE_INDEXING` to `false`. `withCodebaseIndexingSign` takes live `{status, progress_percent}` instead of always wrapping. |
-| `apps/web/.../codebase-tab.tsx` | Poll `GET /api/projects/{id}/indexing`; pass `progress` into `CodebaseIndexingSign`; hide the banner unless `status === "indexing"`. |
+| `apps/web/.../codebase-tab.tsx` | Read live `{status, progress_percent}` from the project console SSE stream; hide the banner unless `status === "indexing"`. Poll `GET /indexing` only if the stream drops. |
 | `packages/state/project_routes.py` | Add `GET /api/projects/{id}/indexing` reading `indexing_for_project`. |
 | `.env.example` | The new variables above. |
 | `docs/data-model.md` | `provider_usages`, `repo_index_state`, and the `project_provider_usages` view alongside the existing tenancy tables. |
@@ -687,11 +687,11 @@ repo_indexer.worker
     │ set_index_progress(repo, branch, status=indexing, 0)
     │ … fetch, shard, scan …
     │ set_index_progress(..., progress_percent=n)   -- periodically
-    │ set_index_progress(..., status=ready, 100)
+    │ record_state(..., status=ready, 100)
+    │ pg_notify(patchapi_console)  -- one wake per importing project
     ▼
-GET /api/projects/{id}/indexing     ← indexing_for_project()
-    ▼
-CodebaseTab polls every ~1.5s while the tab is visible
+GET /api/projects/{id}/events      ← SSE snapshot, then indexing events
+GET /api/projects/{id}/indexing    ← poll fallback if the stream drops
     ▼
 status === "indexing"  →  <CodebaseIndexingSign progress={n} />
 otherwise              →  banner hidden

@@ -60,3 +60,4 @@ only-include = ["__init__.py"]
 "notification_routes.py" = "packages/state/notification_routes.py"
 "codebase.py" = "packages/state/codebase.py"
 "indexing.py" = "packages/state/indexing.py"
+"console_events.py" = "packages/state/console_events.py"

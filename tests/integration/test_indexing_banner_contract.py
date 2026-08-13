@@ -2,12 +2,13 @@
 
 `repo-indexer.md` §7.6 lists three things that must be true once the indexing
 endpoint exists: the force-show flag is off, the sign takes a real `progress`,
-and the tab polls `GET /api/projects/{id}/indexing`. A banner still pinned on by
-the preview constant would show "Indexing codebase" over a project nobody is
-indexing — a demo-visible lie about what the system is doing.
+and the dashboard reads `GET /api/projects/{id}/indexing` — live over the
+console SSE stream, polling only if that stream drops. A banner still pinned
+on by the preview constant would show "Indexing codebase" over a project
+nobody is indexing — a demo-visible lie about what the system is doing.
 
-This reads the TypeScript as text on purpose. The assertion is about three
-literals in two files, and a Node toolchain in the Python suite would cost far
+This reads the TypeScript as text on purpose. The assertion is about literals
+in a handful of files, and a Node toolchain in the Python suite would cost far
 more than the fact is worth.
 """
 
@@ -24,6 +25,10 @@ CODEBASE_TAB_DIR = (
 )
 SIGN_TSX = CODEBASE_TAB_DIR / "codebase-indexing-sign.tsx"
 TAB_TSX = CODEBASE_TAB_DIR / "codebase-tab.tsx"
+CONSOLE_EVENTS_TS = REPO_ROOT / "apps" / "web" / "src" / "hooks" / "useConsoleEvents.tsx"
+NOTIFICATIONS_TSX = (
+    REPO_ROOT / "apps" / "web" / "src" / "components" / "interface" / "shared" / "notifications.tsx"
+)
 
 # `export const FORCE_SHOW_CODEBASE_INDEXING = <literal>;` — the literal is what
 # the test is about, so it is captured rather than matched.
@@ -42,6 +47,18 @@ def sign_source() -> str:
 def tab_source() -> str:
     assert TAB_TSX.is_file(), f"codebase tab is missing: {TAB_TSX}"
     return TAB_TSX.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def console_events_source() -> str:
+    assert CONSOLE_EVENTS_TS.is_file(), f"console events hook is missing: {CONSOLE_EVENTS_TS}"
+    return CONSOLE_EVENTS_TS.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def notifications_source() -> str:
+    assert NOTIFICATIONS_TSX.is_file(), f"notifications bell is missing: {NOTIFICATIONS_TSX}"
+    return NOTIFICATIONS_TSX.read_text(encoding="utf-8")
 
 
 def test_force_show_preview_switch_is_off(sign_source: str) -> None:
@@ -72,21 +89,48 @@ def test_wrapper_passes_live_progress_and_hides_when_idle(sign_source: str) -> N
     )
 
 
-def test_tab_polls_the_indexing_endpoint(tab_source: str) -> None:
-    assert "/api/projects/${projectId}/indexing" in tab_source, (
-        "the Codebase tab does not poll GET /api/projects/{id}/indexing"
+def test_tab_reads_live_indexing_from_the_console_stream(tab_source: str) -> None:
+    assert "useConsoleIndexing" in tab_source, (
+        "the Codebase tab no longer reads indexing from the console event stream"
     )
-    assert re.search(r"INDEXING_POLL_MS\s*=\s*(\d+)", tab_source), (
-        "the poll interval is not a named constant"
+
+
+def test_console_stream_is_sse_with_poll_fallback(console_events_source: str) -> None:
+    assert "/api/projects/${projectId}/events" in console_events_source, (
+        "the console hook does not open GET /api/projects/{id}/events"
+    )
+    assert "EventSource" in console_events_source, (
+        "the console hook does not use EventSource for the live path"
+    )
+    assert "/api/projects/${projectId}/indexing" in console_events_source, (
+        "the poll fallback no longer hits GET /api/projects/{id}/indexing"
+    )
+    assert re.search(r"INDEXING_POLL_MS\s*=\s*(\d+)", console_events_source), (
+        "the indexing poll fallback is not a named constant"
+    )
+    assert "startPoll" in console_events_source, (
+        "the console hook has no poll fallback when the EventSource drops"
+    )
+
+
+def test_notifications_do_not_poll_while_the_stream_is_live(notifications_source: str) -> None:
+    assert "useConsoleEvents" in notifications_source, (
+        "the bell does not subscribe to the console event stream"
+    )
+    assert "setInterval(fetchNotifications" not in notifications_source, (
+        "the bell still polls on a timer even when the live stream exists"
     )
 
 
 def test_indexing_route_is_served_by_the_control_plane() -> None:
-    """The endpoint the tab polls exists on the Python side of the contract."""
+    """The fallback GET and the live SSE route both exist on the Python side."""
     routes = (REPO_ROOT / "packages" / "state" / "project_routes.py").read_text(encoding="utf-8")
     assert '@router.get("/{project_id}/indexing")' in routes, (
-        "GET /api/projects/{id}/indexing is not registered; the banner would poll a 404"
+        "GET /api/projects/{id}/indexing is not registered; the fallback poll would 404"
     )
     assert "indexing_for_project" in routes, (
         "the indexing route does not read the repo_index_state rollup"
+    )
+    assert '@router.get("/{project_id}/events"' in routes, (
+        "GET /api/projects/{id}/events is not registered; the dashboard would have no live path"
     )

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from packages.events.console_notify import EVENT_NOTIFICATIONS, notify_console
 from packages.state.pool import StateUnavailableError
 
 if TYPE_CHECKING:
@@ -88,9 +89,7 @@ async def list_notifications(
             )
         return [public_notification(row) for row in rows]
     except Exception as exc:
-        raise StateUnavailableError(
-            f"could not list notifications: {type(exc).__name__}"
-        ) from exc
+        raise StateUnavailableError(f"could not list notifications: {type(exc).__name__}") from exc
 
 
 async def apply_notification_action(
@@ -134,10 +133,41 @@ async def apply_notification_action(
                     notification_id,
                     project_id,
                 )
-        if row is None:
-            return None
+            if row is None:
+                return None
+            try:
+                await notify_console(
+                    connection, event_type=EVENT_NOTIFICATIONS, project_id=project_id
+                )
+            except Exception:
+                # The write already landed; the other tab falls back to polling.
+                pass
         return {"ok": True, "action_type": action_type}
     except Exception as exc:
-        raise StateUnavailableError(
-            f"could not update notification: {type(exc).__name__}"
-        ) from exc
+        raise StateUnavailableError(f"could not update notification: {type(exc).__name__}") from exc
+
+
+async def notifications_snapshot(
+    pool: asyncpg.Pool, project_id: UUID, *, limit: int = 20
+) -> list[dict[str, Any]]:
+    """Undismissed notifications for an already-authorized project (SSE fan-out)."""
+    capped = min(max(limit, 1), 50)
+    try:
+        async with pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT
+                    id, project_id, kind::text AS kind, title, message, priority,
+                    read_at, dismissed_at, details, questions, actions,
+                    contract_ids, source_commit, metadata, created_at
+                FROM project_notifications
+                WHERE project_id = $1 AND dismissed_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                project_id,
+                capped,
+            )
+        return [public_notification(row) for row in rows]
+    except Exception as exc:
+        raise StateUnavailableError(f"could not list notifications: {type(exc).__name__}") from exc

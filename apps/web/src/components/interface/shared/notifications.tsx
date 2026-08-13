@@ -6,6 +6,7 @@ import { useTheme } from "@/lib/theme-context";
 import { useProject } from "@/lib/project-context";
 import { useArchitecture } from "@/lib/architecture-context";
 import { useAuth } from "@/lib/auth-context";
+import { useConsoleEvents } from "@/hooks/useConsoleEvents";
 import { useConsolePanel } from "@/components/layout/app-layout";
 import {
   DropdownMenu,
@@ -345,18 +346,31 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
     }
   }, [projectId, isAuthenticated, demoProject, isDemoMode]);
   
-  // Initial fetch
+  const consoleEvents = useConsoleEvents();
+
+  // Live stream owns the bell for an authenticated project. Demo and signed-out
+  // users keep the mock/event path above.
   useEffect(() => {
+    if (isDemoMode || !isAuthenticated) return;
+    if (consoleEvents.projectId !== projectId) return;
+    if (consoleEvents.notifications == null) return;
+    setNotifications(consoleEvents.notifications as Notification[]);
+    setLoading(false);
+    setError(null);
+  }, [
+    isDemoMode,
+    isAuthenticated,
+    projectId,
+    consoleEvents.projectId,
+    consoleEvents.notifications,
+  ]);
+
+  // Initial fetch for demo / signed-out. Authenticated users wait for the
+  // console snapshot (and poll only if that stream drops).
+  useEffect(() => {
+    if (isAuthenticated && !isDemoMode) return;
     fetchNotifications();
-  }, [fetchNotifications]);
-  
-  // Poll for new notifications every 30 seconds
-  useEffect(() => {
-    if (!projectId) return;
-    
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [projectId, fetchNotifications]);
+  }, [fetchNotifications, isAuthenticated, isDemoMode]);
   
   const handleAction = async (notificationId: string, actionType: string, data?: Record<string, unknown>) => {
     // Demo mode handling (unauthenticated users OR clause projects)

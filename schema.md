@@ -620,7 +620,8 @@ is forced on (`FORCE_SHOW_CODEBASE_INDEXING`). The schema above is what turns
 it into truth.
 
 ```text
-GET /api/projects/{id}/indexing
+GET /api/projects/{id}/events   (SSE snapshot + indexing/notifications)
+GET /api/projects/{id}/indexing (poll fallback)
 {
   "status": "indexing" | "ready" | "idle" | "error",
   "progress_percent": 47,
@@ -637,9 +638,10 @@ Project-level `status` is `indexing` if any imported `(repo, branch)` is
 `progress_percent` is the average over currently `indexing` rows, or 100
 when `ready`.
 
-The Codebase tab polls this. It renders `CodebaseIndexingSign` only when
-status is `indexing`, and passes `progress={progress_percent}`. The preview
-flag flips to `false`.
+The Codebase tab reads this over `GET /api/projects/{id}/events` (SSE),
+and polls it only if that stream drops. It renders `CodebaseIndexingSign`
+only when status is `indexing`, and passes `progress={progress_percent}`.
+The preview flag flips to `false`.
 
 ---
 

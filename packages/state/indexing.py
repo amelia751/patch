@@ -1,15 +1,16 @@
 """The indexing banner one project shows, read from `repo_index_state`.
 
-`repo-indexer.md` §7.6 and `schema.md` §13: the Codebase tab polls this while it
-is visible, so the read is one round trip — ownership and rollup on a single
-connection — and it answers with the four-value status the banner branches on.
+`repo-indexer.md` §7.6 and `schema.md` §13: the Codebase tab reads this on the
+console SSE stream (and polls it only if that stream drops). The SQL is one
+round trip — ownership and rollup on a single connection — and it answers with
+the four-value status the banner branches on.
 
 The SQL is duplicated from `patchapi_repo_indexer.store.indexing_for_project`
 rather than imported. The control plane's image
 (`services/control_api/Dockerfile`) ships schemas, auth, state, and the API and
 nothing else; importing a service package from `packages/` would also invert the
 workspace's dependency direction, and would put the indexer's Pydantic models and
-its scanner configuration in the request path of a poll that reads four columns.
+its scanner configuration in the request path of a read that returns four columns.
 `packages/state/tests/test_indexing_route.py` asserts this rollup agrees with the
 indexer's for every combination, so the duplication cannot drift silently.
 
@@ -87,6 +88,24 @@ def rollup(repositories: Sequence[dict[str, Any]]) -> tuple[IndexStatus, int]:
     return "idle", 0
 
 
+def _payload(rows: Sequence[Any]) -> dict[str, Any]:
+    repositories = [
+        {
+            "full_name": row["repository"],
+            "branch": row["branch"],
+            "status": row["status"],
+            "progress_percent": int(row["progress_percent"]),
+        }
+        for row in rows
+    ]
+    status, progress_percent = rollup(repositories)
+    return {
+        "status": status,
+        "progress_percent": progress_percent,
+        "repositories": repositories,
+    }
+
+
 async def indexing_for_project(
     pool: asyncpg.Pool, project_id: UUID, owner_id: UUID
 ) -> dict[str, Any] | None:
@@ -116,21 +135,34 @@ async def indexing_for_project(
             f"could not read indexing status: {type(exc).__name__}"
         ) from exc
 
-    repositories = [
-        {
-            "full_name": row["repository"],
-            "branch": row["branch"],
-            "status": row["status"],
-            "progress_percent": int(row["progress_percent"]),
-        }
-        for row in rows
-    ]
-    status, progress_percent = rollup(repositories)
-    return {
-        "status": status,
-        "progress_percent": progress_percent,
-        "repositories": repositories,
-    }
+    return _payload(rows)
 
 
-__all__ = ["MAX_PROGRESS", "IndexStatus", "indexing_for_project", "rollup"]
+async def indexing_snapshot(pool: asyncpg.Pool, project_id: UUID) -> dict[str, Any]:
+    """Indexing payload for an already-authorized project (SSE fan-out).
+
+    Tenancy was checked when the EventSource subscribed. A missing project
+    reads as idle rather than as an error: the tab hides the banner either way.
+    """
+    try:
+        async with pool.acquire() as connection:
+            rows = await connection.fetch(_INDEXING_SQL, project_id)
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) == _UNDEFINED_TABLE:
+            raise StateUnavailableError(
+                "repo_index_state is missing; migration 0007_provider_usages.sql "
+                "has not been applied to this database"
+            ) from exc
+        raise StateUnavailableError(
+            f"could not read indexing status: {type(exc).__name__}"
+        ) from exc
+    return _payload(rows)
+
+
+__all__ = [
+    "MAX_PROGRESS",
+    "IndexStatus",
+    "indexing_for_project",
+    "indexing_snapshot",
+    "rollup",
+]

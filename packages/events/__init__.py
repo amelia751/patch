@@ -8,6 +8,16 @@ from packages.events.config import (
     EventType,
     TrustLevel,
 )
+from packages.events.console_notify import (
+    CHANNEL as CONSOLE_CHANNEL,
+)
+from packages.events.console_notify import (
+    EVENT_INDEXING,
+    EVENT_NOTIFICATIONS,
+    decode_notify,
+    encode_notify,
+    notify_console,
+)
 from packages.events.envelope import EventEnvelope, PayloadError
 from packages.events.idempotency import ActionType, idempotency_key, key_digest
 from packages.events.publisher import (
@@ -27,7 +37,10 @@ from packages.events.repo_events import (
 )
 
 __all__ = [
+    "CONSOLE_CHANNEL",
     "ENVELOPE_VERSION",
+    "EVENT_INDEXING",
+    "EVENT_NOTIFICATIONS",
     "MAX_PAYLOAD_BYTES",
     "MAX_PAYLOAD_KEYS",
     "MAX_PAYLOAD_VALUE_CHARS",
@@ -39,9 +52,12 @@ __all__ = [
     "PublisherClient",
     "TrustLevel",
     "branch_from_ref",
+    "decode_notify",
+    "encode_notify",
     "idempotency_key",
     "index_updated_event",
     "key_digest",
+    "notify_console",
     "project_repo_added_event",
     "project_repo_removed_event",
     "publish",

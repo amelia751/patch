@@ -27,3 +27,4 @@ only-include = ["__init__.py"]
 "idempotency.py" = "packages/events/idempotency.py"
 "publisher.py" = "packages/events/publisher.py"
 "repo_events.py" = "packages/events/repo_events.py"
+"console_notify.py" = "packages/events/console_notify.py"

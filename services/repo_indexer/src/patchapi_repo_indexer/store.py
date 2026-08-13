@@ -20,13 +20,17 @@ knows nothing about a repository, and must not report that as "no usages".
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final, Literal
 from uuid import UUID
 
+from packages.events.console_notify import EVENT_INDEXING, notify_console
 from patchapi_repo_indexer.config import INDEXER_VERSION, SCANNER_VERSION
 from patchapi_repo_indexer.models import ApiUsageInventory, ApiUsageRecord
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     from collections.abc import Sequence
@@ -377,6 +381,7 @@ async def record_state(conn: asyncpg.Connection, state: RepoIndexState) -> None:
         state.reference_count,
         state.error_message,
     )
+    await wake_console(conn, state.repository, state.branch)
 
 
 async def indexable_targets(conn: asyncpg.Connection) -> list[IndexTarget]:
@@ -533,6 +538,40 @@ async def set_index_progress(
         INDEXER_VERSION,
         SCANNER_VERSION,
     )
+    await wake_console(conn, repository, branch)
+
+
+async def wake_console(conn: asyncpg.Connection, repository: str, branch: str) -> None:
+    """Wake every project console that imports this target.
+
+    Progress pings are autocommit, so the banner can move during the pass.
+    `record_state` runs inside the index transaction, so the ready wake waits
+    for that commit. A failure here is logged, never raised: the rows are
+    already the truth, and the dashboard falls back to polling.
+    """
+    try:
+        scopes = await projects_for(conn, repository, branch)
+    except Exception:
+        log.warning(
+            "console wake could not resolve projects for %s@%s",
+            repository,
+            branch,
+            exc_info=True,
+        )
+        return
+    seen: set[UUID] = set()
+    for scope in scopes:
+        if scope.project_id in seen:
+            continue
+        seen.add(scope.project_id)
+        try:
+            await notify_console(conn, event_type=EVENT_INDEXING, project_id=scope.project_id)
+        except Exception:
+            log.warning(
+                "console NOTIFY failed for project %s",
+                scope.project_id,
+                exc_info=True,
+            )
 
 
 def _rollup(repositories: Sequence[RepositoryIndexing]) -> tuple[IndexStatus, int]:
@@ -649,7 +688,10 @@ async def release_shard(conn: asyncpg.Connection, repository: str, branch: str) 
     )
     # No row means nothing ever took a reference. Releasing an unheld shard is a
     # no-op, not an error: repository removal is replayed like every other event.
-    return 0 if count is None else int(count)
+    if count is None:
+        return 0
+    await wake_console(conn, repository, branch)
+    return int(count)
 
 
 __all__ = [
@@ -673,4 +715,5 @@ __all__ = [
     "retire_paths",
     "set_index_progress",
     "usages_for_project",
+    "wake_console",
 ]

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from packages.auth.config import load_config
 from packages.auth.errors import AuthConfigurationError, AuthUnavailableError
@@ -16,7 +16,12 @@ from packages.auth.github_oauth import (
     fetch_repository_tree,
 )
 from packages.state.codebase import codebase_payload, imported_repo, safe_repo_path
+from packages.state.console_events import (
+    ConsoleHub,
+    project_event_stream,
+)
 from packages.state.indexing import indexing_for_project
+from packages.state.notifications import notifications_snapshot
 from packages.state.pool import StateUnavailableError
 from packages.state.projects import (
     add_repository,
@@ -34,6 +39,14 @@ if TYPE_CHECKING:
     import asyncpg
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+
+def _hub(request: Request) -> ConsoleHub:
+    hub = getattr(request.app.state, "console_hub", None)
+    if hub is None:
+        hub = ConsoleHub()
+        request.app.state.console_hub = hub
+    return hub
 
 
 def _pool(request: Request) -> asyncpg.Pool:
@@ -87,12 +100,14 @@ def _github_failure(exc: AuthConfigurationError | AuthUnavailableError) -> JSONR
 
 @router.get("/{project_id}/indexing")
 async def get_owned_project_indexing(request: Request, project_id: UUID) -> JSONResponse:
-    """The Codebase tab's indexing banner, polled while the tab is visible.
+    """The Codebase tab's indexing banner.
 
-    Unreachable Postgres — or a database the indexer's migration has not been
-    applied to — answers 503 naming the dependency rather than `idle`: a banner
-    that hid itself because the read failed would report an unindexed repository
-    as one with nothing to find.
+    Live updates arrive on `GET /events`. This GET remains for the first paint
+    and for the poll fallback if the EventSource drops. Unreachable Postgres —
+    or a database the indexer's migration has not been applied to — answers 503
+    naming the dependency rather than `idle`: a banner that hid itself because
+    the read failed would report an unindexed repository as one with nothing
+    to find.
     """
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
@@ -107,6 +122,52 @@ async def get_owned_project_indexing(request: Request, project_id: UUID) -> JSON
     if indexing is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
     return JSONResponse(indexing)
+
+
+@router.get("/{project_id}/events", response_model=None)
+async def stream_owned_project_events(
+    request: Request, project_id: UUID
+) -> JSONResponse | StreamingResponse:
+    """Live console stream: snapshot on connect, then indexing and notifications.
+
+    The browser never holds Pub/Sub credentials. This is cookie-authenticated
+    SSE. A dropped stream is the dashboard's cue to poll `/indexing` and
+    `/api/notifications` until it reconnects.
+    """
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        indexing = await indexing_for_project(_pool(request), project_id, user_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if indexing is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    try:
+        notifications = await notifications_snapshot(_pool(request), project_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    return StreamingResponse(
+        project_event_stream(
+            request_is_disconnected=request.is_disconnected,
+            pool=_pool(request),
+            hub=_hub(request),
+            project_id=project_id,
+            initial={"indexing": indexing, "notifications": notifications},
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{project_id}/codebase/file")

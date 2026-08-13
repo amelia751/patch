@@ -113,7 +113,7 @@ def create_app(
             allow_origins=list(allowed_origins),
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allow_headers=["content-type", "authorization"],
+            allow_headers=["content-type", "authorization", "last-event-id"],
         )
 
     app.include_router(health.router)

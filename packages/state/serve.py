@@ -15,9 +15,10 @@ work nobody enqueued.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING
 
 from patchapi_control_api.app import create_app
@@ -25,11 +26,12 @@ from patchapi_control_api.ports import ReadinessProbe
 
 from packages.state.auth_routes import router as auth_router
 from packages.state.config import cors_origins, database_url
+from packages.state.console_events import ConsoleHub, listen_console
 from packages.state.dashboard import PostgresDashboardReader
 from packages.state.github_routes import router as github_router
 from packages.state.notification_routes import router as notification_router
-from packages.state.project_routes import router as project_router
 from packages.state.pool import StateUnavailableError, create_pool, ping
+from packages.state.project_routes import router as project_router
 from packages.state.runs import PostgresRunStateReader
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -58,9 +60,12 @@ def build_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool = await create_pool(dsn)
+        hub = ConsoleHub()
         app.state.run_state_reader = PostgresRunStateReader(pool)
         app.state.dashboard_reader = PostgresDashboardReader(pool)
         app.state.postgres_pool = pool
+        app.state.console_hub = hub
+        listener = asyncio.create_task(listen_console(pool, hub), name="patchapi-console-listen")
         try:
             from packages.auth.google_oauth import ensure_google_idp
 
@@ -72,9 +77,13 @@ def build_app() -> FastAPI:
         try:
             yield
         finally:
+            listener.cancel()
+            with suppress(asyncio.CancelledError):
+                await listener
             app.state.run_state_reader = None
             app.state.dashboard_reader = None
             app.state.postgres_pool = None
+            app.state.console_hub = None
             await pool.close()
 
     app = create_app(allowed_origins=cors_origins())
