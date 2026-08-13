@@ -1,9 +1,12 @@
 # Data model
 
 **Status:** Console tenancy (2026-08-12) — Postgres currently stores the
-dashboard's auth/import model. PatchAPI workflow tables from
-[`roadmap.md` §10](../roadmap.md#10-state-architecture) are deferred and will
-return as additive migrations. Authoritative DDL: [`db/migrations/`](../db/migrations/).
+dashboard's auth/import model. The eventual full schema — organizations, the
+provider-usage inventory, runs, policy, PRs, audit — is [`schema.md`](../schema.md).
+Workflow tables from [`roadmap.md` §10](../roadmap.md#10-state-architecture)
+return as additive migrations against `projects` / `project_repositories`, not
+as a parallel `repositories` catalog. Authoritative applied DDL:
+[`db/migrations/`](../db/migrations/).
 
 ---
 

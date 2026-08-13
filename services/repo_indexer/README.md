@@ -12,7 +12,7 @@ what this service produces; they never replace it.
 ## What it produces
 
 `ApiUsageInventory` — one `ApiUsageRecord` per occurrence, shaped column-for-column
-to the `api_usages` table in `db/migrations/0003_api_usage_inventory.sql`:
+to the `provider_usages` table in `db/migrations/0003_api_usage_inventory.sql`:
 
 | Field | Meaning |
 |---|---|

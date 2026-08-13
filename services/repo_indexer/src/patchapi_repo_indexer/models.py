@@ -1,6 +1,6 @@
 """The API usage inventory contract (roadmap §11.1).
 
-One row per literal provider identifier occurrence, shaped to the `api_usages`
+One row per literal provider identifier occurrence, shaped to the `provider_usages`
 table in `db/migrations/0003_api_usage_inventory.sql` so persisting an inventory
 is a column-for-column write rather than a translation. The document carries no
 timestamp: two indexes of the same commit must serialize identically, and when

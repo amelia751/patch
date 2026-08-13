@@ -63,7 +63,7 @@ _CHANGE_COLUMNS = """
     ce.detected_at                          AS detected_at,
     (
         SELECT count(DISTINCT u.repository_id)
-        FROM api_usages u
+        FROM provider_usages u
         JOIN repositories rp ON rp.id = u.repository_id AND NOT rp.archived
         WHERE u.removed_at IS NULL
           AND u.identifier = ANY (ce.affected_identifiers)
@@ -132,7 +132,7 @@ LEFT JOIN LATERAL (
         count(*)                        AS usage_count,
         count(DISTINCT file_path)       AS file_count,
         array_agg(DISTINCT identifier)  AS identifiers
-    FROM api_usages
+    FROM provider_usages
     WHERE repository_id = rp.id
       AND removed_at IS NULL
       AND ($1::text[] IS NULL OR identifier = ANY ($1::text[]))
@@ -152,7 +152,7 @@ SELECT
     u.detection_layer::text     AS detection_layer,
     u.confidence                AS confidence,
     u.observed_sha              AS observed_sha
-FROM api_usages u
+FROM provider_usages u
 JOIN repositories rp ON rp.id = u.repository_id
 WHERE u.removed_at IS NULL
   AND NOT rp.archived
@@ -317,7 +317,7 @@ SELECT
     u.detection_layer::text AS detection_layer,
     u.confidence            AS confidence,
     u.observed_sha          AS observed_sha
-FROM api_usages u
+FROM provider_usages u
 JOIN remediation_runs r ON r.repository_id = u.repository_id
 JOIN change_events ce ON ce.id = r.change_event_id
 WHERE r.id = $1::uuid
