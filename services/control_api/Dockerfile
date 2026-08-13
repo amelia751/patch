@@ -9,16 +9,20 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 WORKDIR /build
 
 COPY packages/schemas/ ./packages/schemas/
+COPY packages/events/ ./packages/events/
 COPY packages/auth/ ./packages/auth/
 COPY packages/state/ ./packages/state/
 COPY services/control_api/ ./services/control_api/
 
 # Installed into a relocatable prefix so the runtime stage carries the
 # libraries without the build tooling that produced them. Order matches
-# the workspace dependency direction: schemas → auth / control-api → state.
+# the workspace dependency direction: schemas → events → auth / control-api
+# → state. The events extra is the Pub/Sub client the webhook receiver uses
+# to enqueue `repo-push`; without it a verified delivery would 202 and drop.
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install \
         ./packages/schemas \
+        "./packages/events[pubsub]" \
         ./packages/auth \
         ./services/control_api \
         ./packages/state

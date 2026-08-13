@@ -22,6 +22,7 @@ These names are the URL. Do not rename or delete the services.
 |---|---|
 | Frontend | https://patchapi-web-913371146929.us-central1.run.app |
 | Backend | https://patchapi-api-913371146929.us-central1.run.app |
+| GitHub webhook | https://patchapi-api-913371146929.us-central1.run.app/v1/github/webhooks |
 
 Same services also answer at the classic `*.a.run.app` aliases. Prefer the
 links above. Region is `us-central1`. Push to `main` deploys into these names
@@ -48,13 +49,14 @@ target: **Imagen 4 → Gemini 3.1 Flash Image**.
 | Cloud Run | `patchapi-web` (dashboard) and `patchapi-api` (control plane). Push to `main` deploys via `.github/workflows/deploy-cloud-run.yml`. |
 | Artifact Registry | `us-central1-docker.pkg.dev/patch-505223/patchapi` — web and api images. |
 | Cloud SQL (Postgres 16) | Instance `patchapi-console`. Authoritative workflow state (constraint 7). Local talks to it through the Cloud SQL Auth Proxy (`127.0.0.1:5433`). |
-| Secret Manager | `patchapi-database-url`, `patchapi-identity-api-key`, `patchapi-session-secret`, Google OAuth client id/secret. Values never land in the repo. |
+| Secret Manager | `patchapi-database-url`, `patchapi-identity-api-key`, `patchapi-session-secret`, `patchapi-github-webhook-secret`, Google OAuth client id/secret. Values never land in the repo. |
 | Identity Platform | Email/password and Google sign-in (`identitytoolkit.googleapis.com`). Firebase auth domain `patch-505223.firebaseapp.com`. |
 | Google OAuth | Web client in APIs & Services → Credentials. Continue with Google; origins/redirects below. |
 | IAM + Workload Identity Federation | Pool `github-actions` / provider `github`. GitHub Actions impersonates `patchapi-github-deploy@…` — no JSON key in CI. Workload SAs: `patchapi-web@…`, `patchapi-api@…`. |
 | Vertex AI / Gemini Enterprise Agent Platform | `aiplatform.googleapis.com`. `gemini-3.5-flash` (agent reasoning) and `gemini-3.1-flash-image` (demo image path). |
 | Memory Bank | Agent Engine resource created; name in `.secrets/memory_bank_name.txt`. Institutional context, not run state. |
 | Cloud Logging | Cloud Run service accounts write logs. |
+| Pub/Sub | GitHub webhook publishes `repo-push` (and the console publishes repository membership events) onto `patchapi-dev-*` topics. |
 
 ### Enabled, not on the request path yet
 
@@ -63,7 +65,6 @@ APIs are on in the project. These are not serving console traffic today.
 | Service | Role when wired |
 |---|---|
 | GKE Agent Sandbox | Isolated patch execution (gVisor). Local temp workspace stands in until then. |
-| Pub/Sub | Durable remediation events (`roadmap.md` §10.4). |
 | Cloud Storage | Run evidence bucket. |
 | Model Armor | Sanitize untrusted provider text. |
 | Agent Registry / Agent Gateway / Agent Identity | Fleet discovery, egress deny-by-tool, SPIFFE per agent. |
@@ -94,7 +95,7 @@ OAuth is Continue with GitHub; its installation id is repo import
 | Setup URL | `https://patchapi-api-913371146929.us-central1.run.app/api/auth/github/setup` |
 | Redirect on update | checked |
 | Webhook URL | `https://patchapi-api-913371146929.us-central1.run.app/v1/github/webhooks` |
-| Webhook active | **off** until the receiver exists |
+| Webhook active | **on** — HMAC-verified; unsigned deliveries are refused |
 | Expire user authorization tokens | checked |
 | Request user authorization (OAuth) during installation | checked |
 | Where can this GitHub App be installed? | Any account |
@@ -114,8 +115,9 @@ form allows a third URL.
 | Checks | Read-only |
 | Administration, Secrets, Workflows, Deployments | No access |
 
-**Subscribe to events** (harmless while the webhook is inactive): `push`,
-`pull_request`, `installation`, `installation_repositories`.
+**Subscribe to events:** `push`, `pull_request`, `installation`,
+`installation_repositories`. The control plane indexes on `push`; the others
+are acknowledged and ignored until a later subscriber exists.
 
 After create:
 
@@ -131,8 +133,9 @@ After create:
 }
 ```
 
-3. Generate a webhook secret (even with the webhook off) and put it in
-   `.secrets/github-webhook-secret.txt`.
+3. Generate a webhook secret and put it in
+   `.secrets/github-webhook-secret.txt`. Cloud Run reads the same value from
+   Secret Manager (`patchapi-github-webhook-secret` → `PATCHAPI_GITHUB_WEBHOOK_SECRET`).
 4. Do **not** install the App on every repo yet. Install it on
    `amelia751/egaki` (and later whatever the console imports).
 

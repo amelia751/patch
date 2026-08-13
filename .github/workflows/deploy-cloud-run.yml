@@ -137,4 +137,4 @@ jobs:
             --max-instances=3 \
             --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|PATCHAPI_ENV=cloud|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action" \
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
-            --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest"
+            --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest,PATCHAPI_GITHUB_WEBHOOK_SECRET=patchapi-github-webhook-secret:latest"
