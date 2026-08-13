@@ -412,21 +412,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGitHub = useCallback(async () => {
     try {
-      // Get the auth URL from backend
       const response = await fetch(`${API_URL}/api/auth/github`, {
         credentials: "include",
       });
-      
-      if (response.ok) {
-        const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (data.auth_url) {
         window.location.href = data.auth_url;
-      } else {
-        // Fallback to direct redirect
-        window.location.href = `${API_URL}/api/auth/github`;
+        return;
       }
+      console.error("No auth_url returned from GitHub OAuth endpoint", data);
     } catch {
-      // Fallback to direct redirect
-      window.location.href = `${API_URL}/api/auth/github`;
+      console.error("Failed to initiate GitHub OAuth");
     }
   }, []);
 

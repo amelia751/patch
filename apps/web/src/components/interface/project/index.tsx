@@ -610,10 +610,12 @@ export function NewProjectDialog({
 // ============================================================================
 export function LinkGitHubDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [isLinking, setIsLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const { theme } = useTheme();
 
   const handleLinkGitHub = async () => {
     setIsLinking(true);
+    setLinkError(null);
     try {
       // Fetch the OAuth URL from the backend, then redirect
       // credentials: "include" sends the access_token cookie so backend knows this is a "connect" operation
@@ -621,16 +623,20 @@ export function LinkGitHubDialog({ open, onOpenChange }: { open: boolean; onOpen
       const response = await fetch(`${API_URL}/api/auth/github`, {
         credentials: "include",  // Important: sends cookies so backend knows user is logged in
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       
       if (data.auth_url) {
         window.location.href = data.auth_url;
       } else {
-        console.error("No auth_url returned from GitHub OAuth endpoint");
+        console.error("No auth_url returned from GitHub OAuth endpoint", data);
+        setLinkError(
+          data.reason || data.detail || "GitHub sign-in is not available. Is the control API running the latest auth routes?"
+        );
         setIsLinking(false);
       }
     } catch (error) {
       console.error("Failed to initiate GitHub OAuth:", error);
+      setLinkError("Could not reach the GitHub sign-in endpoint.");
       setIsLinking(false);
     }
   };
@@ -684,6 +690,9 @@ export function LinkGitHubDialog({ open, onOpenChange }: { open: boolean; onOpen
               You can revoke access anytime from GitHub settings.
             </p>
           </div>
+          {linkError ? (
+            <p className="text-[10px] text-red-600 dark:text-red-400 leading-relaxed">{linkError}</p>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-2 mt-6">
@@ -797,7 +806,7 @@ export function GitHubImportDialog({
           });
           
           if (!response.ok) {
-            throw new Error("Failed to fetch repositories");
+            throw new Error(`Failed to fetch repositories (${response.status})`);
           }
           
           const data = await response.json();

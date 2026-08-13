@@ -37,12 +37,21 @@ ENV_GOOGLE_OAUTH: Final[str] = "PATCHAPI_GOOGLE_OAUTH"
 ENV_GOOGLE_CLIENT_ID: Final[str] = "PATCHAPI_GOOGLE_OAUTH_CLIENT_ID"
 ENV_GOOGLE_CLIENT_SECRET: Final[str] = "PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET"
 ENV_GOOGLE_REDIRECT: Final[str] = "PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI"
+ENV_GITHUB_APP: Final[str] = "PATCHAPI_GITHUB_APP"
+ENV_GITHUB_CLIENT_ID: Final[str] = "PATCHAPI_GITHUB_OAUTH_CLIENT_ID"
+ENV_GITHUB_CLIENT_SECRET: Final[str] = "PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET"
+ENV_GITHUB_REDIRECT: Final[str] = "PATCHAPI_GITHUB_OAUTH_REDIRECT_URI"
+ENV_GITHUB_APP_ID: Final[str] = "GITHUB_APP_ID"
+ENV_GITHUB_PRIVATE_KEY: Final[str] = "GITHUB_APP_PRIVATE_KEY_PATH"
 ENV_FRONTEND_ORIGIN: Final[str] = "PATCHAPI_FRONTEND_ORIGIN"
 
 DEFAULT_API_KEY_FILE: Final[str] = ".secrets/identity_platform_api_key.txt"
 DEFAULT_CONFIG_FILE: Final[str] = ".secrets/identity-platform.json"
 DEFAULT_GOOGLE_OAUTH_FILE: Final[str] = ".secrets/google-oauth.json"
 DEFAULT_GOOGLE_REDIRECT: Final[str] = "http://localhost:8080/api/auth/google/callback"
+DEFAULT_GITHUB_APP_FILE: Final[str] = ".secrets/github-app.json"
+DEFAULT_GITHUB_REDIRECT: Final[str] = "http://localhost:8080/api/auth/github/callback"
+DEFAULT_GITHUB_PRIVATE_KEY: Final[str] = ".secrets/github-app.pem"
 DEFAULT_FRONTEND_ORIGIN: Final[str] = "http://localhost:3000"
 
 # Where Google's verification and reset emails send the browser back to. The
@@ -75,6 +84,12 @@ class IdentityPlatformConfig:
     google_client_id: str | None = None
     google_client_secret: str | None = None
     google_redirect_uri: str = DEFAULT_GOOGLE_REDIRECT
+    github_client_id: str | None = None
+    github_client_secret: str | None = None
+    github_redirect_uri: str = DEFAULT_GITHUB_REDIRECT
+    github_app_slug: str | None = None
+    github_app_id: str | None = None
+    github_private_key_path: Path | None = None
     frontend_origin: str = DEFAULT_FRONTEND_ORIGIN
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
@@ -85,6 +100,18 @@ class IdentityPlatformConfig:
     def google_oauth_configured(self) -> bool:
         """Whether Continue with Google can start an authorization-code flow."""
         return bool(self.google_client_id and self.google_client_secret)
+
+    def github_oauth_configured(self) -> bool:
+        """Whether Continue with GitHub can start the App's user-to-server flow."""
+        return bool(self.github_client_id and self.github_client_secret)
+
+    def github_app_jwt_configured(self) -> bool:
+        """Whether the App private key can look up installations (no user token)."""
+        return bool(
+            self.github_app_id
+            and self.github_private_key_path is not None
+            and self.github_private_key_path.is_file()
+        )
 
     def require_api_key(self) -> str:
         if not self.api_key:
@@ -130,6 +157,13 @@ def _read_web_config(path: Path) -> Mapping[str, str]:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _text(value: object) -> str:
+    """Stringify a JSON field, including numeric ids from GitHub's App blob."""
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def load_config(
@@ -189,6 +223,28 @@ def load_config(
         or None
     )
 
+    github_file = _read_web_config(
+        _resolve(env.get(ENV_GITHUB_APP, "").strip() or DEFAULT_GITHUB_APP_FILE)
+    )
+    github_client_id = (
+        env.get(ENV_GITHUB_CLIENT_ID, "").strip()
+        or _text(github_file.get("client_id") or github_file.get("clientId"))
+        or None
+    )
+    github_client_secret = (
+        env.get(ENV_GITHUB_CLIENT_SECRET, "").strip()
+        or _text(github_file.get("client_secret") or github_file.get("clientSecret"))
+        or None
+    )
+    github_app_slug = _text(github_file.get("app_slug") or github_file.get("slug")) or None
+    github_app_id = (
+        env.get(ENV_GITHUB_APP_ID, "").strip()
+        or _text(github_file.get("app_id") or github_file.get("appId"))
+        or None
+    )
+    raw_pem = env.get(ENV_GITHUB_PRIVATE_KEY, "").strip() or DEFAULT_GITHUB_PRIVATE_KEY
+    github_private_key_path = _resolve(raw_pem)
+
     return IdentityPlatformConfig(
         api_key=api_key,
         project=project,
@@ -198,5 +254,11 @@ def load_config(
         google_client_id=google_client_id,
         google_client_secret=google_client_secret,
         google_redirect_uri=env.get(ENV_GOOGLE_REDIRECT, "").strip() or DEFAULT_GOOGLE_REDIRECT,
+        github_client_id=github_client_id,
+        github_client_secret=github_client_secret,
+        github_redirect_uri=env.get(ENV_GITHUB_REDIRECT, "").strip() or DEFAULT_GITHUB_REDIRECT,
+        github_app_slug=github_app_slug,
+        github_app_id=github_app_id,
+        github_private_key_path=github_private_key_path,
         frontend_origin=env.get(ENV_FRONTEND_ORIGIN, "").strip() or DEFAULT_FRONTEND_ORIGIN,
     )

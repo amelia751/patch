@@ -9,6 +9,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.27,<0.29",
     "google-auth>=2.35,<3",
+    "cryptography>=43,<51",
 ]
 
 [dependency-groups]
@@ -34,3 +35,4 @@ only-include = ["__init__.py"]
 "errors.py" = "packages/auth/errors.py"
 "identity_platform.py" = "packages/auth/identity_platform.py"
 "google_oauth.py" = "packages/auth/google_oauth.py"
+"github_oauth.py" = "packages/auth/github_oauth.py"
