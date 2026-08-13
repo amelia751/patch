@@ -1,0 +1,16 @@
+# Confirms that an Imagen model identifier sits in a generation call rather than
+# in prose. Layer A finds the string; this decides whether breaking it breaks
+# production.
+id: google-imagen-call-site
+language: typescript
+severity: info
+message: Imagen model identifier in a generation call
+# The patterns are quoted because an ast-grep pattern contains `: ` and `{`,
+# which unquoted YAML reads as a nested mapping rather than as a scalar.
+rule:
+  any:
+    - pattern: '$CLIENT.models.generateImages({ model: $MODEL, $$$ })'
+    - pattern: '$CLIENT.getGenerativeModel({ model: $MODEL, $$$ })'
+constraints:
+  MODEL:
+    regex: 'imagen-\d+\.\d+'

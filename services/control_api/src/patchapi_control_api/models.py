@@ -137,3 +137,19 @@ class RunStateResponse(StrictModel):
     reason: NonEmptyLine | None = None
     terminal: bool
     allowed_next: tuple[RunState, ...]
+
+
+class GitHubWebhookAck(StrictModel):
+    """What a verified GitHub delivery is told.
+
+    `enqueued` is the honest fact the receiver can report: the delivery was
+    authenticated and understood, and whether the indexer was actually told
+    about it. A push that could not be published is still acknowledged — GitHub
+    redelivering a signed push it already sent produces no new work, while a
+    5xx would have it retry a delivery the receiver has already decided about.
+    """
+
+    event: NonEmptyLine
+    delivery_id: str | None = None
+    enqueued: bool
+    reason: str | None = None

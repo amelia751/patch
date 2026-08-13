@@ -1,0 +1,13 @@
+# The same identifier as a configured value. `classify_path` labels these
+# `configuration`, and a model ID read from config at startup is as
+# runtime-affecting as one written into the call — it is simply not code.
+#
+# JSON only: one ast-grep rule declares one language, and the YAML and dotenv
+# surfaces are separate rules rather than a looser pattern here.
+id: google-imagen-config
+language: json
+severity: info
+message: Imagen model identifier in configuration
+rule:
+  kind: string
+  regex: 'imagen-\d+\.\d+-(fast-|ultra-)?generate-\d+|imagen-[\d.]+-[\w-]*preview[\w-]*'

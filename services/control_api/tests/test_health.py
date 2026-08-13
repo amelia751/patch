@@ -65,5 +65,6 @@ def test_openapi_document_describes_the_whole_surface(unwired_client: TestClient
         "/v1/changes/{change_id}",
         "/v1/repositories",
         "/v1/fleet",
+        "/v1/github/webhooks",
     }
     assert document["info"]["version"] == SERVICE_VERSION

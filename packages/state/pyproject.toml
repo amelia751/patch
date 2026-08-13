@@ -10,6 +10,7 @@ dependencies = [
     "asyncpg>=0.30,<0.31",
     "patchapi-auth",
     "patchapi-control-api",
+    "patchapi-events",
     "patchapi-schemas",
     "uvicorn>=0.30,<0.40",
 ]
@@ -26,6 +27,7 @@ dev = [
 ]
 
 [tool.uv.sources]
+patchapi-events = { workspace = true }
 patchapi-schemas = { workspace = true }
 patchapi-control-api = { workspace = true }
 patchapi-auth = { workspace = true }
@@ -57,3 +59,4 @@ only-include = ["__init__.py"]
 "notifications.py" = "packages/state/notifications.py"
 "notification_routes.py" = "packages/state/notification_routes.py"
 "codebase.py" = "packages/state/codebase.py"
+"indexing.py" = "packages/state/indexing.py"

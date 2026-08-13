@@ -696,6 +696,15 @@ name = "patchapi-events"
 version = "0.1.0"
 source = { editable = "packages/events" }
 
+[package.optional-dependencies]
+pubsub = [
+    { name = "google-cloud-pubsub" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "google-cloud-pubsub", marker = "extra == 'pubsub'", specifier = ">=2.27,<3" }]
+provides-extras = ["pubsub"]
+
 [[package]]
 name = "patchapi-github"
 version = "0.1.0"
@@ -776,8 +785,10 @@ dependencies = [
     { name = "asyncpg" },
     { name = "google-cloud-pubsub" },
     { name = "httpx" },
+    { name = "patchapi-events" },
     { name = "patchapi-repo-scan" },
     { name = "patchapi-schemas" },
+    { name = "patchapi-state" },
     { name = "pydantic" },
 ]
 
@@ -786,8 +797,10 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30,<0.31" },
     { name = "google-cloud-pubsub", specifier = ">=2.27,<3" },
     { name = "httpx", specifier = ">=0.27,<0.29" },
+    { name = "patchapi-events", editable = "packages/events" },
     { name = "patchapi-repo-scan", editable = "packages/repo_scan" },
     { name = "patchapi-schemas", editable = "packages/schemas" },
+    { name = "patchapi-state", editable = "packages/state" },
     { name = "pydantic", specifier = ">=2.9,<3" },
 ]
 
@@ -815,6 +828,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "patchapi-auth" },
     { name = "patchapi-control-api" },
+    { name = "patchapi-events" },
     { name = "patchapi-schemas" },
     { name = "uvicorn" },
 ]
@@ -830,6 +844,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30,<0.31" },
     { name = "patchapi-auth", editable = "packages/auth" },
     { name = "patchapi-control-api", editable = "services/control_api" },
+    { name = "patchapi-events", editable = "packages/events" },
     { name = "patchapi-schemas", editable = "packages/schemas" },
     { name = "uvicorn", specifier = ">=0.30,<0.40" },
 ]

@@ -48,6 +48,7 @@ locals {
     "sandbox-complete",
     "verification-requested",
     "pr-requested",
+    "policy-denied",
     "repo-push",
     "project-repo-added",
     "project-repo-removed",

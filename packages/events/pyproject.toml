@@ -5,8 +5,13 @@ description = "Versioned Pub/Sub event envelope and idempotency keys for PatchAP
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 # Standard library only: the envelope must be constructible by any publisher,
-# including one running inside a sandbox with a minimal dependency set.
+# including one running inside a sandbox with a minimal dependency set. The
+# Pub/Sub client is an extra because `publisher.py` imports it lazily and
+# degrades to a logged failure without it (see its module docstring).
 dependencies = []
+
+[project.optional-dependencies]
+pubsub = ["google-cloud-pubsub>=2.27,<3"]
 
 [build-system]
 requires = ["hatchling"]
@@ -20,3 +25,5 @@ only-include = ["__init__.py"]
 "config.py" = "packages/events/config.py"
 "envelope.py" = "packages/events/envelope.py"
 "idempotency.py" = "packages/events/idempotency.py"
+"publisher.py" = "packages/events/publisher.py"
+"repo_events.py" = "packages/events/repo_events.py"

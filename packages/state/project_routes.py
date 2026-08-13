@@ -16,6 +16,7 @@ from packages.auth.github_oauth import (
     fetch_repository_tree,
 )
 from packages.state.codebase import codebase_payload, imported_repo, safe_repo_path
+from packages.state.indexing import indexing_for_project
 from packages.state.pool import StateUnavailableError
 from packages.state.projects import (
     add_repository,
@@ -82,6 +83,30 @@ def _github_failure(exc: AuthConfigurationError | AuthUnavailableError) -> JSONR
         {"error": "dependency_unavailable", "dependency": "github", "reason": str(exc)},
         status_code=503,
     )
+
+
+@router.get("/{project_id}/indexing")
+async def get_owned_project_indexing(request: Request, project_id: UUID) -> JSONResponse:
+    """The Codebase tab's indexing banner, polled while the tab is visible.
+
+    Unreachable Postgres — or a database the indexer's migration has not been
+    applied to — answers 503 naming the dependency rather than `idle`: a banner
+    that hid itself because the read failed would report an unindexed repository
+    as one with nothing to find.
+    """
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        indexing = await indexing_for_project(_pool(request), project_id, user_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if indexing is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    return JSONResponse(indexing)
 
 
 @router.get("/{project_id}/codebase/file")

@@ -50,7 +50,9 @@ ZOEKT_WEBSERVER_URL: Final[str] = os.getenv(
 )
 ASTGREP_RULE_DIR: Final[str] = os.getenv("PATCHAPI_ASTGREP_RULE_DIR", "")
 INDEXER_WORKDIR: Final[str] = os.getenv("PATCHAPI_INDEXER_WORKDIR", "/tmp/patchapi-index-work")
-PUBSUB_PROJECT: Final[str] = os.getenv("GCP_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "patch-505223"))
+PUBSUB_PROJECT: Final[str] = os.getenv(
+    "GCP_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "patch-505223")
+)
 PUBSUB_TOPIC_PREFIX: Final[str] = os.getenv("PATCHAPI_PUBSUB_TOPIC_PREFIX", "patchapi-dev")
 
 DEFAULT_PROVIDER: Final[str] = "google"
@@ -78,26 +80,26 @@ RUNTIME_USAGE_KINDS: Final[frozenset[UsageKind]] = frozenset(
 )
 
 __all__ = [
+    "ASTGREP_RULE_DIR",
     "DEFAULT_PROVIDER",
     "DETECTION_LAYER",
     "DETECTION_LAYERS",
     "IMAGEN_4_IDENTIFIERS",
-    "INDEX_BACKEND",
     "INDEXER_VERSION",
     "INDEXER_WORKDIR",
+    "INDEX_BACKEND",
     "INVENTORY_VERSION",
     "LAYER_B_CONFIDENCE",
     "LITERAL_MATCH_CONFIDENCE",
+    "PUBSUB_PROJECT",
+    "PUBSUB_TOPIC_PREFIX",
     "RUNTIME_USAGE_KINDS",
     "SCANNER_VERSION",
     "SCOPE_CHANGED_PATHS",
     "SCOPE_FULL_TREE",
     "WATCHLISTS",
-    "ASTGREP_RULE_DIR",
     "ZOEKT_INDEX_DIR",
     "ZOEKT_WEBSERVER_URL",
-    "PUBSUB_PROJECT",
-    "PUBSUB_TOPIC_PREFIX",
     "watchlist_for",
 ]
 

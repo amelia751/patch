@@ -5,11 +5,27 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Preview switch: the indexing sign is always shown in the Codebase tab so
- * the design can be reviewed. Flip to `false` once real indexer state is
- * wired, then render only when a repository is actually indexing.
+ * Preview switch: forces the sign on regardless of indexer state so the design
+ * can be reviewed without a running indexer. Live state now drives the banner,
+ * so this stays off.
  */
-export const FORCE_SHOW_CODEBASE_INDEXING = true;
+export const FORCE_SHOW_CODEBASE_INDEXING = false;
+
+/** Rollup returned by `GET /api/projects/{id}/indexing` (schema.md §13). */
+export type IndexingStatus = "indexing" | "ready" | "idle" | "error";
+
+export interface IndexingRepository {
+  full_name: string;
+  branch: string;
+  status: IndexingStatus;
+  progress_percent: number;
+}
+
+export interface ProjectIndexingState {
+  status: IndexingStatus;
+  progress_percent: number;
+  repositories: IndexingRepository[];
+}
 
 export function CodebaseIndexingSign({
   className,
@@ -57,13 +73,22 @@ export function CodebaseIndexingSign({
   );
 }
 
-export function withCodebaseIndexingSign(body: ReactNode) {
-  if (!FORCE_SHOW_CODEBASE_INDEXING) {
+/**
+ * Wraps a Codebase tab body with the indexing sign. `indexing` is the live
+ * rollup; anything other than an in-flight index (including a missing or
+ * unavailable endpoint, which arrives here as `null`) renders the body alone.
+ */
+export function withCodebaseIndexingSign(
+  body: ReactNode,
+  indexing?: ProjectIndexingState | null
+) {
+  const isIndexing = indexing?.status === "indexing";
+  if (!isIndexing && !FORCE_SHOW_CODEBASE_INDEXING) {
     return body;
   }
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-primary)]">
-      <CodebaseIndexingSign />
+      <CodebaseIndexingSign progress={isIndexing ? indexing!.progress_percent : undefined} />
       <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
     </div>
   );

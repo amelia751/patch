@@ -2,17 +2,31 @@
 
 Writes belong here because the dashboard creates the tenancy row the rest of
 the console hangs off. GitHub tokens never land in these queries.
+
+Importing a repository also announces it: `repo-indexer.md` §6 — without the
+`project-repo-added` event the row exists and nothing ever indexes it, so the
+Codebase tab sits at `idle` forever. The event is published after the
+transaction commits and never inside it, because an event announcing a row that
+a rollback removed is a claim about state that does not exist. Publication
+failure is logged and does not fail the write: Postgres is authoritative, and
+Pub/Sub is how a worker is told to look at what Postgres already records.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
+from packages.events.publisher import publish_async
+from packages.events.repo_events import project_repo_added_event
 from packages.state.pool import StateUnavailableError
 
 if TYPE_CHECKING:
     import asyncpg
+
+# What a repository is assumed to track until GitHub tells the console otherwise.
+DEFAULT_BRANCH: Final[str] = "main"
 
 
 def full_name_from_repo_url(repo_url: str) -> str | None:
@@ -39,6 +53,25 @@ def full_name_from_repo_url(repo_url: str) -> str | None:
 
 def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+async def announce_repository_added(project_id: UUID, repository: str, branch: str) -> bool:
+    """Publish `project-repo-added` for a committed import. Never raises.
+
+    Returns whether the event reached the topic, so a caller that wants to tell
+    the operator "imported, not yet queued for indexing" can. Replaying an
+    import republishes the same idempotency key rather than a second unit of
+    work, which is what makes re-importing a repository safe.
+    """
+    result = await publish_async(
+        project_repo_added_event(
+            project_id=str(project_id),
+            repository=repository,
+            branch=branch,
+            occurred_at=datetime.now(UTC).isoformat(),
+        )
+    )
+    return result.published
 
 
 def _project(row: Any, *, repositories: list[dict[str, Any]], workspaces: list[dict[str, Any]]) -> dict[str, Any]:
@@ -252,7 +285,7 @@ async def import_repo_workspace(
     if full_name is None:
         raise ValueError("Repository URL must be a github.com owner/repo URL")
     repo_name = full_name.split("/", 1)[1]
-    branch = (repo_branch or "main").strip() or "main"
+    branch = (repo_branch or DEFAULT_BRANCH).strip() or DEFAULT_BRANCH
     path = (workspace_path or "").strip() or None
     env = (environment or "dev").strip() or "dev"
     workspace_name = (name or f"{repo_name} Workspace").strip() or f"{repo_name} Workspace"
@@ -308,11 +341,13 @@ async def import_repo_workspace(
                     f"{_PROJECT_SELECT} WHERE id = $1",
                     project_id,
                 )
-                return await _assemble(connection, row)
+                project = await _assemble(connection, row)
     except ValueError:
         raise
     except Exception as exc:
         raise StateUnavailableError(f"could not import repository: {type(exc).__name__}") from exc
+    await announce_repository_added(project_id, full_name, branch)
+    return project
 
 
 async def add_repository(
@@ -343,13 +378,26 @@ async def add_repository(
                     INSERT INTO project_repositories (
                         project_id, kind, name, full_name, default_branch, html_url
                     )
-                    VALUES ($1, 'backend', $2, $3, 'main', $4)
+                    VALUES ($1, 'backend', $2, $3, $4, $5)
                     ON CONFLICT (project_id, full_name) DO NOTHING
                     """,
                     project_id,
                     repo_name,
                     full_name,
+                    DEFAULT_BRANCH,
                     html_url,
+                )
+                # Read the branch back rather than assuming the inserted default:
+                # on conflict the existing row kept whatever branch it already
+                # had, and announcing the wrong branch would queue a shard the
+                # project does not import.
+                branch = await connection.fetchval(
+                    """
+                    SELECT default_branch FROM project_repositories
+                    WHERE project_id = $1 AND full_name = $2
+                    """,
+                    project_id,
+                    full_name,
                 )
                 await connection.execute(
                     "UPDATE projects SET updated_at = now() WHERE id = $1",
@@ -359,8 +407,10 @@ async def add_repository(
                     f"{_PROJECT_SELECT} WHERE id = $1",
                     project_id,
                 )
-                return await _assemble(connection, row)
+                project = await _assemble(connection, row)
     except ValueError:
         raise
     except Exception as exc:
         raise StateUnavailableError(f"could not add repository: {type(exc).__name__}") from exc
+    await announce_repository_added(project_id, full_name, branch or DEFAULT_BRANCH)
+    return project

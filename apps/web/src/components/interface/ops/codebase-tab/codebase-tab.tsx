@@ -19,7 +19,11 @@ import {
 } from "@/components/ui/dialog";
 import { NoProjectEmptyState } from "./no-project-empty-state";
 import { CodebaseEmptyState } from "../empty-states";
-import { withCodebaseIndexingSign } from "./codebase-indexing-sign";
+import {
+  withCodebaseIndexingSign,
+  type IndexingStatus,
+  type ProjectIndexingState,
+} from "./codebase-indexing-sign";
 import {
   Code,
   FileCode,
@@ -57,6 +61,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /** Avoid stale tree/file content when the user hits Refresh (browser HTTP cache). */
 const CODEBASE_FETCH_INIT: RequestInit = { credentials: "include", cache: "no-store" };
+
+const INDEXING_POLL_MS = 1500;
+const INDEXING_STATUSES: readonly IndexingStatus[] = ["indexing", "ready", "idle", "error"];
 
 // ============================================================================
 // Types
@@ -844,12 +851,90 @@ function CodebaseTabSkeleton() {
   );
 }
 
+function clampPercent(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.min(100, Math.max(0, n)));
+}
+
+/** An unrecognized payload must not raise the banner, so it degrades to `idle`. */
+function normalizeIndexingState(payload: unknown): ProjectIndexingState {
+  const raw = (payload ?? {}) as Partial<ProjectIndexingState>;
+  const status = INDEXING_STATUSES.includes(raw.status as IndexingStatus)
+    ? (raw.status as IndexingStatus)
+    : "idle";
+  const repositories = Array.isArray(raw.repositories) ? raw.repositories : [];
+  return {
+    status,
+    progress_percent: clampPercent(raw.progress_percent),
+    repositories: repositories.map((repo) => ({
+      full_name: String(repo?.full_name ?? ""),
+      branch: String(repo?.branch ?? ""),
+      status: INDEXING_STATUSES.includes(repo?.status as IndexingStatus)
+        ? (repo.status as IndexingStatus)
+        : "idle",
+      progress_percent: clampPercent(repo?.progress_percent),
+    })),
+  };
+}
+
+/**
+ * Polls the project indexing rollup while mounted. The endpoint is optional —
+ * a 404/503 (indexer not deployed, project not indexable) yields `null`, which
+ * hides the banner rather than surfacing an error over the file tree.
+ */
+function useProjectIndexing(projectId: string, enabled: boolean): ProjectIndexingState | null {
+  // Keyed by project so a switch drops the previous project's rollup without a
+  // reset render, and only the poll callback ever writes state.
+  const [snapshot, setSnapshot] = useState<{
+    projectId: string;
+    state: ProjectIndexingState | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !projectId) return;
+
+    const abortCtrl = new AbortController();
+    const { signal } = abortCtrl;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      try {
+        const resp = await fetch(`${API_URL}/api/projects/${projectId}/indexing`, {
+          ...CODEBASE_FETCH_INIT,
+          signal,
+        });
+        if (signal.aborted) return;
+        const state = resp.ok ? normalizeIndexingState(await resp.json()) : null;
+        if (signal.aborted) return;
+        setSnapshot({ projectId, state });
+      } catch {
+        if (signal.aborted) return;
+        setSnapshot({ projectId, state: null });
+      }
+      if (signal.aborted) return;
+      timer = window.setTimeout(poll, INDEXING_POLL_MS);
+    };
+
+    void poll();
+
+    return () => {
+      abortCtrl.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [projectId, enabled]);
+
+  if (!enabled || !projectId) return null;
+  return snapshot?.projectId === projectId ? snapshot.state : null;
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
 
 export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, onAddRepository }: CodebaseTabProps) {
   const { prismTheme } = useSyntaxTheme();
+  const indexing = useProjectIndexing(projectId, hasProject);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set(["services", "shared", "api"])
@@ -1290,17 +1375,17 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   // Loading state
   // No project selected - show empty state
   if (!hasProject) {
-    return withCodebaseIndexingSign(<NoProjectEmptyState />);
+    return withCodebaseIndexingSign(<NoProjectEmptyState />, indexing);
   }
 
   if (isLoading) {
-    return withCodebaseIndexingSign(<CodebaseTabSkeleton />);
+    return withCodebaseIndexingSign(<CodebaseTabSkeleton />, indexing);
   }
 
   // Error state or empty state - both show the nice empty state
   // (Unauthorized errors in demo mode should show empty state, not error)
   if (error || !codebaseData || fileTree.length === 0) {
-    return withCodebaseIndexingSign(<CodebaseEmptyState />);
+    return withCodebaseIndexingSign(<CodebaseEmptyState />, indexing);
   }
 
   return withCodebaseIndexingSign(
@@ -1580,7 +1665,8 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    indexing
   );
 }
 

@@ -27,7 +27,15 @@ from patchapi_control_api.ports import (
     ReadinessProbe,
     RunStateReader,
 )
-from patchapi_control_api.routes import changes, fleet, health, providers, repositories, runs
+from patchapi_control_api.routes import (
+    changes,
+    fleet,
+    github_webhooks,
+    health,
+    providers,
+    repositories,
+    runs,
+)
 
 _DESCRIPTION = (
     "Control plane for PatchAPI runs: manual provider checks, deterministic run "
@@ -114,4 +122,7 @@ def create_app(
     app.include_router(changes.router, prefix=API_PREFIX)
     app.include_router(repositories.router, prefix=API_PREFIX)
     app.include_router(fleet.router, prefix=API_PREFIX)
+    # Authenticated by its own HMAC rather than by a wired port: GitHub signs the
+    # delivery, so this route works on an app with no dependencies supplied.
+    app.include_router(github_webhooks.router, prefix=API_PREFIX)
     return app
