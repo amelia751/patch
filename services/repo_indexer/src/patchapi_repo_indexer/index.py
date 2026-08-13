@@ -111,6 +111,7 @@ def build_inventory(
     provider: str = DEFAULT_PROVIDER,
     identifiers: Sequence[str] | None = None,
     changed_paths: Sequence[str] | None = None,
+    branch: str = "main",
 ) -> ApiUsageInventory:
     """Index `root` for `provider`'s watched identifiers at `observed_sha`.
 
@@ -132,6 +133,7 @@ def build_inventory(
 
     return ApiUsageInventory(
         repository=repository,
+        branch=branch,
         observed_sha=observed_sha,
         provider=provider,
         watched_identifiers=wanted,

@@ -47,6 +47,10 @@ locals {
     "sandbox-complete",
     "verification-requested",
     "pr-requested",
+    "repo-push",
+    "project-repo-added",
+    "project-repo-removed",
+    "index-updated",
   ]
 }
 

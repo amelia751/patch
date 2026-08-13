@@ -23,6 +23,10 @@ class EventType(StrEnum):
     VERIFICATION_REQUESTED = "verification-requested"
     PR_REQUESTED = "pr-requested"
     POLICY_DENIED = "policy-denied"
+    REPO_PUSH = "repo-push"
+    PROJECT_REPO_ADDED = "project-repo-added"
+    PROJECT_REPO_REMOVED = "project-repo-removed"
+    INDEX_UPDATED = "index-updated"
 
 
 class TrustLevel(StrEnum):

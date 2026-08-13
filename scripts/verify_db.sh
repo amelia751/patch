@@ -121,6 +121,7 @@ DECLARE
     expected_tables text[] := ARRAY[
         'users', 'user_identities', 'github_connections',
         'projects', 'project_repositories', 'workspaces', 'project_secrets',
+        'project_notifications', 'provider_usages', 'repo_index_state',
         'schema_migrations', 'seed_applications'
     ];
     missing text[];

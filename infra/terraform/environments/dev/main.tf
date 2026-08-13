@@ -48,6 +48,10 @@ locals {
     "sandbox-complete",
     "verification-requested",
     "pr-requested",
+    "repo-push",
+    "project-repo-added",
+    "project-repo-removed",
+    "index-updated",
   ]
 }
 
@@ -131,6 +135,7 @@ module "eventing" {
   publisher_members = [
     module.service_accounts.members["control-api"],
     module.service_accounts.members["agents"],
+    module.service_accounts.members["repo-indexer"],
   ]
 
   subscriber_members = [

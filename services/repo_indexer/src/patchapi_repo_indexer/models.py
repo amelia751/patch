@@ -1,10 +1,11 @@
 """The API usage inventory contract (roadmap §11.1).
 
-One row per literal provider identifier occurrence, shaped to the `provider_usages`
-table in `db/migrations/0003_api_usage_inventory.sql` so persisting an inventory
-is a column-for-column write rather than a translation. The document carries no
-timestamp: two indexes of the same commit must serialize identically, and when
-a row was first or last seen is the database's business, not the scanner's.
+One row per literal provider identifier occurrence, shaped to the
+`provider_usages` table in `db/migrations/0007_provider_usages.sql` so
+persisting an inventory is a column-for-column write rather than a translation.
+The document carries no timestamp: two indexes of the same commit must
+serialize identically, and when a row was first or last seen is the database's
+business, not the scanner's.
 """
 
 from typing import Annotated, Literal
@@ -75,6 +76,9 @@ class ApiUsageInventory(StrictModel):
     # service.
     scanner_version: Literal[SCANNER_VERSION] = SCANNER_VERSION
     repository: RepoFullName
+    # Branch the tree was read at. Defaults to `main` so Layer A inventories
+    # produced before the indexer knew about branches still validate.
+    branch: str = "main"
     observed_sha: GitSha
     provider: ProviderId
     watched_identifiers: tuple[Identifier, ...]

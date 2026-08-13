@@ -20,3 +20,19 @@ class ScanRootError(IndexerError):
 
 class UnsafePathError(IndexerError):
     """A supplied path escapes the scan root."""
+
+
+class ZoektUnavailableError(IndexerError):
+    """The Zoekt index or webserver could not be reached."""
+
+
+class ShardCorruptError(IndexerError):
+    """A Zoekt shard exists but cannot be read; fall back rather than report empty."""
+
+
+class AstGrepRuleError(IndexerError):
+    """An ast-grep rule file is missing or failed to parse."""
+
+
+class RepositoryAccessRevokedError(IndexerError):
+    """The GitHub installation no longer lists this repository."""

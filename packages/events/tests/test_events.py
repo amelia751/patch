@@ -94,6 +94,10 @@ def test_topic_vocabulary_matches_the_roadmap():
         "sandbox-complete",
         "verification-requested",
         "pr-requested",
+        "repo-push",
+        "project-repo-added",
+        "project-repo-removed",
+        "index-updated",
     } <= {event.value for event in EventType}
 
 
