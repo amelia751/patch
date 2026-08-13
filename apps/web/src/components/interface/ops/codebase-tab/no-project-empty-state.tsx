@@ -14,10 +14,10 @@ export function NoProjectEmptyState() {
           <FileBraces className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No codebase available
+          No repository tree
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Select a project to view generated backend code, deployment configurations, and infrastructure as code.
+          Import a GitHub repository to browse the source PatchAPI will scan when an API provider changes.
         </p>
         <Button
           size="sm"

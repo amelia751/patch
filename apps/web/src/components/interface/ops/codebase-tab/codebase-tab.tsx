@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { NoProjectEmptyState } from "./no-project-empty-state";
 import { CodebaseEmptyState } from "../empty-states";
+import { withCodebaseIndexingSign } from "./codebase-indexing-sign";
 import {
   Code,
   FileCode,
@@ -1289,20 +1290,20 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   // Loading state
   // No project selected - show empty state
   if (!hasProject) {
-    return <NoProjectEmptyState />;
+    return withCodebaseIndexingSign(<NoProjectEmptyState />);
   }
 
   if (isLoading) {
-    return <CodebaseTabSkeleton />;
+    return withCodebaseIndexingSign(<CodebaseTabSkeleton />);
   }
 
   // Error state or empty state - both show the nice empty state
   // (Unauthorized errors in demo mode should show empty state, not error)
   if (error || !codebaseData || fileTree.length === 0) {
-    return <CodebaseEmptyState />;
+    return withCodebaseIndexingSign(<CodebaseEmptyState />);
   }
 
-  return (
+  return withCodebaseIndexingSign(
     <div className="h-full flex flex-col overflow-hidden bg-[var(--bg-primary)]">
       {/* Header */}
       <div className="border-b border-[var(--border-color)] p-4">

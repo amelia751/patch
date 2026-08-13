@@ -23,7 +23,7 @@ export function NoProjectEmptyState() {
           No Project Selected
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Import a project from GitHub to access operations, manage your infrastructure, and deploy your backend services.
+          Import a GitHub repository so PatchAPI can inventory API usage, verify a migration in isolation, and open a pull request for review.
         </p>
 
         <div className="flex flex-col gap-3">
@@ -45,16 +45,16 @@ export function NoProjectEmptyState() {
 
         <div className="mt-8 pt-6 border-t border-[var(--border-color)]">
           <p className="text-xs text-[var(--text-tertiary)] mb-3">
-            Operations include:
+            A run stops at the pull request:
           </p>
           <div className="flex items-center justify-center gap-6 text-xs text-[var(--text-secondary)]">
             <div className="flex items-center gap-1.5">
-              <Server className="h-3.5 w-3.5" />
-              <span>Cloud Setup</span>
+              <Code2 className="h-3.5 w-3.5" />
+              <span>Find call sites</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Code2 className="h-3.5 w-3.5" />
-              <span>Code Deploy</span>
+              <Server className="h-3.5 w-3.5" />
+              <span>Verify in isolation</span>
             </div>
           </div>
         </div>
@@ -105,10 +105,10 @@ export function CodebaseEmptyState() {
           <FileBraces className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No codebase available
+          No repository tree
         </h2>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          Select a project to view generated backend code, deployment configurations, and infrastructure as code.
+          Import a GitHub repository to browse the source PatchAPI will scan when an API provider changes.
         </p>
       </div>
     </div>

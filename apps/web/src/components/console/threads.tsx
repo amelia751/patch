@@ -206,7 +206,7 @@ const WELCOME_THREAD: Thread = {
   updatedAt: "Just now",
   messageCount: 1,
   activityCount: 0,
-  preview: "Welcome! I'm ready to help you deploy and manage your infrastructure.",
+  preview: "Welcome. PatchAPI finds API breakages, verifies a migration, and opens a PR for review.",
 };
 
 const MOCK_GOOGLE_TEST_SESSION_THREAD_ID = "mock-google-test-session";
@@ -330,31 +330,30 @@ const DEMO_THREADS: Thread[] = [
 const NO_PROJECT_MESSAGE: Message = {
   id: "msg-no-project",
   author: "agent",
-  content: `Welcome! I'm ready to help you deploy and manage your infrastructure.
+  content: `Welcome. PatchAPI is Dependabot for APIs: when a provider deprecates a model or endpoint, it finds the affected code, verifies a migration in isolation, and opens an evidence-backed pull request for normal human review. It stops there — it never merges or deploys.
 
-To get started, import a project or create a new one so I can:
+To get started, import a GitHub repository so I can:
 
-- Analyze your codebase and infrastructure requirements
-- Review API endpoints, tests, and deployability
-- Set up CI/CD pipelines for automated deployments
-- Configure cloud resources based on your stack
-- Produce integration guidance for frontend tools
+- Inventory the APIs this codebase actually calls
+- Show those files in the Codebase tab
+- Trace a provider change to the call sites it would break
+- Prepare a verified pull request without touching production
 
-Use the project menu to import a project or create a new one.`,
+Use the project menu to import a project.`,
   timestamp: "Just now",
 };
 
 const ANALYZING_MESSAGE: Message = {
   id: "msg-analyzing",
   author: "agent",
-  content: `I'm reviewing your codebase to understand the backend, shape the API surface, and prepare deployment guidance.
+  content: `I'm indexing this repository for API usage so a provider change can be traced to real call sites.
 
 This includes:
-- Scanning your project files and dependencies
-- Identifying endpoints, tests, and integration requirements
-- Designing a deployable backend architecture with services, endpoints, and databases
+- Scanning source for SDK and HTTP API usage
+- Recording model IDs, endpoints, and versions
+- Preparing the inventory the Change and Impact agents will use
 
-This usually takes 30-60 seconds depending on project size.`,
+This usually takes a few seconds depending on repository size.`,
   timestamp: "Just now",
   // Activities will be populated from streaming
   activities: [],
