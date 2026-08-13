@@ -22,7 +22,7 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.0.0"
+FLEET_VERSION: Final[str] = "1.1.0"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
@@ -73,9 +73,14 @@ class ToolName(StrEnum):
     LIST_FORBIDDEN_GLOBS = "list_forbidden_globs"
     RECORD_POLICY_DECISION = "record_policy_decision"
 
-    # Patch — migration skill and a plan. No sandbox control, no GitHub.
+    # Patch — skill, plan, and the sandbox debug loop. No sandbox
+    # allocation, no GitHub. Roadmap §8.4.
     LOAD_MIGRATION_SKILL = "load_migration_skill"
     RECORD_PATCH_PLAN = "record_patch_plan"
+    READ_FILE = "read_file"
+    LIST_DIR = "list_dir"
+    APPLY_PATCH = "apply_patch"
+    RUN_COMMAND = "run_command"
 
     # Verification — sandbox evidence, read-only, independent of Patch.
     LIST_VERIFICATION_EVIDENCE = "list_verification_evidence"
@@ -125,6 +130,10 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
         {
             ToolName.LOAD_MIGRATION_SKILL,
             ToolName.RECORD_PATCH_PLAN,
+            ToolName.READ_FILE,
+            ToolName.LIST_DIR,
+            ToolName.APPLY_PATCH,
+            ToolName.RUN_COMMAND,
         }
     ),
     AgentId.VERIFICATION: frozenset(
@@ -149,7 +158,7 @@ TOOL_ALLOWLISTS: Final[MappingProxyType[AgentId, frozenset[ToolName]]] = Mapping
 # Instruction version per agent, recorded on trace events so a stored run can be
 # replayed against the prompt that produced it. Bumping a prompt bumps this.
 PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
-    dict.fromkeys(AgentId, "1.0.0")
+    {**dict.fromkeys(AgentId, "1.0.0"), AgentId.PATCH: "1.1.0"}
 )
 
 # Reasoning model for every agent. One pin, inherited from the provider adapter
@@ -165,8 +174,9 @@ MODEL_TEMPERATURE: Final[float] = 0.0
 MAX_OUTPUT_TOKENS: Final[int] = 2048
 
 # A turn that has not converged by here is stuck. The orchestrator fails closed
-# rather than letting an agent loop on a tool it cannot satisfy.
-MAX_TOOL_CALLS_PER_TURN: Final[int] = 12
+# rather than letting an agent loop on a tool it cannot satisfy. The Patch
+# debug loop (inspect → edit → run) needs more than a single-shot confirm.
+MAX_TOOL_CALLS_PER_TURN: Final[int] = 24
 
 # Longest untrusted provider excerpt handed to a model in one tool result.
 # Provider text is data; a whole changelog in a prompt is an injection surface,

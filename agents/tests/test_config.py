@@ -58,11 +58,20 @@ def test_every_agent_can_stop_for_a_human():
         (AgentId.PATCH, ToolName.OPEN_PULL_REQUEST),
         # ...nor grade its own work.
         (AgentId.PATCH, ToolName.RECORD_VERIFICATION_REPORT),
+        # ...nor scan the repo as Impact; it works from the ImpactReport.
+        (AgentId.PATCH, ToolName.SCAN_REPOSITORY),
         # Roadmap §8.6: the PR agent cannot edit code or re-decide policy.
         (AgentId.PR, ToolName.RECORD_PATCH_PLAN),
+        (AgentId.PR, ToolName.APPLY_PATCH),
+        (AgentId.PR, ToolName.RUN_COMMAND),
         (AgentId.PR, ToolName.RECORD_POLICY_DECISION),
         # Roadmap §8.5: verification does not author patches.
         (AgentId.VERIFICATION, ToolName.RECORD_PATCH_PLAN),
+        (AgentId.VERIFICATION, ToolName.APPLY_PATCH),
+        (AgentId.VERIFICATION, ToolName.RUN_COMMAND),
+        # Roadmap §8.1: Change Intelligence may not reach the workspace.
+        (AgentId.CHANGE_INTELLIGENCE, ToolName.READ_FILE),
+        (AgentId.CHANGE_INTELLIGENCE, ToolName.RUN_COMMAND),
         # The orchestrator is code, not a supervisor agent with capabilities.
         (AgentId.ORCHESTRATOR, ToolName.OPEN_PULL_REQUEST),
     ],
@@ -92,3 +101,16 @@ def test_tool_functions_are_documented(run_context):
     """ADK derives the model-visible tool description from the docstring."""
     for function in build_tools(run_context, AgentId.CHANGE_INTELLIGENCE):
         assert function.__doc__ and function.__doc__.strip()
+
+
+def test_the_patch_agent_holds_the_debug_loop():
+    granted = tool_allowlist(AgentId.PATCH)
+    for name in (
+        ToolName.READ_FILE,
+        ToolName.LIST_DIR,
+        ToolName.APPLY_PATCH,
+        ToolName.RUN_COMMAND,
+        ToolName.LOAD_MIGRATION_SKILL,
+        ToolName.RECORD_PATCH_PLAN,
+    ):
+        assert name in granted

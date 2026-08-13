@@ -20,6 +20,7 @@ from agents.tools.pull_request import build_pull_request_tools
 from agents.tools.repo_inventory import build_repo_inventory_tools
 from agents.tools.results import ReasonCode, is_refusal, ok, refusal
 from agents.tools.shared import build_shared_tools
+from agents.tools.workspace import build_workspace_tools
 
 # Every builder in the package. Each returns plain functions whose names are
 # `ToolName` values; `build_tools` selects from the union by allowlist.
@@ -28,6 +29,7 @@ _BUILDERS: Final[tuple[Callable[[RunContext], list[Callable[..., Any]]], ...]] =
     build_repo_inventory_tools,
     build_policy_tools,
     build_migration_skill_tools,
+    build_workspace_tools,
     build_evidence_tools,
     build_pull_request_tools,
 )

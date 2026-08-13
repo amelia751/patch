@@ -63,6 +63,24 @@ def test_the_tree_actually_uses_adk():
     assert "google.adk" in sources
 
 
+def test_the_experimental_environment_toolset_is_not_imported():
+    """The fleet exposes read_file / list_dir / apply_patch / run_command.
+
+    EnvironmentToolset's Execute / ReadFile / EditFile / WriteFile names would
+    break the allowlist invariant, and Execute hard-codes a 30s timeout.
+    """
+    forbidden = {"EnvironmentToolset", "ExecuteBashTool", "ExecuteTool"}
+    for module in _runtime_modules():
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[-1] for alias in node.names)
+        assert not (imported & forbidden), f"{module.name} imports {imported & forbidden}"
+
+
 def test_adk_is_never_imported_at_module_scope():
     """Import-time ADK would break collection wherever it is not installed."""
     for module in _runtime_modules():

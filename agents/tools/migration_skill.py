@@ -4,10 +4,8 @@ Roadmap §12.2 keeps the Patch agent generic and puts provider knowledge in a
 skill package. `load_migration_skill` reads that package from disk; it does not
 fetch it, and it does not reach a provider.
 
-There is no tool here that writes a file, allocates a sandbox, or opens a pull
-request. The Patch agent produces a plan and a diff; applying either is the
-sandbox runner's job, invoked by the orchestrator, so an agent turn cannot put
-unverified output anywhere durable.
+Workspace edits and allowlisted commands live in `agents.tools.workspace`.
+This module does not write a file, allocate a sandbox, or open a pull request.
 """
 
 from collections.abc import Callable

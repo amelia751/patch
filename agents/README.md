@@ -28,6 +28,8 @@ uv run --all-packages python scripts/smoke_adk_orchestrator.py
 | File | Holds |
 |---|---|
 | `config.py` | model pin, prompt versions, every tool allowlist |
+| `command_allowlist.py` | argv shapes `run_command` will execute |
+| `environment.py` | local workspace exec; same result shape as a GKE swap |
 | `context.py` | the roots a run's tools may read, and what they recorded |
 | `trace.py` | the tool-trace stream the dashboard renders |
 | `guardrails.py` | allowlist enforcement and trace capture at the tool boundary |

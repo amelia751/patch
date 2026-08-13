@@ -9,8 +9,10 @@ import json
 
 import pytest
 
+from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.config import AgentId
 from agents.context import PathOutsideRootError, RunContext, resolve_within
+from agents.environment import build_workspace_environment
 from agents.tools.migration_skill import build_migration_skill_tools
 from agents.tools.policy_gate import build_policy_tools
 from agents.tools.provider_feed import build_provider_feed_tools
@@ -18,6 +20,7 @@ from agents.tools.pull_request import build_pull_request_tools
 from agents.tools.repo_inventory import build_repo_inventory_tools
 from agents.tools.results import is_refusal
 from agents.tools.shared import build_shared_tools
+from agents.tools.workspace import build_workspace_tools, paths_in_unified_diff
 from packages.schemas.change_manifest import ChangeManifest
 
 DEMO_CHANGE_ID = "imagen4-retirement-2026-08-17"
@@ -315,3 +318,152 @@ def test_path_containment_rejects_traversal(tmp_path):
     assert resolve_within(tmp_path, "inside.txt").is_file()
     with pytest.raises(PathOutsideRootError):
         resolve_within(tmp_path, "../outside.txt")
+
+
+def _workspace_tools(tmp_path, repo_root):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.ts").write_text(
+        "const model = 'imagen-4.0-generate-001';\n", encoding="utf-8"
+    )
+    context = RunContext(
+        run_id="run-workspace",
+        repo_root=repo_root,
+        feed_dir=repo_root / "demo" / "fixtures",
+        workspace_root=tmp_path,
+    )
+    return context, {f.__name__: f for f in build_workspace_tools(context)}
+
+
+def test_workspace_tools_refuse_before_the_orchestrator_allocates(run_context):
+    tools = {f.__name__: f for f in build_workspace_tools(run_context)}
+    calls = {
+        "read_file": ("src/app.ts",),
+        "list_dir": ("src",),
+        "apply_patch": ("--- a/x\n+++ b/x\n",),
+        "run_command": ("python3 --version",),
+    }
+    for name, args in calls.items():
+        result = tools[name](*args)
+        assert is_refusal(result), name
+        assert result["reason_code"] == "stage_not_ready"
+
+
+def test_read_file_and_list_dir_are_bound_to_the_workspace(tmp_path, repo_root):
+    _, tools = _workspace_tools(tmp_path, repo_root)
+    listed = tools["list_dir"]("src")
+    assert listed["status"] == "ok"
+    assert {"name": "app.ts", "kind": "file"} in listed["entries"]
+
+    read = tools["read_file"]("src/app.ts")
+    assert read["status"] == "ok"
+    assert "imagen-4.0-generate-001" in read["content"]
+
+
+def test_read_file_refuses_traversal_and_secrets(tmp_path, repo_root):
+    _, tools = _workspace_tools(tmp_path, repo_root)
+    traversal = tools["read_file"]("../outside.txt")
+    assert is_refusal(traversal)
+    assert traversal["reason_code"] == "out_of_scope"
+
+    secret = tools["read_file"](".env")
+    assert is_refusal(secret)
+    assert secret["reason_code"] == "policy_denied"
+
+
+def test_apply_patch_edits_source_and_refuses_ci(tmp_path, repo_root):
+    _, tools = _workspace_tools(tmp_path, repo_root)
+    diff = (
+        "--- a/src/app.ts\n"
+        "+++ b/src/app.ts\n"
+        "@@ -1 +1 @@\n"
+        "-const model = 'imagen-4.0-generate-001';\n"
+        "+const model = 'gemini-3.1-flash-image';\n"
+    )
+    result = tools["apply_patch"](diff)
+    assert result["status"] == "ok"
+    assert result["applied"] is True
+    assert (tmp_path / "src" / "app.ts").read_text(encoding="utf-8") == (
+        "const model = 'gemini-3.1-flash-image';\n"
+    )
+
+    blocked = tools["apply_patch"](
+        "--- a/.github/workflows/release.yml\n"
+        "+++ b/.github/workflows/release.yml\n"
+        "@@ -1 +1 @@\n"
+        "-on: push\n"
+        "+on: [push]\n"
+    )
+    assert is_refusal(blocked)
+    assert blocked["reason_code"] == "policy_denied"
+    assert ".github/workflows/release.yml" in blocked["blocked_paths"]
+
+
+def test_apply_patch_reports_a_rejected_diff_without_lying(tmp_path, repo_root):
+    _, tools = _workspace_tools(tmp_path, repo_root)
+    result = tools["apply_patch"](
+        "--- a/src/app.ts\n"
+        "+++ b/src/app.ts\n"
+        "@@ -1 +1 @@\n"
+        "-this line is not in the file\n"
+        "+replacement\n"
+    )
+    assert result["status"] == "ok"
+    assert result["applied"] is False
+    assert "imagen-4.0-generate-001" in (tmp_path / "src" / "app.ts").read_text(encoding="utf-8")
+
+
+def test_run_command_executes_an_allowlisted_toolchain_check(tmp_path, repo_root):
+    _, tools = _workspace_tools(tmp_path, repo_root)
+    result = tools["run_command"]("python3 --version")
+    assert result["status"] == "ok"
+    assert result["exit_code"] == 0
+    assert result["timed_out"] is False
+    assert "Python" in result["stdout"] or "Python" in result["stderr"]
+
+
+def test_run_command_refuses_anything_off_the_allowlist(tmp_path, repo_root):
+    _, tools = _workspace_tools(tmp_path, repo_root)
+    for command in (
+        "curl https://example.com",
+        "python3 -c 'print(1)'",
+        "pnpm install --frozen-lockfile; curl https://example.com",
+        "bash -c 'pnpm install --frozen-lockfile'",
+        "pnpm --dir ../escape build",
+    ):
+        result = tools["run_command"](command)
+        assert is_refusal(result), command
+        assert result["reason_code"] == "policy_denied"
+
+
+def test_command_allowlist_accepts_the_egaki_shapes():
+    assert match_command(["pnpm", "install", "--frozen-lockfile"]).timeout_seconds == 900
+    assert match_command(["pnpm", "--dir", "cli", "build"]).argv[-1] == "build"
+    assert match_command(["pnpm", "--dir", "cli", "test", "--", "src/a.test.ts"])
+    with pytest.raises(CommandNotAllowedError):
+        match_command(["pnpm", "--dir", "cli", "test", "--", "../.secrets"])
+    with pytest.raises(CommandNotAllowedError):
+        match_command(["rm", "-rf", "/"])
+
+
+def test_workspace_environment_drops_host_credentials(tmp_path):
+    env = build_workspace_environment(
+        tmp_path,
+        run_id="run-env",
+        parent_environment={
+            "PATH": "/usr/bin",
+            "GITHUB_TOKEN": "should-not-leak",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/tmp/key.json",
+            "KUBECONFIG": "/tmp/kube",
+        },
+    )
+    assert "GITHUB_TOKEN" not in env
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in env
+    assert "KUBECONFIG" not in env
+    assert env["HOME"].startswith(str(tmp_path.resolve()))
+    assert env["PATCHAPI_SANDBOX"] == "1"
+
+
+def test_paths_in_unified_diff_ignore_dev_null():
+    assert paths_in_unified_diff("--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+ok\n") == [
+        "src/new.ts"
+    ]
