@@ -1331,6 +1331,18 @@ export function GitHubImportDialog({
   );
 }
 
+function apiErrorMessage(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const payload = body as { detail?: unknown; reason?: unknown };
+  if (typeof payload.reason === "string" && payload.reason.trim()) return payload.reason;
+  if (typeof payload.detail === "string" && payload.detail.trim()) return payload.detail;
+  if (Array.isArray(payload.detail) && payload.detail[0] && typeof payload.detail[0] === "object") {
+    const first = payload.detail[0] as { msg?: unknown };
+    if (typeof first.msg === "string" && first.msg.trim()) return first.msg;
+  }
+  return fallback;
+}
+
 // ============================================================================
 // Add Repository Dialog — lightweight picker to link a repo to existing project
 // ============================================================================
@@ -1408,7 +1420,7 @@ export function AddRepositoryDialog({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || `Failed to add repository (${res.status})`);
+        throw new Error(apiErrorMessage(err, `Failed to add repository (${res.status})`));
       }
       onOpenChange(false);
       onRepositoryAdded?.();
@@ -1660,7 +1672,7 @@ export function ProjectDetailsDialog({
 
         if (!workspaceResponse.ok) {
           const err = await workspaceResponse.json();
-          throw new Error(err.detail || "Failed to create backend workspace");
+          throw new Error(apiErrorMessage(err, "Failed to create backend workspace"));
         }
       }
       

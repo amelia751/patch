@@ -61,6 +61,26 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 /** Avoid stale tree/file content when the user hits Refresh (browser HTTP cache). */
 const CODEBASE_FETCH_INIT: RequestInit = { credentials: "include", cache: "no-store" };
 
+function codebaseSearch(params: { branch?: string | null; repo?: string | null }): string {
+  const query = new URLSearchParams();
+  if (params.branch) query.set("ref", params.branch);
+  if (params.repo) query.set("repo", params.repo);
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+function codebaseFileUrl(
+  projectId: string,
+  path: string,
+  params: { branch?: string | null; repo?: string | null }
+): string {
+  const query = new URLSearchParams();
+  query.set("path", path);
+  if (params.branch) query.set("ref", params.branch);
+  if (params.repo) query.set("repo", params.repo);
+  return `${API_URL}/api/projects/${projectId}/codebase/file?${query.toString()}`;
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -139,6 +159,7 @@ interface CodebaseResponse {
     total_folders: number;
   };
   branch?: string;
+  repository?: string;
   source?: string;
 }
 
@@ -893,6 +914,9 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   // Track which source we're using so file content fetches use the same source
   const [codebaseSource, setCodebaseSource] = useState<"github" | "sandbox">("github");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [projectRepos, setProjectRepos] = useState<{ full_name: string; default_branch: string }[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  const [reposReady, setReposReady] = useState(!projectId || !!mockData);
   const pendingTabRefetchRef = useRef(false);
   const openTabsRef = useRef<OpenTab[]>([]);
   const [scrollRequest, setScrollRequest] = useState<{ path: string; line: number } | null>(null);
@@ -916,16 +940,49 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   const isViewingThreadBranch = !forceDefaultView && !!threadBranch && threadBranch !== defaultBranch;
   const displayBranch = isViewingThreadBranch ? threadBranch! : (defaultBranch || "main");
 
+  useEffect(() => {
+    if (!projectId || mockData) {
+      setReposReady(true);
+      return;
+    }
+    let cancelled = false;
+    setReposReady(false);
+    fetch(`${API_URL}/api/projects/${projectId}`, { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const repos = Array.isArray(data?.repositories) ? data.repositories : [];
+        setProjectRepos(repos);
+        setSelectedRepo((previous) => {
+          if (previous && repos.some((repo: { full_name: string }) => repo.full_name === previous)) {
+            return previous;
+          }
+          return repos.length ? repos[repos.length - 1].full_name : null;
+        });
+        setReposReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setReposReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, mockData, refreshKey]);
+
+  useEffect(() => {
+    setOpenTabs([]);
+    setActiveTabId(null);
+  }, [selectedRepo]);
+
   // Helper: fetch tree from GitHub with optional branch override
   const fetchGitHubTree = useCallback(async (branch?: string | null, signal?: AbortSignal) => {
-    const refParam = branch ? `?ref=${encodeURIComponent(branch)}` : "";
     const resp = await fetch(
-      `${API_URL}/api/projects/${projectId}/codebase${refParam}`,
+      `${API_URL}/api/projects/${projectId}/codebase${codebaseSearch({ branch, repo: selectedRepo })}`,
       { ...CODEBASE_FETCH_INIT, signal }
     );
     if (!resp.ok) return null;
     return resp.json();
-  }, [projectId]);
+  }, [projectId, selectedRepo]);
 
   /** Reload file bodies for open tabs after the tree was refetched (same source/ref as new tree). */
   const refetchOpenTabContents = useCallback(
@@ -940,8 +997,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
             if (ctx.source === "sandbox" && tid) {
               fileUrl = `${API_URL}/api/threads/${tid}/workspace/file?path=${encodeURIComponent(tab.path)}`;
             } else {
-              const refParam = ctx.branch ? `&ref=${encodeURIComponent(ctx.branch)}` : "";
-              fileUrl = `${API_URL}/api/projects/${pid}/codebase/file?path=${encodeURIComponent(tab.path)}${refParam}`;
+              fileUrl = codebaseFileUrl(pid, tab.path, { branch: ctx.branch, repo: selectedRepo });
             }
             const response = await fetch(fileUrl, CODEBASE_FETCH_INIT);
             if (!response.ok) return { id: tab.id, content: null as string | null };
@@ -961,7 +1017,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
         })
       );
     },
-    []
+    [selectedRepo]
   );
 
   // Demo thread branch mapping (unauthenticated mode)
@@ -997,6 +1053,10 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
       if (!projectId) {
         pendingTabRefetchRef.current = false;
         setIsLoading(false);
+        return;
+      }
+
+      if (!reposReady) {
         return;
       }
 
@@ -1095,7 +1155,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
 
     fetchCodebase();
     return () => abortCtrl.abort();
-  }, [projectId, threadId, mockData, refreshKey, fetchGitHubTree, forceDefaultView, refetchOpenTabContents]);
+  }, [projectId, threadId, mockData, refreshKey, fetchGitHubTree, forceDefaultView, refetchOpenTabContents, reposReady]);
 
   // Open file from thread (Write/Edit row or diff header) — scroll to edited line like Cursor
   useEffect(() => {
@@ -1134,9 +1194,8 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
           .catch(() => {});
 
       const openFromGitHub = () => {
-        const refParam = threadBranch ? `&ref=${encodeURIComponent(threadBranch)}` : "";
         return fetch(
-          `${API_URL}/api/projects/${projectId}/codebase/file?path=${encodeURIComponent(path)}${refParam}`,
+          codebaseFileUrl(projectId, path, { branch: threadBranch, repo: selectedRepo }),
           CODEBASE_FETCH_INIT
         )
           .then((r) => (r.ok ? r.json() : null))
@@ -1162,7 +1221,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
     };
     window.addEventListener("codebaseOpenFile", handler);
     return () => window.removeEventListener("codebaseOpenFile", handler);
-  }, [threadId, projectId, openTabs, threadBranch, codebaseSource]);
+  }, [threadId, projectId, openTabs, threadBranch, codebaseSource, selectedRepo]);
 
   const fileTree = useMemo(
     () => (codebaseData ? buildFileTreeFromResponse(codebaseData) : []),
@@ -1242,8 +1301,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
         if (codebaseSource === "sandbox" && threadId) {
           fileUrl = `${API_URL}/api/threads/${threadId}/workspace/file?path=${encodeURIComponent(node.path)}`;
         } else {
-          const refParam = threadBranch ? `&ref=${encodeURIComponent(threadBranch)}` : "";
-          fileUrl = `${API_URL}/api/projects/${projectId}/codebase/file?path=${encodeURIComponent(node.path)}${refParam}`;
+          fileUrl = codebaseFileUrl(projectId, node.path, { branch: threadBranch, repo: selectedRepo });
         }
         const response = await fetch(fileUrl, CODEBASE_FETCH_INIT);
         if (response.ok) {
@@ -1315,6 +1373,29 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Codebase</h2>
+              {projectRepos.length > 1 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition-colors"
+                    >
+                      <Github className="w-3 h-3" />
+                      <span className="truncate max-w-[10rem]">{selectedRepo || "Repository"}</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {projectRepos.map((repo) => (
+                      <DropdownMenuItem
+                        key={repo.full_name}
+                        onClick={() => setSelectedRepo(repo.full_name)}
+                      >
+                        {repo.full_name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               {onAddRepository && (
                 <button
                   onClick={onAddRepository}

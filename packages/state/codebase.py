@@ -36,24 +36,46 @@ def safe_repo_path(raw: str) -> str | None:
     return "/".join(parts)
 
 
-def imported_repo(project: Mapping[str, Any]) -> tuple[str, str, str] | None:
-    """`(owner, repo, branch)` from the project's first GitHub import, or None."""
-    repos = project.get("repositories") or []
-    workspaces = project.get("workspaces") or []
-    full_name = ""
+def imported_repo(
+    project: Mapping[str, Any], *, full_name: str | None = None
+) -> tuple[str, str, str] | None:
+    """`(owner, repo, branch)` for one imported GitHub repo, or None.
+
+    Without `full_name` this is the first `project_repositories` row (creation
+    order). Add Repository appends a second row; the Codebase tab must name
+    that repo or it keeps rendering the first import and looks like the add
+    failed. A workspace branch is used only when it belongs to the same repo.
+    """
+    repos = list(project.get("repositories") or [])
+    workspaces = list(project.get("workspaces") or [])
+    wanted = (full_name or "").strip()
+    chosen: Mapping[str, Any] | None = None
+    resolved = ""
     branch = "main"
-    if repos:
-        first = repos[0]
-        full_name = str(first.get("full_name") or "")
-        branch = str(first.get("default_branch") or branch) or branch
+    if wanted:
+        for repo in repos:
+            if str(repo.get("full_name") or "") == wanted:
+                chosen = repo
+                break
+        if chosen is None:
+            return None
+    elif repos:
+        chosen = repos[0]
+    if chosen is not None:
+        resolved = str(chosen.get("full_name") or "")
+        branch = str(chosen.get("default_branch") or branch) or branch
     elif workspaces:
         parsed = full_name_from_repo_url(str(workspaces[0].get("repo_url") or ""))
-        full_name = parsed or ""
-    if workspaces:
+        resolved = parsed or ""
         branch = str(workspaces[0].get("repo_branch") or branch) or branch
-    if full_name.count("/") != 1:
+    for workspace in workspaces:
+        parsed = full_name_from_repo_url(str(workspace.get("repo_url") or ""))
+        if parsed and parsed == resolved:
+            branch = str(workspace.get("repo_branch") or branch) or branch
+            break
+    if resolved.count("/") != 1:
         return None
-    owner, repo = full_name.split("/", 1)
+    owner, repo = resolved.split("/", 1)
     if not owner or not repo:
         return None
     return owner, repo, branch
@@ -131,6 +153,7 @@ def codebase_payload(tree: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "current_version": short or branch,
         "branch": branch,
+        "repository": str(tree.get("full_name") or ""),
         "versions": [
             {
                 "id": short or branch,

@@ -55,6 +55,63 @@ def test_imported_repo_is_absent_without_a_github_url() -> None:
     assert imported_repo({"repositories": [], "workspaces": []}) is None
 
 
+def test_imported_repo_selects_a_named_second_import() -> None:
+    source = imported_repo(
+        {
+            "repositories": [
+                {"full_name": "amelia751/egaki", "default_branch": "main"},
+                {"full_name": "amelia751/gemini20-hello", "default_branch": "main"},
+            ],
+            "workspaces": [
+                {
+                    "repo_url": "https://github.com/amelia751/egaki.git",
+                    "repo_branch": "develop",
+                },
+                {
+                    "repo_url": "https://github.com/amelia751/gemini20-hello.git",
+                    "repo_branch": "main",
+                },
+            ],
+        },
+        full_name="amelia751/gemini20-hello",
+    )
+    assert source == ("amelia751", "gemini20-hello", "main")
+
+
+def test_imported_repo_does_not_borrow_another_repo_workspace_branch() -> None:
+    source = imported_repo(
+        {
+            "repositories": [
+                {"full_name": "amelia751/egaki", "default_branch": "main"},
+                {"full_name": "amelia751/gemini20-hello", "default_branch": "main"},
+            ],
+            "workspaces": [
+                {
+                    "repo_url": "https://github.com/amelia751/egaki.git",
+                    "repo_branch": "develop",
+                }
+            ],
+        },
+        full_name="amelia751/gemini20-hello",
+    )
+    assert source == ("amelia751", "gemini20-hello", "main")
+
+
+def test_imported_repo_rejects_a_repo_the_project_did_not_import() -> None:
+    assert (
+        imported_repo(
+            {
+                "repositories": [
+                    {"full_name": "amelia751/egaki", "default_branch": "main"},
+                ],
+                "workspaces": [],
+            },
+            full_name="amelia751/gemini20-hello",
+        )
+        is None
+    )
+
+
 def test_build_file_tree_nests_blobs_under_folders() -> None:
     tree = build_file_tree(
         [
@@ -84,6 +141,7 @@ def test_build_file_tree_skips_vendor_directories() -> None:
 def test_codebase_payload_matches_the_dashboard_shape() -> None:
     payload = codebase_payload(
         {
+            "full_name": "amelia751/egaki",
             "sha": "abcdef1234567890",
             "ref": "main",
             "default_branch": "main",
@@ -96,6 +154,7 @@ def test_codebase_payload_matches_the_dashboard_shape() -> None:
         }
     )
     assert payload["branch"] == "main"
+    assert payload["repository"] == "amelia751/egaki"
     assert payload["current_version"] == "abcdef1"
     assert payload["source"] == "github"
     assert payload["stats"]["total_files"] == 1

@@ -357,12 +357,20 @@ async def add_repository(
     *,
     github_repo_full_name: str,
 ) -> dict[str, Any] | None:
-    """Attach an additional GitHub repo to a project the user owns."""
+    """Attach an additional GitHub repo to a project the user owns.
+
+    Same rows as `import_repo_workspace`: a `project_repositories` row and a
+    workspace. Add Repository used to write only the repo, so the Codebase tab
+    (first import) and Configure (workspaces) kept showing the original repo
+    and looked like the Python add had failed.
+    """
     full_name = full_name_from_repo_url(github_repo_full_name)
     if full_name is None:
         raise ValueError("Repository must be owner/repo")
     repo_name = full_name.split("/", 1)[1]
     html_url = f"https://github.com/{full_name}"
+    repo_url = f"{html_url}.git"
+    workspace_name = f"{repo_name} Workspace"
     try:
         async with pool.acquire() as connection:
             async with connection.transaction():
@@ -373,13 +381,15 @@ async def add_repository(
                 )
                 if owned is None:
                     return None
-                await connection.execute(
+                repo_row = await connection.fetchrow(
                     """
                     INSERT INTO project_repositories (
                         project_id, kind, name, full_name, default_branch, html_url
                     )
                     VALUES ($1, 'backend', $2, $3, $4, $5)
-                    ON CONFLICT (project_id, full_name) DO NOTHING
+                    ON CONFLICT (project_id, full_name) DO UPDATE
+                    SET html_url = EXCLUDED.html_url
+                    RETURNING id, default_branch
                     """,
                     project_id,
                     repo_name,
@@ -391,14 +401,30 @@ async def add_repository(
                 # on conflict the existing row kept whatever branch it already
                 # had, and announcing the wrong branch would queue a shard the
                 # project does not import.
-                branch = await connection.fetchval(
+                branch = str(repo_row["default_branch"] or DEFAULT_BRANCH) or DEFAULT_BRANCH
+                has_workspace = await connection.fetchval(
                     """
-                    SELECT default_branch FROM project_repositories
-                    WHERE project_id = $1 AND full_name = $2
+                    SELECT 1 FROM workspaces
+                    WHERE project_id = $1 AND repository_id = $2
                     """,
                     project_id,
-                    full_name,
+                    repo_row["id"],
                 )
+                if has_workspace is None:
+                    await connection.execute(
+                        """
+                        INSERT INTO workspaces (
+                            project_id, repository_id, name, repo_url, repo_branch,
+                            workspace_path, environment
+                        )
+                        VALUES ($1, $2, $3, $4, $5, NULL, 'dev')
+                        """,
+                        project_id,
+                        repo_row["id"],
+                        workspace_name,
+                        repo_url,
+                        branch,
+                    )
                 await connection.execute(
                     "UPDATE projects SET updated_at = now() WHERE id = $1",
                     project_id,

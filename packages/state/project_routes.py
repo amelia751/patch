@@ -172,7 +172,11 @@ async def stream_owned_project_events(
 
 @router.get("/{project_id}/codebase/file")
 async def get_owned_codebase_file(
-    request: Request, project_id: UUID, path: str = "", ref: str | None = None
+    request: Request,
+    project_id: UUID,
+    path: str = "",
+    ref: str | None = None,
+    repo: str | None = None,
 ) -> JSONResponse:
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
@@ -190,19 +194,19 @@ async def get_owned_codebase_file(
         )
     if project is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
-    source = imported_repo(project)
+    source = imported_repo(project, full_name=(repo or "").strip() or None)
     if source is None:
         return JSONResponse({"detail": "Project has no imported repository"}, status_code=404)
     if connection is None:
         return JSONResponse({"detail": "GitHub App is not installed"}, status_code=409)
-    owner, repo, default_branch = source
+    owner, repo_name, default_branch = source
     config = load_config()
     try:
         file = await fetch_repository_file(
             config,
             connection["installation_id"],
             owner=owner,
-            repo=repo,
+            repo=repo_name,
             path=safe_path,
             ref=(ref or "").strip() or default_branch,
         )
@@ -215,7 +219,10 @@ async def get_owned_codebase_file(
 
 @router.get("/{project_id}/codebase")
 async def get_owned_codebase(
-    request: Request, project_id: UUID, ref: str | None = None
+    request: Request,
+    project_id: UUID,
+    ref: str | None = None,
+    repo: str | None = None,
 ) -> JSONResponse:
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
@@ -230,19 +237,19 @@ async def get_owned_codebase(
         )
     if project is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
-    source = imported_repo(project)
+    source = imported_repo(project, full_name=(repo or "").strip() or None)
     if source is None:
         return JSONResponse({"detail": "Project has no imported repository"}, status_code=404)
     if connection is None:
         return JSONResponse({"detail": "GitHub App is not installed"}, status_code=409)
-    owner, repo, default_branch = source
+    owner, repo_name, default_branch = source
     config = load_config()
     try:
         tree = await fetch_repository_tree(
             config,
             connection["installation_id"],
             owner=owner,
-            repo=repo,
+            repo=repo_name,
             ref=(ref or "").strip() or default_branch,
         )
     except GitHubResourceError:
