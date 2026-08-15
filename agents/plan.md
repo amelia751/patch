@@ -1,6 +1,6 @@
 # Agents rewrite plan
 
-**Status:** layout landed — `specialists/` + `tools/{change,impact,patch,verification}`, four LlmAgents, Policy/PR are Python. Remaining: Verification `evidence_root` on the live slice, PR via github_tools after PASS.
+**Status:** phases 1–8 landed. Search child on Change Intelligence; slice writes `evidence_root` and runs Verification; PR calls github_tools after PASS (HUMAN_REQUIRED when the service is unwired); one `InMemorySessionService` per run, session id `{run_id}:{agent}`.
 **Contracts:** `roadmap.md` §8 (jobs) and §9 (state machine).
 **ADK catalog:** `.local/research/adk-tooling-ecosystem.md`.
 **Installed pin:** `google-adk==2.1.0`. Reasoning model: `gemini-3.5-flash`.

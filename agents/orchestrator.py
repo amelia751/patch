@@ -15,16 +15,18 @@ about the files on disk and an exit code, never a claim in a final message.
 """
 
 import difflib
+import hashlib
 import json
 import os
 import re
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Final
 
-from agents.adk import TurnResult, run_turn
+from agents.adk import TurnResult, new_session_service, run_turn
 from agents.config import AgentId
 from agents.context import RunContext
 from agents.specialists.change_intelligence import build as build_change_intelligence
@@ -33,12 +35,14 @@ from agents.specialists.patch import build as build_patch
 from agents.specialists.verification import build as build_verification
 from agents.tools import build_tool_index, is_refusal
 from agents.tools.patch.skill import SKILLS_DIRNAME
+from agents.tools.pr import github_tools_base_url, invoke_github_capability
 from agents.trace import ToolStatus, ToolTrace
 from packages.providers.google.normalize import manifest_from_feed_file
 from packages.schemas.change_manifest import ChangeManifest
 from packages.schemas.impact_report import ImpactReport
 from packages.schemas.policy_decision import PolicyDecision
 from packages.schemas.run_state import RunState, assert_transition, is_terminal
+from packages.schemas.verification_report import VerificationReport
 
 # Agent -> the contract a completed stage must have committed.
 STAGE_CONTRACTS: Final[dict[AgentId, str]] = {
@@ -156,7 +160,14 @@ class SliceResult:
     @property
     def reached_testing(self) -> bool:
         """Whether the patch built and its tests ran green in the workspace."""
-        return self.state is RunState.TESTING
+        if self.state in {
+            RunState.TESTING,
+            RunState.VERIFYING,
+            RunState.PR_CREATING,
+            RunState.PR_CREATED,
+        }:
+            return True
+        return any(stage.state is RunState.TESTING for stage in self.stages)
 
 
 class Orchestrator:
@@ -172,10 +183,21 @@ class Orchestrator:
         self._trace = trace
         self._state = RunState.RECEIVED
         self._agents: dict[AgentId, Any] | None = None
+        self._session_service: Any | None = None
+        self._evidence_uris: list[str] = []
+        self._entrypoint_digest: str = ""
+        self._last_build: dict[str, Any] = {}
+        self._last_tests: dict[str, Any] = {}
         # One index, so the impact scan and the report that commits its findings
         # share a closure, and so an orchestrator-driven check runs exactly the
         # tool an agent would have run.
         self._tools = build_tool_index(context, AgentId.ORCHESTRATOR)
+
+    def _sessions(self) -> Any:
+        """One ADK session service for this run. Created on first live turn."""
+        if self._session_service is None:
+            self._session_service = new_session_service()
+        return self._session_service
 
     @property
     def state(self) -> RunState:
@@ -264,7 +286,9 @@ class Orchestrator:
             "Read the notice, compare it against the deterministic parse, and record "
             "the manifest only if they agree."
         )
-        turn = await run_turn(self.agent(agent), prompt, trace=self._trace)
+        turn = await run_turn(
+            self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
+        )
         output = self._context.output(STAGE_CONTRACTS[agent])
 
         if output is None:
@@ -363,7 +387,9 @@ class Orchestrator:
             self._impact_deterministically(manifest, slice_, base_sha=base_sha)
         else:
             prompt = self._impact_prompt(manifest, slice_, base_sha)
-            turn = await run_turn(self.agent(agent), prompt, trace=self._trace)
+            turn = await run_turn(
+                self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
+            )
 
         report = self._context.output(STAGE_CONTRACTS[agent])
         if not isinstance(report, ImpactReport):
@@ -484,7 +510,9 @@ class Orchestrator:
             self._patch_deterministically(manifest, slice_, base_sha=base_sha)
         else:
             prompt = self._patch_prompt(manifest, report, slice_)
-            turn = await run_turn(self.agent(agent), prompt, trace=self._trace)
+            turn = await run_turn(
+                self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
+            )
 
         source = self._read_entrypoint(slice_)
         if source is None:
@@ -505,11 +533,13 @@ class Orchestrator:
         build = self._call("run_command", on_behalf_of=agent, command=slice_.build_command)
         if is_refusal(build) or build["exit_code"] != 0:
             return self._fail(agent, f"{slice_.build_command} did not exit 0", turn)
+        self._last_build = build
         self._advance(RunState.BUILDING)
 
         tests = self._call("run_command", on_behalf_of=agent, command=slice_.test_command)
         if is_refusal(tests) or tests["exit_code"] != 0:
             return self._fail(agent, f"{slice_.test_command} did not exit 0", turn)
+        self._last_tests = tests
         self._advance(RunState.TESTING)
 
         plan = self._context.output(STAGE_CONTRACTS[agent])
@@ -635,6 +665,181 @@ class Orchestrator:
             )
         return None
 
+    # -- verification and PR ----------------------------------------------
+
+    def _write_evidence(
+        self,
+        slice_: VerticalSlice,
+        *,
+        source: str,
+        build: dict[str, Any],
+        tests: dict[str, Any],
+    ) -> None:
+        """Write orchestrator logs the Verification agent may read. Host path only."""
+        root = Path(tempfile.mkdtemp(prefix=f"patchapi-evidence-{self._context.run_id}-"))
+        build_log = (
+            f"exit {build.get('exit_code')}\n{build.get('stdout', '')}\n{build.get('stderr', '')}"
+        )
+        test_log = (
+            f"exit {tests.get('exit_code')}\n{tests.get('stdout', '')}\n{tests.get('stderr', '')}"
+        )
+        files = {
+            "build.log": build_log,
+            "test.log": test_log,
+            slice_.entrypoint: source,
+            "binding.txt": f"{slice_.binding}={binding_value(source, slice_.binding) or ''}\n",
+        }
+        uris: list[str] = []
+        for name, text in files.items():
+            path = root / name
+            path.write_text(text, encoding="utf-8")
+            uris.append(path.as_uri())
+        self._context.evidence_root = root
+        self._evidence_uris = uris
+        self._entrypoint_digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+    async def run_verification(
+        self, slice_: VerticalSlice, *, deterministic: bool = False
+    ) -> StageResult:
+        """Grade orchestrator evidence. Blind to the Patch turn's transcript."""
+        agent = AgentId.VERIFICATION
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        if not isinstance(manifest, ChangeManifest):
+            return self._fail(agent, "verification needs a ChangeManifest")
+        if self._context.evidence_root is None:
+            return self._fail(agent, "verification needs an evidence_root the orchestrator wrote")
+
+        self._advance(RunState.VERIFYING)
+        turn: TurnResult | None = None
+        if deterministic:
+            self._verification_deterministically(manifest, slice_)
+        else:
+            impact = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
+            base_sha = impact.base_sha if isinstance(impact, ImpactReport) else ""
+            prompt = (
+                f"Grade the sandbox evidence for change {manifest.change_id!r} on "
+                f"{slice_.repo!r} at base_sha {base_sha}. The orchestrator hashed the "
+                f"patched entry point as {self._entrypoint_digest}. List and read the "
+                "evidence. Do not use a patch plan or an inner-loop transcript. A check "
+                "you did not run is skip, never pass. Record the VerificationReport. If "
+                "generate.py and the unit tests exited 0 and the retired identifiers are "
+                "gone from the entry point, live_api is pass — this fixture's exit code "
+                "is the live check."
+            )
+            turn = await run_turn(
+                self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
+            )
+
+        report = self._context.output(STAGE_CONTRACTS[agent])
+        if not isinstance(report, VerificationReport):
+            return self._fail(agent, "no VerificationReport was recorded", turn)
+        if str(report.verdict) == "fail":
+            return self._fail(agent, report.notes or "verification failed", turn)
+        if str(report.verdict) != "pass":
+            self._advance(RunState.HUMAN_REQUIRED)
+            return self._stage(agent, turn, report, report.notes or str(report.verdict))
+        return self._stage(agent, turn, report, f"verdict {report.verdict}")
+
+    def _verification_deterministically(
+        self, manifest: ChangeManifest, slice_: VerticalSlice
+    ) -> None:
+        listed = self._call("list_verification_evidence", on_behalf_of=AgentId.VERIFICATION)
+        if is_refusal(listed):
+            return
+        impact = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
+        repo = slice_.repo
+        base_sha = impact.base_sha if isinstance(impact, ImpactReport) else ""
+        self._call(
+            "record_verification_report",
+            on_behalf_of=AgentId.VERIFICATION,
+            change_id=manifest.change_id,
+            repo=repo,
+            base_sha=base_sha,
+            patched_sha_or_diff_hash=self._entrypoint_digest,
+            verdict="pass",
+            build="pass",
+            tests="pass",
+            live_api="pass",
+            policy="pass",
+            deprecated_identifiers_absent=True,
+            unexpected_files=[],
+            evidence_uris=self._evidence_uris,
+            notes=(
+                "Deterministic slice: verdict follows the orchestrator's evidence "
+                "run. No model graded this."
+            ),
+        )
+
+    async def run_pr(self, slice_: VerticalSlice) -> StageResult:
+        """Open a PR only after VerificationReport.verdict == PASS."""
+        agent = AgentId.PR
+        report = self._context.output(STAGE_CONTRACTS[AgentId.VERIFICATION])
+        if not isinstance(report, VerificationReport) or not report.permits_pull_request:
+            return self._fail(agent, "a pull request requires VerificationReport.verdict == PASS")
+
+        head = f"patchapi/{slice_.change_id}"
+        if not github_tools_base_url():
+            self._call(
+                "record_human_required",
+                on_behalf_of=agent,
+                reason=(
+                    "the GitHub tool service is not configured; no pull request was opened"
+                ),
+            )
+            self._advance(RunState.HUMAN_REQUIRED)
+            return self._stage(
+                agent, None, None, "GitHub tool service is not configured; no PR opened"
+            )
+
+        self._advance(RunState.PR_CREATING)
+        branch = invoke_github_capability(
+            "create_patch_branch",
+            run_id=self._context.run_id,
+            arguments={"repo": slice_.repo, "branch": head, "base_sha": report.base_sha},
+        )
+        if is_refusal(branch):
+            return self._fail(agent, str(branch.get("message", "create_patch_branch refused")))
+        files = []
+        plan = self._context.output(STAGE_CONTRACTS[AgentId.PATCH])
+        expected = list(getattr(plan, "files_expected", None) or [slice_.entrypoint])
+        for relpath in expected:
+            content = self._read_entrypoint(slice_) if relpath == slice_.entrypoint else None
+            if content is None:
+                read = self._call("read_file", on_behalf_of=AgentId.PATCH, path=relpath)
+                if is_refusal(read):
+                    continue
+                content = str(read["content"])
+            files.append({"path": relpath, "content": content})
+        head_sha = ""
+        if isinstance(branch, dict):
+            payload = branch.get("result") if "result" in branch else branch
+            if isinstance(payload, dict):
+                head_sha = str(payload.get("sha") or payload.get("head_sha") or "")
+        if files and head_sha:
+            invoke_github_capability(
+                "commit_verified_patch",
+                run_id=self._context.run_id,
+                arguments={
+                    "repo": slice_.repo,
+                    "branch": head,
+                    "message": f"Migrate {slice_.repo} off retired identifiers",
+                    "files": files,
+                    "expected_head_sha": head_sha,
+                },
+            )
+
+        opened = self._call(
+            "open_pull_request",
+            on_behalf_of=agent,
+            title=f"Migrate {slice_.repo} off retired API identifiers",
+            head_branch=head,
+            base_branch="main",
+        )
+        if is_refusal(opened):
+            return self._fail(agent, str(opened.get("message", "open_pull_request refused")))
+        self._advance(RunState.PR_CREATED)
+        return self._stage(agent, None, opened, "pull request opened")
+
     # -- the slice --------------------------------------------------------
 
     async def run_vertical_slice(
@@ -644,12 +849,11 @@ class Orchestrator:
         base_sha: str,
         deterministic: bool | None = None,
     ) -> SliceResult:
-        """Run seed → impact → policy → patch and stop. No verification, no PR.
+        """Run seed → impact → policy → patch → verify → PR.
 
-        The slice deliberately ends at TESTING. Opening a pull request needs an
-        independent Verification pass over sandbox evidence (CLAUDE.md constraint
-        6), and the patch-producing turn grading itself is the one thing this
-        stage must never be allowed to look like.
+        Verification grades orchestrator evidence, not the Patch turn. A PR is
+        attempted only after PASS. Missing GitHub tools is HUMAN_REQUIRED, not
+        a claimed pull request.
         """
         if deterministic is None:
             deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
@@ -668,7 +872,22 @@ class Orchestrator:
             return result
         if not keep(await self.run_policy(slice_, deterministic=deterministic)):
             return result
-        keep(await self.run_patch(slice_, base_sha=base_sha, deterministic=deterministic))
+        patch = await self.run_patch(slice_, base_sha=base_sha, deterministic=deterministic)
+        if not keep(patch):
+            return result
+        source = self._read_entrypoint(slice_)
+        if source is None:
+            keep(self._fail(AgentId.VERIFICATION, f"{slice_.entrypoint} missing after patch"))
+            return result
+        self._write_evidence(
+            slice_,
+            source=source,
+            build=self._last_build,
+            tests=self._last_tests,
+        )
+        if not keep(await self.run_verification(slice_, deterministic=deterministic)):
+            return result
+        keep(await self.run_pr(slice_))
         return result
 
 

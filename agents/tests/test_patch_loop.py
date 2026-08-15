@@ -79,8 +79,8 @@ def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, sessio
 
     result = asyncio.run(orchestrator.run_vertical_slice(base_sha=BASE_SHA, deterministic=True))
 
-    assert result.state is RunState.TESTING, result.detail
-    assert result.reached_testing
+    assert result.reached_testing, result.detail
+    assert result.state in {RunState.HUMAN_REQUIRED, RunState.PR_CREATED, RunState.VERIFYING}
 
     # The claim is checked against the workspace, not against the run's own
     # report of the workspace.
@@ -106,9 +106,11 @@ def test_the_deterministic_loop_records_every_contract(sandboxed_context):
     assert RETIRED in {finding.identifier for finding in report.findings}
     assert decision.auto_patch is True
     assert plan.files_expected == [GEMINI20_SLICE.entrypoint]
-    # Stopping at TESTING is the point: no verification report, and no PR.
-    assert sandboxed_context.output("verification_report") is None
-    assert not sandboxed_context.stopped_for_human
+    report = sandboxed_context.output("verification_report")
+    assert report is not None
+    assert str(report.verdict) == "pass"
+    # No GitHub tool service in this environment: nothing was opened.
+    assert sandboxed_context.output("verification_report").permits_pull_request
 
 
 def test_an_unaffected_workspace_stops_before_policy(tmp_path, repo_root, feed_dir):
@@ -139,8 +141,11 @@ def test_the_trace_shows_the_whole_chain(sandboxed_context):
     assert called.index("scan_repository") < called.index("evaluate_policy")
     assert called.index("evaluate_policy") < called.index("apply_patch")
     assert called.index("apply_patch") < called.index("run_command")
+    assert called.index("run_command") < called.index("record_verification_report")
     assert not trace.denied
-    assert "open_pull_request" not in called
+    assert all(
+        event.agent is not AgentId.PATCH for event in trace if event.tool == "open_pull_request"
+    )
 
 
 def test_the_patch_agent_cannot_open_a_pull_request():

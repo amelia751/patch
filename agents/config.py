@@ -22,7 +22,7 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.2.0"
+FLEET_VERSION: Final[str] = "1.3.0"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
@@ -63,6 +63,7 @@ class ToolName(StrEnum):
     LOAD_PROVIDER_NOTICE = "load_provider_notice"
     NORMALIZE_PROVIDER_NOTICE = "normalize_provider_notice"
     RECORD_CHANGE_MANIFEST = "record_change_manifest"
+    SEARCH_PROVIDER_WEB = "search_provider_web"
 
     # Impact — deterministic repository inventory, no provider fetch, no writes.
     SCAN_REPOSITORY = "scan_repository"
@@ -111,6 +112,7 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.LOAD_PROVIDER_NOTICE,
             ToolName.NORMALIZE_PROVIDER_NOTICE,
             ToolName.RECORD_CHANGE_MANIFEST,
+            ToolName.SEARCH_PROVIDER_WEB,
         }
     ),
     AgentId.IMPACT: frozenset(
@@ -144,6 +146,10 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
 TOOL_ALLOWLISTS: Final[MappingProxyType[AgentId, frozenset[ToolName]]] = MappingProxyType(
     {agent: grants | SHARED_TOOLS for agent, grants in _GRANTS.items()}
 )
+
+# Built in `adk.py` as an AgentTool child, not as a Python function. `build_tools`
+# does not construct these; the grant still names them so the guardrail can.
+ADK_ATTACHED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.SEARCH_PROVIDER_WEB})
 
 # Instruction version per agent, recorded on trace events so a stored run can be
 # replayed against the prompt that produced it. Bumping a prompt bumps this.

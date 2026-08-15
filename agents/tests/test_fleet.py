@@ -63,9 +63,8 @@ def test_every_tool_call_passes_through_the_guardrails(fleet):
 
 def test_each_agent_holds_exactly_its_allowlist(fleet):
     for agent_id, agent in fleet.items():
-        assert {tool.__name__ for tool in agent.tools} == {
-            str(name) for name in tool_allowlist(agent_id)
-        }
+        names = {getattr(tool, "__name__", None) or tool.name for tool in agent.tools}
+        assert names == {str(name) for name in tool_allowlist(agent_id)}
 
 
 def test_tool_policy_is_stated_in_the_instruction_not_in_provider_data(fleet):

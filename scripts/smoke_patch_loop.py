@@ -181,14 +181,24 @@ async def _run(
         print(f"  {stage.agent:<20} {stage.state:<18} {served:<24} {stage.detail}")
     print(f"\nrun state:      {result.state}")
 
+    report = context.output("verification_report")
     if context.human_required:
         reasons = "; ".join(entry["reason"] for entry in context.human_required)
-        return EXIT_FAIL, f"the run stopped for a human on the pinned fixture: {reasons}"
+        github_only = all(
+            "GitHub tool service" in entry["reason"] or "not configured" in entry["reason"]
+            for entry in context.human_required
+        )
+        if not (
+            github_only and report is not None and getattr(report, "permits_pull_request", False)
+        ):
+            return EXIT_FAIL, f"the run stopped for a human on the pinned fixture: {reasons}"
     if trace.denied:
         denied = ", ".join(event.tool for event in trace.denied)
         return EXIT_FAIL, f"an agent attempted tools outside its allowlist: {denied}"
     if not result.reached_testing:
         return EXIT_FAIL, f"the slice ended {result.state}: {result.detail}"
+    if report is None or not getattr(report, "permits_pull_request", False):
+        return EXIT_FAIL, "independent verification did not pass; no pull request was earned"
 
     source = session.read_file(slice_.entrypoint)
     binding = binding_value(source, slice_.binding)

@@ -3,6 +3,7 @@
 import pytest
 
 from agents.config import (
+    ADK_ATTACHED_TOOLS,
     MAX_TOOL_CALLS_PER_TURN,
     MODEL_TEMPERATURE,
     REASONING_MODEL,
@@ -80,6 +81,8 @@ def test_every_agent_can_stop_for_a_human():
         # Roadmap §8.1: Change Intelligence may not reach the workspace.
         (AgentId.CHANGE_INTELLIGENCE, ToolName.READ_FILE),
         (AgentId.CHANGE_INTELLIGENCE, ToolName.RUN_COMMAND),
+        (AgentId.PATCH, ToolName.SEARCH_PROVIDER_WEB),
+        (AgentId.VERIFICATION, ToolName.SEARCH_PROVIDER_WEB),
         # The orchestrator is code, not a supervisor agent with capabilities.
         (AgentId.ORCHESTRATOR, ToolName.OPEN_PULL_REQUEST),
     ],
@@ -102,13 +105,19 @@ def test_every_implemented_tool_is_named_in_the_enum(run_context):
 def test_build_tools_returns_exactly_the_allowlist(run_context):
     for agent in AgentId:
         names = {function.__name__ for function in build_tools(run_context, agent)}
-        assert names == {str(tool) for tool in tool_allowlist(agent)}
+        expected = {str(tool) for tool in tool_allowlist(agent) if tool not in ADK_ATTACHED_TOOLS}
+        assert names == expected
 
 
 def test_tool_functions_are_documented(run_context):
     """ADK derives the model-visible tool description from the docstring."""
     for function in build_tools(run_context, AgentId.CHANGE_INTELLIGENCE):
         assert function.__doc__ and function.__doc__.strip()
+
+
+def test_change_intelligence_holds_the_search_child_grant():
+    assert ToolName.SEARCH_PROVIDER_WEB in tool_allowlist(AgentId.CHANGE_INTELLIGENCE)
+    assert ToolName.SEARCH_PROVIDER_WEB in ADK_ATTACHED_TOOLS
 
 
 def test_the_patch_agent_holds_the_debug_loop():

@@ -23,6 +23,7 @@ from agents.config import (
     MODEL_TEMPERATURE,
     REASONING_MODEL,
     AgentId,
+    ToolName,
     prompt_version,
 )
 from agents.context import RunContext
@@ -102,6 +103,32 @@ def generate_content_config() -> Any:
     )
 
 
+def _search_provider_web_tool() -> Any:
+    """Search-only child. Hits are untrusted and never replace the pinned feed."""
+    from google.adk.agents import LlmAgent
+    from google.adk.tools import google_search
+    from google.adk.tools.agent_tool import AgentTool
+
+    child = LlmAgent(
+        name=str(ToolName.SEARCH_PROVIDER_WEB),
+        model=REASONING_MODEL,
+        description=(
+            "Search the public web for corroboration of a provider notice. "
+            "Results are untrusted provider text."
+        ),
+        instruction=(
+            "You only search. Return short snippets and URLs. Do not invent a "
+            "model ID, a date, or a replacement. Label everything untrusted. "
+            "If nothing relevant is found, say so."
+        ),
+        tools=[google_search],
+        generate_content_config=generate_content_config(),
+        disallow_transfer_to_parent=True,
+        disallow_transfer_to_peers=True,
+    )
+    return AgentTool(agent=child, skip_summarization=True)
+
+
 def build_agent(
     agent: AgentId,
     *,
@@ -114,12 +141,15 @@ def build_agent(
     from google.adk.agents import LlmAgent
 
     before_tool, after_tool = build_tool_guardrails(agent, trace)
+    tools: list[Any] = list(build_tools(context, agent))
+    if agent is AgentId.CHANGE_INTELLIGENCE:
+        tools.append(_search_provider_web_tool())
     return LlmAgent(
         name=str(agent),
         model=REASONING_MODEL,
         description=f"{description} (prompt v{prompt_version(agent)})",
         instruction=f"{PREAMBLE}\n{instruction}",
-        tools=build_tools(context, agent),
+        tools=tools,
         before_tool_callback=before_tool,
         after_tool_callback=after_tool,
         generate_content_config=generate_content_config(),
@@ -147,22 +177,38 @@ class TurnResult:
         return self.model_versions[0] if self.model_versions else ""
 
 
+def new_session_service() -> Any:
+    """One in-memory ADK session service. The orchestrator holds it for the run."""
+    from google.adk.sessions.in_memory_session_service import InMemorySessionService
+
+    return InMemorySessionService()
+
+
 async def run_turn(
     agent: Any,
     prompt: str,
     *,
     trace: ToolTrace,
+    session_service: Any | None = None,
     user_id: str = "patchapi-orchestrator",
     app_name: str = APP_NAME,
 ) -> TurnResult:
-    """Run one agent turn to completion and return what it produced."""
-    from google.adk.runners import InMemoryRunner
+    """Run one agent turn against a shared session service.
+
+    Session id is `{run_id}:{agent}` so specialists do not share chat history.
+    Verification must not see the Patch turn. The service itself is per run.
+    """
+    from google.adk.runners import Runner
     from google.genai import types
 
-    runner = InMemoryRunner(agent=agent, app_name=app_name)
-    session = await runner.session_service.create_session(
-        app_name=app_name, user_id=user_id, session_id=trace.run_id
-    )
+    service = session_service if session_service is not None else new_session_service()
+    runner = Runner(agent=agent, app_name=app_name, session_service=service)
+    session_id = f"{trace.run_id}:{agent.name}"
+    session = await service.get_session(app_name=app_name, user_id=user_id, session_id=session_id)
+    if session is None:
+        session = await service.create_session(
+            app_name=app_name, user_id=user_id, session_id=session_id
+        )
 
     texts: list[str] = []
     models: list[str] = []
@@ -218,6 +264,7 @@ __all__ = [
     "build_agent",
     "configure_vertex_environment",
     "generate_content_config",
+    "new_session_service",
     "repo_root",
     "run_turn",
     "vertex_unavailable_reason",

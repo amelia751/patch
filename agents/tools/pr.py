@@ -13,6 +13,10 @@ configured for a deployment the tool returns `CAPABILITY_NOT_AVAILABLE` — the
 run stops with a rendered body a human can use, and no PR is claimed.
 """
 
+import json
+import os
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from typing import Any, Final
 
@@ -26,6 +30,9 @@ from packages.schemas.policy_decision import PolicyDecision
 from packages.schemas.verification_report import VerificationReport
 
 AGENT: Final[AgentId] = AgentId.PR
+GITHUB_TOOLS_URL_ENV: Final[str] = "PATCHAPI_GITHUB_TOOLS_URL"
+PR_AGENT_IDENTITY: Final[str] = "patchapi.pr"
+_HTTP_TIMEOUT_SECONDS: Final[float] = 30.0
 
 # The closing section of every PatchAPI pull request. Fixed text: the automation
 # boundary is a property of the product, not a sentence a model composes.
@@ -80,6 +87,61 @@ def _render_body(
             AUTOMATION_BOUNDARY,
         ]
     )
+
+
+def github_tools_base_url() -> str:
+    """Configured GitHub tool service origin, or empty when none is wired."""
+    return os.environ.get(GITHUB_TOOLS_URL_ENV, "").strip().rstrip("/")
+
+
+def invoke_github_capability(
+    capability: str,
+    *,
+    run_id: str,
+    arguments: dict[str, Any],
+    agent: str = PR_AGENT_IDENTITY,
+) -> dict[str, Any]:
+    """POST one capability to the GitHub tool service. Never holds a token."""
+    base = github_tools_base_url()
+    if not base:
+        return refusal(
+            ReasonCode.CAPABILITY_NOT_AVAILABLE,
+            "the GitHub tool service is not configured in this deployment, so no "
+            "GitHub write was attempted.",
+            capability=capability,
+        )
+    request = urllib.request.Request(
+        f"{base}/v1/capabilities/{capability}",
+        data=json.dumps(arguments).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-PatchAPI-Agent": agent,
+            "X-PatchAPI-Run-Id": run_id,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:800]
+        return refusal(
+            ReasonCode.CAPABILITY_NOT_AVAILABLE,
+            f"GitHub tool service refused {capability} ({exc.code}): {body}",
+            capability=capability,
+        )
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        return refusal(
+            ReasonCode.CAPABILITY_NOT_AVAILABLE,
+            f"GitHub tool service could not be reached for {capability}: {exc}",
+            capability=capability,
+        )
+    if not isinstance(payload, dict):
+        return refusal(
+            ReasonCode.INVALID_CONTRACT,
+            f"GitHub tool service returned a non-object for {capability}",
+        )
+    return ok(capability=capability, result=payload.get("result", payload))
 
 
 def build_pull_request_tools(context: RunContext) -> list[Callable[..., Any]]:
@@ -137,16 +199,54 @@ def build_pull_request_tools(context: RunContext) -> list[Callable[..., Any]]:
                 ReasonCode.POLICY_DENIED,
                 "policy did not permit an automated pull request for this run",
             )
-        return refusal(
-            ReasonCode.CAPABILITY_NOT_AVAILABLE,
-            "the GitHub tool service is not configured in this deployment, so no pull "
-            "request was opened. Use the rendered body; nothing was written to GitHub.",
-            requested_title=title.strip(),
-            requested_head=head_branch.strip(),
-            requested_base=base_branch.strip(),
+        risk = str(decision.risk)
+        if risk == "critical":
+            risk = "high"
+        impact = context.output("impact_report")
+        plan = context.output("patch_plan")
+        usage = (
+            [f"{finding.file} — {finding.kind}" for finding in impact.findings[:20]]
+            if isinstance(impact, ImpactReport)
+            else ["(no findings recorded)"]
+        )
+        migration = (
+            [plan.migration_summary] if isinstance(plan, PatchPlan) else ["(no plan recorded)"]
+        )
+        evidence = {
+            "why": decision.reason,
+            "affected_usage": usage,
+            "migration": migration,
+            "verification": [
+                {"name": name, "passed": str(outcome) == "pass"}
+                for name, outcome in report.checks.items()
+            ],
+            "risk_level": risk if risk in {"low", "medium", "high"} else "medium",
+            "risk_rationale": decision.reason,
+            "evidence_links": [ref.uri for ref in report.evidence],
+            "trace_id": context.run_id,
+        }
+        return invoke_github_capability(
+            "open_pull_request",
+            run_id=context.run_id,
+            arguments={
+                "repo": report.repo,
+                "head_branch": head_branch.strip(),
+                "base_branch": base_branch.strip(),
+                "title": title.strip(),
+                "base_sha": report.base_sha,
+                "run_id": context.run_id,
+                "evidence": evidence,
+            },
         )
 
     return [render_pull_request_body, open_pull_request]
 
 
-__all__ = ["AGENT", "AUTOMATION_BOUNDARY", "build_pull_request_tools"]
+__all__ = [
+    "AGENT",
+    "AUTOMATION_BOUNDARY",
+    "GITHUB_TOOLS_URL_ENV",
+    "build_pull_request_tools",
+    "github_tools_base_url",
+    "invoke_github_capability",
+]

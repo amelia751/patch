@@ -9,7 +9,7 @@ granted to any LlmAgent.
 from collections.abc import Callable
 from typing import Any, Final
 
-from agents.config import AgentId, ToolName, tool_allowlist
+from agents.config import ADK_ATTACHED_TOOLS, AgentId, ToolName, tool_allowlist
 from agents.context import RunContext
 from agents.tools.change import build_provider_feed_tools
 from agents.tools.impact import build_repo_inventory_tools
@@ -53,17 +53,21 @@ def build_tools(context: RunContext, agent: AgentId) -> list[Callable[..., Any]]
     """Return the tool functions `agent` is permitted to call, in a stable order."""
     index = build_tool_index(context, agent)
     granted = sorted(tool_allowlist(agent))
-    missing = [str(name) for name in granted if str(name) not in index]
+    missing = [
+        str(name) for name in granted if str(name) not in index and name not in ADK_ATTACHED_TOOLS
+    ]
     if missing:
         raise UnimplementedToolError(
             f"agent {agent} is granted tools with no implementation: {', '.join(missing)}"
         )
-    return [index[str(name)] for name in granted]
+    return [index[str(name)] for name in granted if name not in ADK_ATTACHED_TOOLS]
 
 
 def implemented_tool_names(context: RunContext) -> frozenset[str]:
     """Names of every tool this package can build. Used by the coverage test."""
-    return frozenset(build_tool_index(context, AgentId.ORCHESTRATOR))
+    return frozenset(build_tool_index(context, AgentId.ORCHESTRATOR)) | {
+        str(name) for name in ADK_ATTACHED_TOOLS
+    }
 
 
 __all__ = [
