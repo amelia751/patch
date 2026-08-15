@@ -10,9 +10,9 @@ It has veto power. No pull request is opened without a PASS from here.
 
 from typing import Any, Final
 
+from agents.adk import build_agent
 from agents.config import AgentId
 from agents.context import RunContext
-from agents.specialist import build_specialist
 from agents.trace import ToolTrace
 
 AGENT: Final[AgentId] = AgentId.VERIFICATION
@@ -47,9 +47,9 @@ strictly better to be wrong in the direction of a human looking at it.
 """
 
 
-def build_verification_agent(context: RunContext, trace: ToolTrace) -> Any:
+def build(context: RunContext, trace: ToolTrace) -> Any:
     """Build the Verification ADK agent."""
-    return build_specialist(
+    return build_agent(
         AGENT,
         description=DESCRIPTION,
         instruction=INSTRUCTION,
@@ -58,4 +58,4 @@ def build_verification_agent(context: RunContext, trace: ToolTrace) -> Any:
     )
 
 
-__all__ = ["AGENT", "DESCRIPTION", "INSTRUCTION", "build_verification_agent"]
+__all__ = ["AGENT", "DESCRIPTION", "INSTRUCTION", "build"]

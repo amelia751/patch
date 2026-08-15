@@ -1,5 +1,6 @@
 """Shared fixtures for the agent-layer tests."""
 
+import sys
 import warnings
 from importlib.util import find_spec
 from pathlib import Path
@@ -7,6 +8,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    # sandbox/ is a namespace package with no distribution of its own.
+    sys.path.insert(0, str(REPO_ROOT))
 
 # A bare `uv run pytest` at the repository root syncs only the workspace root,
 # which installs neither this member nor Pydantic. Stand down with a warning

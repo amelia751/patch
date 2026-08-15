@@ -28,10 +28,10 @@ from typing import Any, Final
 from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.config import MAX_UNTRUSTED_EXCERPT_CHARS, AgentId
 from agents.context import PathOutsideRootError, RunContext, resolve_within
-from agents.environment import apply_unified_diff, execute
 from agents.tools.results import ReasonCode, ok, refusal
 from packages.policy.globs import normalize_path
 from packages.policy.paths import is_forbidden_path
+from sandbox.session import LocalSession
 
 AGENT: Final[AgentId] = AgentId.PATCH
 
@@ -116,15 +116,24 @@ def build_workspace_tools(context: RunContext) -> list[Callable[..., Any]]:
     """Build the Patch debug-loop tools bound to `context`'s workspace."""
 
     def _target() -> tuple[Path | None, Any] | dict[str, Any]:
-        """The local root and the session, or a refusal when the run has neither."""
-        root = context.workspace_root
+        """The session (and its host Path, if any), or a refusal when neither exists.
+
+        A GKE claim has no host Path. A unit test that only set `workspace_root`
+        is attached as a LocalSession so every edit still goes through the
+        session contract — `agents.environment` is gone.
+        """
         session = context.sandbox
-        if root is None and session is None:
+        root = context.workspace_root
+        if session is None and root is not None:
+            session = LocalSession.attach(root, context.run_id)
+        if session is None:
             return refusal(
                 ReasonCode.STAGE_NOT_READY,
                 "this run has no sandbox workspace; the orchestrator allocates one",
             )
-        return root, session
+        working = session.working_dir
+        host = working if isinstance(working, Path) else root
+        return host, session
 
     def _relative(root: Path | None, candidate: str) -> str | dict[str, Any]:
         try:
@@ -161,31 +170,18 @@ def build_workspace_tools(context: RunContext) -> list[Callable[..., Any]]:
                 f"{path!r} is a forbidden path and cannot be read",
             )
 
-        if session is not None:
-            try:
-                text = session.read_file(relative)
-            except UnicodeDecodeError:
-                return refusal(
-                    ReasonCode.INVALID_CONTRACT,
-                    f"{path!r} is not valid UTF-8; use list_dir to inspect, not a binary read",
-                )
-            except (OSError, RuntimeError, ValueError) as exc:
-                return refusal(
-                    ReasonCode.NOT_FOUND,
-                    f"{path!r} could not be read from the sandbox workspace: {exc}",
-                )
-        else:
-            assert root is not None  # _target() refuses when both are missing
-            resolved = root / relative
-            if not resolved.is_file():
-                return refusal(ReasonCode.NOT_FOUND, f"{path!r} is not a file in the workspace")
-            try:
-                text = resolved.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                return refusal(
-                    ReasonCode.INVALID_CONTRACT,
-                    f"{path!r} is not valid UTF-8; use list_dir to inspect, not a binary read",
-                )
+        try:
+            text = session.read_file(relative)
+        except UnicodeDecodeError:
+            return refusal(
+                ReasonCode.INVALID_CONTRACT,
+                f"{path!r} is not valid UTF-8; use list_dir to inspect, not a binary read",
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            return refusal(
+                ReasonCode.NOT_FOUND,
+                f"{path!r} could not be read from the sandbox workspace: {exc}",
+            )
 
         return ok(
             path=relative,
@@ -208,30 +204,20 @@ def build_workspace_tools(context: RunContext) -> list[Callable[..., Any]]:
             return relative
 
         entries: list[dict[str, str]] = []
-        if session is not None:
-            result = session.execute(
-                ["python3", "-c", _LIST_PROGRAM, _session_path(session, relative)],
-                _LIST_TIMEOUT_SECONDS,
+        result = session.execute(
+            ["python3", "-c", _LIST_PROGRAM, _session_path(session, relative)],
+            _LIST_TIMEOUT_SECONDS,
+        )
+        if result.exit_code != 0:
+            return refusal(
+                ReasonCode.NOT_FOUND,
+                f"{path!r} is not a directory in the workspace",
+                detail=_tail(result.stderr, MAX_UNTRUSTED_EXCERPT_CHARS),
             )
-            if result.exit_code != 0:
-                return refusal(
-                    ReasonCode.NOT_FOUND,
-                    f"{path!r} is not a directory in the workspace",
-                    detail=_tail(result.stderr, MAX_UNTRUSTED_EXCERPT_CHARS),
-                )
-            for line in result.stdout.splitlines():
-                kind, _, name = line.partition("\t")
-                if name:
-                    entries.append({"name": name, "kind": kind})
-        else:
-            assert root is not None
-            resolved = root / relative
-            if not resolved.is_dir():
-                return refusal(
-                    ReasonCode.NOT_FOUND, f"{path!r} is not a directory in the workspace"
-                )
-            for child in sorted(resolved.iterdir(), key=lambda item: item.name):
-                entries.append({"name": child.name, "kind": "dir" if child.is_dir() else "file"})
+        for line in result.stdout.splitlines():
+            kind, _, name = line.partition("\t")
+            if name:
+                entries.append({"name": name, "kind": kind})
 
         return ok(path=relative, entries=entries)
 
@@ -273,11 +259,7 @@ def build_workspace_tools(context: RunContext) -> list[Callable[..., Any]]:
             if isinstance(contained, dict):
                 return contained
 
-        if session is not None:
-            result = session.apply_unified_diff(diff)
-        else:
-            assert root is not None
-            result = apply_unified_diff(diff, workspace=root)
+        result = session.apply_unified_diff(diff)
         if result.timed_out:
             return ok(applied=False, files=paths, detail="git apply timed out")
         if result.exit_code != 0:
@@ -299,7 +281,7 @@ def build_workspace_tools(context: RunContext) -> list[Callable[..., Any]]:
         target = _target()
         if isinstance(target, dict):
             return target
-        root, session = target
+        _root, session = target
         try:
             argv = shlex.split(command)
         except ValueError as exc:
@@ -309,16 +291,7 @@ def build_workspace_tools(context: RunContext) -> list[Callable[..., Any]]:
         except CommandNotAllowedError as exc:
             return refusal(ReasonCode.POLICY_DENIED, str(exc), command=command)
 
-        if session is not None:
-            result = session.execute(list(allowed.argv), allowed.timeout_seconds)
-        else:
-            assert root is not None
-            result = execute(
-                list(allowed.argv),
-                workspace=root,
-                run_id=context.run_id,
-                timeout_seconds=allowed.timeout_seconds,
-            )
+        result = session.execute(list(allowed.argv), allowed.timeout_seconds)
         payload: dict[str, Any] = {
             "command": " ".join(allowed.argv),
             "exit_code": result.exit_code,

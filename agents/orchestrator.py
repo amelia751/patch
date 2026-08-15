@@ -24,18 +24,16 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Final
 
-from agents.change_intelligence import build_change_intelligence_agent
+from agents.adk import TurnResult, run_turn
 from agents.config import AgentId
 from agents.context import RunContext
-from agents.impact import build_impact_agent
-from agents.patch import build_patch_agent
-from agents.policy import build_policy_agent
-from agents.pr import build_pr_agent
-from agents.runtime import TurnResult, run_turn
+from agents.specialists.change_intelligence import build as build_change_intelligence
+from agents.specialists.impact import build as build_impact
+from agents.specialists.patch import build as build_patch
+from agents.specialists.verification import build as build_verification
 from agents.tools import build_tool_index, is_refusal
-from agents.tools.migration_skill import SKILLS_DIRNAME
+from agents.tools.patch.skill import SKILLS_DIRNAME
 from agents.trace import ToolStatus, ToolTrace
-from agents.verification import build_verification_agent
 from packages.providers.google.normalize import manifest_from_feed_file
 from packages.schemas.change_manifest import ChangeManifest
 from packages.schemas.impact_report import ImpactReport
@@ -52,12 +50,10 @@ STAGE_CONTRACTS: Final[dict[AgentId, str]] = {
 }
 
 _BUILDERS: Final[dict[AgentId, Any]] = {
-    AgentId.CHANGE_INTELLIGENCE: build_change_intelligence_agent,
-    AgentId.IMPACT: build_impact_agent,
-    AgentId.POLICY: build_policy_agent,
-    AgentId.PATCH: build_patch_agent,
-    AgentId.VERIFICATION: build_verification_agent,
-    AgentId.PR: build_pr_agent,
+    AgentId.CHANGE_INTELLIGENCE: build_change_intelligence,
+    AgentId.IMPACT: build_impact,
+    AgentId.PATCH: build_patch,
+    AgentId.VERIFICATION: build_verification,
 }
 
 # Set to "1" to run the slice with no model in the loop at all: the migration is
@@ -122,11 +118,12 @@ GEMINI20_SLICE: Final[VerticalSlice] = VerticalSlice(
 
 
 def build_fleet(context: RunContext, trace: ToolTrace) -> dict[AgentId, Any]:
-    """Construct all six specialists against one run context and trace.
+    """Construct the four reasoning agents against one run context and trace.
 
-    Building the whole fleet is how the smoke proves the topology is real:
-    every agent constructs, every allowlist resolves to implemented tools, and
-    every tool callback is attached, before any model is called.
+    Building the fleet is how the smoke proves the topology is real: every
+    LlmAgent constructs, every allowlist resolves to implemented tools, and
+    every tool callback is attached, before any model is called. Policy and
+    PR are not in this map — they are Python stages.
     """
     return {agent: builder(context, trace) for agent, builder in _BUILDERS.items()}
 
@@ -429,13 +426,10 @@ class Orchestrator:
             return self._fail(agent, "the run has no ImpactReport to evaluate")
 
         proposed = sorted({finding.file for finding in report.findings})
+        # §8.3: policy is Python, not an LlmAgent. The flag is kept so callers
+        # do not change; both paths hit the same gate.
         turn: TurnResult | None = None
-        if deterministic:
-            self._policy_deterministically(report, slice_, proposed)
-        else:
-            turn = await run_turn(
-                self.agent(agent), self._policy_prompt(report, slice_, proposed), trace=self._trace
-            )
+        self._policy_deterministically(report, slice_, proposed)
 
         decision = self._context.output(STAGE_CONTRACTS[agent])
         if not isinstance(decision, PolicyDecision):
@@ -449,15 +443,6 @@ class Orchestrator:
 
         self._advance(RunState.PATCHING)
         return self._stage(agent, turn, decision, decision.reason)
-
-    def _policy_prompt(
-        self, report: ImpactReport, slice_: VerticalSlice, proposed: list[str]
-    ) -> str:
-        return (
-            f"Change {report.change_id!r} affects repository {slice_.repo!r}. A patch would "
-            f"edit these files: {', '.join(proposed)}. Clear them through the deterministic "
-            "gate and record the PolicyDecision."
-        )
 
     def _policy_deterministically(
         self, report: ImpactReport, slice_: VerticalSlice, proposed: list[str]

@@ -1,4 +1,4 @@
-"""PatchAPI's Google ADK agent layer: one orchestrator, six specialists.
+"""PatchAPI's Google ADK agent layer: four reasoning agents, two Python stages.
 
 Google ADK is the only agent framework in this tree, and
 `agents/tests/test_framework_compliance.py` asserts that no other one appears.
@@ -12,13 +12,14 @@ import in this file would abort collection for all of them.
 
 *No ADK at module scope.* The guardrails, the trace, the tool functions and the
 contracts are plain Python and are unit-tested without google-adk installed;
-only `agents.runtime` and `agents.specialist` reach for it, and they do so inside
-the functions that need it. A missing ADK install is then an honest skip of the
-live smoke rather than an import error.
+only `agents.adk` reaches for it, and it does so inside the functions that need
+it. A missing ADK install is then an honest skip of the live smoke rather than
+an import error.
 
 Entry points:
     `agents.orchestrator.Orchestrator` — drives a run through the state machine.
-    `agents.orchestrator.build_fleet` — constructs all six specialists.
-    `agents.runtime.run_turn` — runs one agent turn against pinned Vertex Gemini.
+    `agents.orchestrator.build_fleet` — constructs the four reasoning agents.
+    `agents.adk.run_turn` — runs one agent turn against pinned Vertex Gemini.
+    `agents.adk.build_agent` — the only LlmAgent constructor.
     `agents.config` — model pin, prompt versions and every tool allowlist.
 """

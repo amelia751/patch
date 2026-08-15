@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 
-from agents.config import AgentId, ToolName
+from agents.config import AgentId, ToolName, tool_allowlist
 from agents.guardrails import build_tool_guardrails
 from agents.trace import ToolStatus, ToolTrace, digest
 
@@ -35,14 +35,11 @@ def test_a_tool_outside_the_allowlist_is_refused_without_running(trace):
 
 
 def test_a_denial_names_only_the_tools_the_agent_actually_has(trace):
-    before, _ = build_tool_guardrails(AgentId.PR, trace)
+    before, _ = build_tool_guardrails(AgentId.PATCH, trace)
     result = before(tool=FakeTool(str(ToolName.SCAN_REPOSITORY)), args={})
 
-    assert set(result["permitted_tools"]) == {
-        str(ToolName.RENDER_PULL_REQUEST_BODY),
-        str(ToolName.OPEN_PULL_REQUEST),
-        str(ToolName.RECORD_HUMAN_REQUIRED),
-    }
+    assert set(result["permitted_tools"]) == {str(name) for name in tool_allowlist(AgentId.PATCH)}
+    assert str(ToolName.SCAN_REPOSITORY) not in result["permitted_tools"]
 
 
 def test_an_unknown_tool_is_refused(trace):

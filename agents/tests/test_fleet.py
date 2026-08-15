@@ -8,9 +8,15 @@ outside the pinned generation.
 
 import pytest
 
-from agents.config import REASONING_MODEL, SPECIALISTS, AgentId, prompt_version, tool_allowlist
-from agents.runtime import adk_unavailable_reason
-from agents.specialist import PREAMBLE
+from agents.adk import PREAMBLE, adk_unavailable_reason
+from agents.config import (
+    DETERMINISTIC_STAGES,
+    REASONING_MODEL,
+    SPECIALISTS,
+    AgentId,
+    prompt_version,
+    tool_allowlist,
+)
 
 pytestmark = pytest.mark.skipif(
     adk_unavailable_reason() is not None,
@@ -25,8 +31,15 @@ def fleet(run_context, trace):
     return build_fleet(run_context, trace)
 
 
-def test_all_six_specialists_construct(fleet):
+def test_the_four_reasoning_agents_construct(fleet):
     assert set(fleet) == set(SPECIALISTS)
+    assert AgentId.POLICY not in fleet
+    assert AgentId.PR not in fleet
+
+
+def test_policy_and_pr_are_stage_names_not_llm_agents():
+    assert DETERMINISTIC_STAGES == (AgentId.POLICY, AgentId.PR)
+    assert set(DETERMINISTIC_STAGES).isdisjoint(SPECIALISTS)
 
 
 def test_every_agent_runs_the_pinned_model(fleet):
@@ -77,4 +90,5 @@ def test_the_orchestrator_starts_in_received(run_context, trace):
 
     orchestrator = Orchestrator(run_context, trace)
     assert orchestrator.state is RunState.RECEIVED
-    assert orchestrator.agent(AgentId.PR).name == "pr"
+    assert orchestrator.agent(AgentId.PATCH).name == "patch"
+    assert AgentId.PR not in orchestrator.fleet

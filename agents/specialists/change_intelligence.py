@@ -11,9 +11,9 @@ and refusing when the two disagree.
 
 from typing import Any, Final
 
+from agents.adk import build_agent
 from agents.config import AgentId
 from agents.context import RunContext
-from agents.specialist import build_specialist
 from agents.trace import ToolTrace
 
 AGENT: Final[AgentId] = AgentId.CHANGE_INTELLIGENCE
@@ -48,9 +48,9 @@ Finish with one short sentence stating what you recorded or why you stopped.
 """
 
 
-def build_change_intelligence_agent(context: RunContext, trace: ToolTrace) -> Any:
+def build(context: RunContext, trace: ToolTrace) -> Any:
     """Build the Change Intelligence ADK agent."""
-    return build_specialist(
+    return build_agent(
         AGENT,
         description=DESCRIPTION,
         instruction=INSTRUCTION,
@@ -59,4 +59,4 @@ def build_change_intelligence_agent(context: RunContext, trace: ToolTrace) -> An
     )
 
 
-__all__ = ["AGENT", "DESCRIPTION", "INSTRUCTION", "build_change_intelligence_agent"]
+__all__ = ["AGENT", "DESCRIPTION", "INSTRUCTION", "build"]

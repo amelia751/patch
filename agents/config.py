@@ -22,14 +22,14 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.1.0"
+FLEET_VERSION: Final[str] = "1.2.0"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
 
 
 class AgentId(StrEnum):
-    """The orchestrator plus the six specialists of roadmap §8."""
+    """The orchestrator, four reasoning agents, and two Python stage names."""
 
     ORCHESTRATOR = "orchestrator"
     CHANGE_INTELLIGENCE = "change_intelligence"
@@ -40,14 +40,15 @@ class AgentId(StrEnum):
     PR = "pr"
 
 
+# Roadmap §8: four LlmAgents. POLICY and PR stay as stage / trace names.
 SPECIALISTS: Final[tuple[AgentId, ...]] = (
     AgentId.CHANGE_INTELLIGENCE,
     AgentId.IMPACT,
-    AgentId.POLICY,
     AgentId.PATCH,
     AgentId.VERIFICATION,
-    AgentId.PR,
 )
+
+DETERMINISTIC_STAGES: Final[tuple[AgentId, ...]] = (AgentId.POLICY, AgentId.PR)
 
 
 class ToolName(StrEnum):
@@ -95,8 +96,8 @@ class ToolName(StrEnum):
     RECORD_HUMAN_REQUIRED = "record_human_required"
 
 
-# Granted to all seven agents. Roadmap §8 and CLAUDE.md constraint 10: an agent
-# that cannot answer says so in structured form, and that path is always open.
+# Granted to every AgentId, including the two Python stages. Roadmap §8 and
+# CLAUDE.md constraint 10: stopping is always an available structured action.
 SHARED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.RECORD_HUMAN_REQUIRED})
 
 # Agent -> the tools it may call, beyond `SHARED_TOOLS`. The orchestrator holds
@@ -119,13 +120,7 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.RECORD_IMPACT_REPORT,
         }
     ),
-    AgentId.POLICY: frozenset(
-        {
-            ToolName.EVALUATE_POLICY,
-            ToolName.LIST_FORBIDDEN_GLOBS,
-            ToolName.RECORD_POLICY_DECISION,
-        }
-    ),
+    AgentId.POLICY: frozenset(),
     AgentId.PATCH: frozenset(
         {
             ToolName.LOAD_MIGRATION_SKILL,
@@ -143,12 +138,7 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.RECORD_VERIFICATION_REPORT,
         }
     ),
-    AgentId.PR: frozenset(
-        {
-            ToolName.RENDER_PULL_REQUEST_BODY,
-            ToolName.OPEN_PULL_REQUEST,
-        }
-    ),
+    AgentId.PR: frozenset(),
 }
 
 TOOL_ALLOWLISTS: Final[MappingProxyType[AgentId, frozenset[ToolName]]] = MappingProxyType(

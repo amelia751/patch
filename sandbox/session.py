@@ -10,10 +10,8 @@ workspace (Phase 1) and `sandbox.gke.session.GkeSession` over a GKE Agent
 Sandbox claim. Because the command contract is identical, swapping transports
 does not rewrite the agents that drive it.
 
-`ExecutionResult` duplicates the four fields of `agents.environment
-.ExecutionResult` rather than importing them: the sandbox tree must not depend
-on the agent tree, and the dataclass is small enough that a copy is cheaper than
-a cycle.
+`ExecutionResult` is defined here so the sandbox tree does not import the
+agent tree. Agents call this module; this module never calls agents.
 """
 
 from __future__ import annotations
@@ -150,6 +148,21 @@ class LocalSession:
         self._workspace = Path(root) / run_id / "workspace"
         self._workspace.mkdir(parents=True, exist_ok=True)
         self._closed = False
+
+    @classmethod
+    def attach(cls, workspace: Path, run_id: str) -> LocalSession:
+        """Use an existing directory as the workspace without nesting or teardown.
+
+        Unit tests and host-tree scans pass a directory they already own.
+        `close()` is a no-op so the caller keeps the tree.
+        """
+        session = cls.__new__(cls)
+        session._run_id = run_id
+        session._retain = True
+        session._workspace = Path(workspace)
+        session._workspace.mkdir(parents=True, exist_ok=True)
+        session._closed = False
+        return session
 
     @property
     def working_dir(self) -> Path:

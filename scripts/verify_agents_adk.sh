@@ -4,7 +4,7 @@
 # Three halves, and only the last one may be skipped:
 #   compliance — Google ADK imports, and no other agent framework appears in
 #                any runtime module of this tree. Never skipped.
-#   offline    — the six specialists construct, every allowlist resolves to an
+#   offline    — the four reasoning agents construct, every allowlist resolves to an
 #                implemented tool, the guardrails refuse an out-of-allowlist
 #                call, and the tools refuse to commit anything the deterministic
 #                layer does not support. Never skipped.
@@ -68,8 +68,8 @@ fi
 
 step "ADK imports and the pinned model"
 "${RUN[@]}" python -c '
+from agents.adk import adk_unavailable_reason, adk_version
 from agents.config import FLEET_NAME, FLEET_VERSION, REASONING_MODEL, SPECIALISTS
-from agents.runtime import adk_unavailable_reason, adk_version
 
 reason = adk_unavailable_reason()
 assert reason is None, f"Google ADK is not importable: {reason}"
@@ -77,7 +77,7 @@ print("google-adk:    ", adk_version())
 print("fleet:         ", FLEET_NAME, "v" + FLEET_VERSION)
 print("specialists:   ", ", ".join(str(agent) for agent in SPECIALISTS))
 print("reasoning pin: ", REASONING_MODEL)
-assert len(SPECIALISTS) == 6, "roadmap section 8 names six specialists"
+assert len(SPECIALISTS) == 4, "roadmap section 8 names four reasoning agents"
 '
 
 step "no other agent framework in the runtime path"

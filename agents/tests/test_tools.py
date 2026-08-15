@@ -12,16 +12,19 @@ import pytest
 from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.config import AgentId
 from agents.context import PathOutsideRootError, RunContext, resolve_within
-from agents.environment import build_workspace_environment
-from agents.tools.migration_skill import build_migration_skill_tools
-from agents.tools.policy_gate import build_policy_tools
-from agents.tools.provider_feed import build_provider_feed_tools
-from agents.tools.pull_request import build_pull_request_tools
-from agents.tools.repo_inventory import build_repo_inventory_tools
+from agents.tools.change import build_provider_feed_tools
+from agents.tools.impact import build_repo_inventory_tools
+from agents.tools.patch import (
+    build_migration_skill_tools,
+    build_workspace_tools,
+    paths_in_unified_diff,
+)
+from agents.tools.policy import build_policy_tools
+from agents.tools.pr import build_pull_request_tools
 from agents.tools.results import is_refusal
 from agents.tools.shared import build_shared_tools
-from agents.tools.workspace import build_workspace_tools, paths_in_unified_diff
 from packages.schemas.change_manifest import ChangeManifest
+from sandbox.session import build_workspace_environment
 
 DEMO_CHANGE_ID = "imagen4-retirement-2026-08-17"
 RETIRED = "imagen-4.0-generate-001"
@@ -215,6 +218,24 @@ def test_impact_without_a_workspace_refuses(run_context):
     result = tools["scan_repository"]([RETIRED])
     assert is_refusal(result)
     assert result["reason_code"] == "stage_not_ready"
+
+
+def test_impact_scans_through_a_sandbox_session(tmp_path, repo_root):
+    from sandbox.session import LocalSession
+
+    session = LocalSession(tmp_path, "scan-via-session")
+    (session.working_dir / "generate.py").write_text(f'MODEL = "{RETIRED}"\n', encoding="utf-8")
+    context = RunContext(
+        run_id="run-impact-sandbox",
+        repo_root=repo_root,
+        feed_dir=repo_root / "demo" / "fixtures",
+        sandbox=session,
+    )
+    tools = {f.__name__: f for f in build_repo_inventory_tools(context)}
+    scan = tools["scan_repository"]([RETIRED])
+    assert scan["status"] == "ok"
+    assert scan["total_hits"] == 1
+    assert scan["hits"][0]["path"] == "generate.py"
 
 
 def test_policy_cannot_be_recorded_before_it_is_evaluated(run_context):

@@ -36,6 +36,13 @@ if str(REPO_ROOT) not in sys.path:
     # when it is invoked by path. Every other entry point is a module.
     sys.path.insert(0, str(REPO_ROOT))
 
+from agents.adk import (  # noqa: E402
+    REASONING_MODEL,
+    adk_unavailable_reason,
+    adk_version,
+    configure_vertex_environment,
+    vertex_unavailable_reason,
+)
 from agents.context import RunContext  # noqa: E402
 from agents.orchestrator import (  # noqa: E402
     DETERMINISTIC_ENV_VAR,
@@ -43,13 +50,6 @@ from agents.orchestrator import (  # noqa: E402
     Orchestrator,
     VerticalSlice,
     binding_value,
-)
-from agents.runtime import (  # noqa: E402
-    REASONING_MODEL,
-    adk_unavailable_reason,
-    adk_version,
-    configure_vertex_environment,
-    vertex_unavailable_reason,
 )
 from agents.trace import ToolTrace  # noqa: E402
 from packages.providers.dotenv import apply_defaults, read_env_files  # noqa: E402

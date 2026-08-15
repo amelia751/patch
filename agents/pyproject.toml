@@ -1,7 +1,7 @@
 [project]
 name = "patchapi-agents"
 version = "0.1.0"
-description = "PatchAPI Google ADK orchestrator and the six specialist agents."
+description = "PatchAPI Google ADK orchestrator and the four reasoning agents."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     # Google ADK is the only agent framework PatchAPI is permitted to use at

@@ -12,9 +12,9 @@ runtime call to it.
 
 from typing import Any, Final
 
+from agents.adk import build_agent
 from agents.config import AgentId
 from agents.context import RunContext
-from agents.specialist import build_specialist
 from agents.trace import ToolTrace
 
 AGENT: Final[AgentId] = AgentId.IMPACT
@@ -48,9 +48,9 @@ answer, not a failure.
 """
 
 
-def build_impact_agent(context: RunContext, trace: ToolTrace) -> Any:
+def build(context: RunContext, trace: ToolTrace) -> Any:
     """Build the Impact ADK agent."""
-    return build_specialist(
+    return build_agent(
         AGENT,
         description=DESCRIPTION,
         instruction=INSTRUCTION,
@@ -59,4 +59,4 @@ def build_impact_agent(context: RunContext, trace: ToolTrace) -> Any:
     )
 
 
-__all__ = ["AGENT", "DESCRIPTION", "INSTRUCTION", "build_impact_agent"]
+__all__ = ["AGENT", "DESCRIPTION", "INSTRUCTION", "build"]

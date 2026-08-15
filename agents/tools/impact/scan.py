@@ -20,7 +20,14 @@ from agents.config import AgentId
 from agents.context import RunContext
 from agents.tools.results import ReasonCode, ok, refusal
 from packages.repo_scan.classify import classify_path
-from packages.repo_scan.scan import IdentifierHit, scan_tree
+from packages.repo_scan.config import SCANNER_VERSION, SKIP_DIRECTORIES
+from packages.repo_scan.scan import (
+    IdentifierHit,
+    ScanResult,
+    scan_text,
+    scan_tree,
+    should_scan_file,
+)
 from packages.schemas.impact_report import ImpactFinding, ImpactReport
 
 CONTRACT: Final[str] = "impact_report"
@@ -29,6 +36,23 @@ AGENT: Final[AgentId] = AgentId.IMPACT
 # Hits handed back to the model in one call. A repository with thousands of
 # matches is a policy question, not something to page into a prompt.
 MAX_HITS_RETURNED: Final[int] = 200
+
+# Walk the sandbox workspace from inside it. A GKE session has no local Path
+# the host can `os.walk`; listing has to cross the exec boundary. The skip
+# set is passed as argv so this program stays a constant.
+_WALK_PROGRAM: Final[str] = (
+    "import os,sys\n"
+    "from pathlib import Path\n"
+    "root=Path(sys.argv[1])\n"
+    "skip=set(sys.argv[2].split(',')) if sys.argv[2] else set()\n"
+    "if not root.is_dir():\n"
+    "    sys.exit(3)\n"
+    "for dirpath, dirnames, filenames in os.walk(root):\n"
+    "    dirnames[:]=sorted(n for n in dirnames if n not in skip)\n"
+    "    for name in sorted(filenames):\n"
+    "        sys.stdout.write(Path(dirpath,name).relative_to(root).as_posix()+'\\n')\n"
+)
+_WALK_TIMEOUT_SECONDS: Final[float] = 60.0
 
 
 def _finding(hit: IdentifierHit) -> ImpactFinding:
@@ -51,6 +75,53 @@ def build_repo_inventory_tools(context: RunContext) -> list[Callable[..., Any]]:
     def _workspace() -> Path | None:
         return context.workspace_root
 
+    def _scan_sandbox(identifiers: list[str]) -> ScanResult | dict[str, Any]:
+        """Walk the session workspace the same way `scan_tree` walks a Path.
+
+        GKE Agent Sandbox has no host-visible checkout. The walk and the file
+        reads go through exec so Impact still grades the isolated copy.
+        """
+        session = context.sandbox
+        if session is None:
+            return refusal(
+                ReasonCode.STAGE_NOT_READY,
+                "this run has no repository workspace; nothing can be scanned",
+            )
+        listed = session.execute(
+            [
+                "python3",
+                "-c",
+                _WALK_PROGRAM,
+                str(session.working_dir),
+                ",".join(sorted(SKIP_DIRECTORIES)),
+            ],
+            _WALK_TIMEOUT_SECONDS,
+        )
+        if listed.exit_code != 0:
+            return refusal(
+                ReasonCode.STAGE_NOT_READY,
+                "the sandbox workspace could not be listed for scanning",
+                detail=listed.stderr[-400:],
+            )
+        hits: list[IdentifierHit] = []
+        files_scanned = 0
+        for relative in listed.stdout.splitlines():
+            if not relative or not should_scan_file(Path(relative)):
+                continue
+            try:
+                text = session.read_file(relative)
+            except (OSError, UnicodeDecodeError, RuntimeError):
+                continue
+            files_scanned += 1
+            hits.extend(scan_text(text, identifiers, path=relative))
+        return ScanResult(
+            scanner_version=SCANNER_VERSION,
+            root=str(session.working_dir),
+            identifiers=tuple(identifiers),
+            hits=tuple(hits),
+            files_scanned=files_scanned,
+        )
+
     def scan_repository(identifiers: list[str]) -> dict[str, Any]:
         """Find every literal occurrence of `identifiers` in the checkout.
 
@@ -58,20 +129,28 @@ def build_repo_inventory_tools(context: RunContext) -> list[Callable[..., Any]]:
         excerpt. This is the authoritative inventory: record_impact_report
         commits these findings, so scan before you report.
         """
-        root = _workspace()
-        if root is None:
-            return refusal(
-                ReasonCode.STAGE_NOT_READY,
-                "this run has no repository workspace; nothing can be scanned",
-            )
         cleaned = [value.strip() for value in identifiers if value.strip()]
         if not cleaned:
             return refusal(
                 ReasonCode.INVALID_CONTRACT,
                 "scan_repository needs at least one non-empty identifier",
             )
-
-        result = scan_tree(root, cleaned)
+        session = context.sandbox
+        root = _workspace()
+        if session is not None and isinstance(session.working_dir, Path):
+            result = scan_tree(Path(session.working_dir), cleaned)
+        elif session is not None:
+            scanned_or_refused = _scan_sandbox(cleaned)
+            if isinstance(scanned_or_refused, dict):
+                return scanned_or_refused
+            result = scanned_or_refused
+        elif root is not None:
+            result = scan_tree(root, cleaned)
+        else:
+            return refusal(
+                ReasonCode.STAGE_NOT_READY,
+                "this run has no repository workspace; nothing can be scanned",
+            )
         scanned["hits"] = list(result.hits)
         hits = [
             {

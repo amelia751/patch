@@ -4,7 +4,7 @@ Roadmap §12.2 keeps the Patch agent generic and puts provider knowledge in a
 skill package. `load_migration_skill` reads that package from disk; it does not
 fetch it, and it does not reach a provider.
 
-Workspace edits and allowlisted commands live in `agents.tools.workspace`.
+Workspace edits and allowlisted commands live in `agents.tools.patch.workspace`.
 This module does not write a file, allocate a sandbox, or open a pull request.
 """
 

@@ -2,7 +2,7 @@
 
     uv run --all-packages python scripts/smoke_adk_orchestrator.py
 
-What it does, in order: construct all six specialists, then run one real Change
+What it does, in order: construct the four reasoning agents, then run one real Change
 Intelligence turn against the pinned Google deprecation fixture on Vertex Gemini,
 then print the tool trace and validate what the agent recorded.
 
@@ -29,6 +29,12 @@ if str(REPO_ROOT) not in sys.path:
     # when it is invoked by path. Every other entry point is a module.
     sys.path.insert(0, str(REPO_ROOT))
 
+from agents.adk import (  # noqa: E402
+    adk_unavailable_reason,
+    adk_version,
+    configure_vertex_environment,
+    vertex_unavailable_reason,
+)
 from agents.config import (  # noqa: E402
     FLEET_NAME,
     FLEET_VERSION,
@@ -38,12 +44,6 @@ from agents.config import (  # noqa: E402
     tool_allowlist,
 )
 from agents.context import RunContext  # noqa: E402
-from agents.runtime import (  # noqa: E402
-    adk_unavailable_reason,
-    adk_version,
-    configure_vertex_environment,
-    vertex_unavailable_reason,
-)
 from agents.trace import ToolTrace  # noqa: E402
 from packages.providers.dotenv import apply_defaults, read_env_files  # noqa: E402
 from packages.providers.google.config import (  # noqa: E402

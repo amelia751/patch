@@ -1,8 +1,8 @@
 # Agent contracts
 
-**Status:** Scaffold (2026-08-11) — summarizes the six specialist agents and
-their typed I/O. The Pydantic models under `packages/schemas/` are authoritative
-once they land; the canonical prose specification is
+**Status:** Four reasoning agents and two Python stages (Policy, PR). The
+Pydantic models under `packages/schemas/` are authoritative; the canonical
+prose specification is
 [`roadmap.md` §8](../roadmap.md#8-agent-responsibilities-and-contracts).
 
 ---
@@ -57,19 +57,20 @@ as one.
 `findings[]` (`identifier`, `file`, `kind`), `migration_character`,
 `required_checks[]`.
 
-## 3. Policy & Risk Agent
+## 3. Policy (Python, not an LlmAgent)
 
 | | |
 |---|---|
 | **In** | `ChangeManifest`, `ImpactReport`, deterministic enterprise policy, repository criticality, Memory Bank history |
-| **Out** | policy decision |
+| **Out** | `PolicyDecision` |
 
+The orchestrator calls `packages.policy`. A model cannot loosen a deny.
 Emits risk tier, allowed actions, forbidden actions, mandatory verification, and
 whether human review is required: `risk`, `auto_patch`, `auto_pr`, `auto_merge`
 (**always false**), `forbidden_globs[]`, `required_checks[]`, `reason`.
 
-The agent's verdict is advisory on top of deterministic rules. The enforcement
-hierarchy in [`security.md`](./security.md) is what actually stops a bad action.
+The enforcement hierarchy in [`security.md`](./security.md) is what actually
+stops a bad action.
 
 ## 4. Patch Agent
 
@@ -102,16 +103,16 @@ untouched; is the evidence sufficient for a PR.
 
 Unavailable live verification is `INCONCLUSIVE`, never `PASS`.
 
-## 6. PR Agent
+## 6. PR publisher (Python, not an LlmAgent)
 
 | | |
 |---|---|
-| **In** | a **verified** patch only |
+| **In** | a **verified** patch only (`VerificationReport.verdict == PASS`) |
 | **Out** | branch, commit, pull request, evidence summary |
 
-Intentionally boring. It may not merge, bypass checks, alter branch protection,
-or change CI configuration. It reaches GitHub only through the narrow tool
-service, which owns the App credentials.
+The orchestrator calls `github_tools` after PASS. It may not merge, bypass
+checks, alter branch protection, or change CI configuration. It reaches GitHub
+only through the narrow tool service, which owns the App credentials.
 
 The PR body template — why, affected usage, migration, verification checklist,
 risk, evidence, and an explicit automation-boundary statement — is in

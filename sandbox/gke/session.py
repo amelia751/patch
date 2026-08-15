@@ -68,6 +68,15 @@ _MAX_CLAIM_NAME_LENGTH = 63
 # sh -c '…'` would put a caller-controlled string in front of a shell inside the
 # sandbox, and the whole point of this session is that only argv crosses the
 # boundary. python3 is present in the runner image and asserted by the verifier.
+# kubectl exec has no --workdir. LocalSession runs with cwd=workspace; without
+# this wrapper `python3 generate.py` starts in the container root and exits 2.
+_CHDIR_EXEC_PROGRAM = (
+    "import os,sys\n"
+    "root=sys.argv[1]\n"
+    "if os.path.isdir(root):\n"
+    "    os.chdir(root)\n"
+    "os.execvp(sys.argv[2], sys.argv[2:])\n"
+)
 _READ_PROGRAM = "import pathlib,sys; sys.stdout.write(pathlib.Path(sys.argv[1]).read_text())"
 _WRITE_PROGRAM = (
     "import pathlib,sys; p=pathlib.Path(sys.argv[1]); "
@@ -325,7 +334,18 @@ class GkeSession:
             raise ValueError("argv must not be empty")
         pod = self._require_pod()
         completed = self._kubectl(
-            ["exec", pod, "-c", _RUNNER_CONTAINER, "--", *argv],
+            [
+                "exec",
+                pod,
+                "-c",
+                _RUNNER_CONTAINER,
+                "--",
+                "python3",
+                "-c",
+                _CHDIR_EXEC_PROGRAM,
+                str(_POD_WORKSPACE),
+                *argv,
+            ],
             timeout=timeout_seconds,
         )
         if completed is _TIMED_OUT:

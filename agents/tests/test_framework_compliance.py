@@ -63,6 +63,15 @@ def test_the_tree_actually_uses_adk():
     assert "google.adk" in sources
 
 
+def test_only_adk_py_names_google_adk():
+    """Specialists are identity + instruction. ADK is imported in adk.py only."""
+    for module in _runtime_modules():
+        if module.name == "adk.py":
+            continue
+        source = module.read_text(encoding="utf-8")
+        assert "google.adk" not in source, f"{module} mentions google.adk"
+
+
 def test_the_experimental_environment_toolset_is_not_imported():
     """The fleet exposes read_file / list_dir / apply_patch / run_command.
 

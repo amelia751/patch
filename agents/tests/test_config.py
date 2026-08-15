@@ -38,9 +38,17 @@ def test_every_agent_has_an_allowlist_and_a_prompt_version():
         assert prompt_version(agent)
 
 
-def test_the_six_specialists_are_the_roadmap_six():
-    assert set(SPECIALISTS) == set(AgentId) - {AgentId.ORCHESTRATOR}
-    assert len(SPECIALISTS) == 6
+def test_the_four_specialists_are_the_roadmap_reasoning_agents():
+    from agents.config import DETERMINISTIC_STAGES
+
+    assert set(SPECIALISTS) == {
+        AgentId.CHANGE_INTELLIGENCE,
+        AgentId.IMPACT,
+        AgentId.PATCH,
+        AgentId.VERIFICATION,
+    }
+    assert set(DETERMINISTIC_STAGES) == {AgentId.POLICY, AgentId.PR}
+    assert set(SPECIALISTS) | set(DETERMINISTIC_STAGES) | {AgentId.ORCHESTRATOR} == set(AgentId)
 
 
 def test_every_agent_can_stop_for_a_human():

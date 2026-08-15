@@ -25,8 +25,8 @@ from agents.config import AgentId, ToolName, tool_allowlist  # noqa: E402
 from agents.context import RunContext  # noqa: E402
 from agents.guardrails import build_tool_guardrails  # noqa: E402
 from agents.orchestrator import GEMINI20_SLICE, Orchestrator, binding_value  # noqa: E402
+from agents.tools.patch.workspace import build_workspace_tools  # noqa: E402
 from agents.tools.results import is_refusal  # noqa: E402
-from agents.tools.workspace import build_workspace_tools  # noqa: E402
 from agents.trace import ToolStatus, ToolTrace  # noqa: E402
 from packages.schemas.run_state import RunState  # noqa: E402
 from sandbox.session import LocalSession  # noqa: E402
