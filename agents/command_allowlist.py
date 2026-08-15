@@ -50,6 +50,14 @@ _EXACT: Final[tuple[AllowedCommand, ...]] = (
 )
 
 
+# The only interpreter that may be handed a script. `python` is absent
+# deliberately: the exact `python --version` probe below is a toolchain check,
+# and a second name that can execute a file doubles the shape to reason about.
+_SCRIPT_INTERPRETER: Final[str] = "python3"
+
+_PYTHON_SUFFIX: Final[str] = ".py"
+
+
 class CommandNotAllowedError(ValueError):
     """The proposed argv is not on the allowlist."""
 
@@ -62,6 +70,19 @@ def _safe_relative(path: str) -> str:
         return normalize_path(path)
     except ValueError as exc:
         raise CommandNotAllowedError(str(exc)) from exc
+
+
+def _safe_python_file(path: str) -> str:
+    """Return `path` if it is a relative `.py` file inside the workspace.
+
+    The suffix check is what separates a script argument from a module or an
+    interpreter flag: `-c`, `-m`, and `http.server` all fail here, so the only
+    thing `python3` can be pointed at is a file the workspace already contains.
+    """
+    cleaned = _safe_relative(path)
+    if not cleaned.endswith(_PYTHON_SUFFIX):
+        raise CommandNotAllowedError(f"{path!r} is not a {_PYTHON_SUFFIX} file in the workspace")
+    return cleaned
 
 
 def match_command(argv: list[str]) -> AllowedCommand:
@@ -95,6 +116,29 @@ def match_command(argv: list[str]) -> AllowedCommand:
             argv=tuple(argv),
             timeout_seconds=300,
             reason="run one package's tests in the workspace",
+        )
+
+    # python3 <script.py>
+    if len(argv) == 2 and argv[0] == _SCRIPT_INTERPRETER:
+        _safe_python_file(argv[1])
+        return AllowedCommand(
+            argv=tuple(argv),
+            timeout_seconds=120,
+            reason="run one Python entry point in the workspace",
+        )
+
+    # python3 -m unittest <test.py>
+    if (
+        len(argv) == 4
+        and argv[0] == _SCRIPT_INTERPRETER
+        and argv[1] == "-m"
+        and argv[2] == "unittest"
+    ):
+        _safe_python_file(argv[3])
+        return AllowedCommand(
+            argv=tuple(argv),
+            timeout_seconds=300,
+            reason="run one unittest module in the workspace",
         )
 
     raise CommandNotAllowedError(f"command {argv!r} is not on the Patch agent allowlist")

@@ -55,6 +55,15 @@ class RunContext:
     Roots default to `None`, and a tool bound to a missing root returns a
     structured refusal rather than falling back to the process working
     directory. A stage that has no workspace yet has no workspace.
+
+    `sandbox` is the `sandbox.session.SandboxSession` the run executes through
+    when one has been opened. It is typed `Any` rather than imported: the agent
+    tree must stay constructible without the sandbox tree, and a session is a
+    duck-typed transport (local temp workspace or GKE Agent Sandbox claim), not
+    a class the tools should be coupled to. When it is set, the workspace tools
+    read, edit and execute through it instead of touching the filesystem
+    directly; `workspace_root` still names the local tree a `LocalSession`
+    exposes, so containment is checked against a real path wherever one exists.
     """
 
     run_id: str
@@ -62,6 +71,7 @@ class RunContext:
     feed_dir: Path
     workspace_root: Path | None = None
     evidence_root: Path | None = None
+    sandbox: Any | None = None
     outputs: dict[str, RecordedOutput] = field(default_factory=dict)
     human_required: list[dict[str, str]] = field(default_factory=list)
 

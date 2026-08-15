@@ -19,3 +19,12 @@ spec:
     # Releasing the claim destroys the sandbox. Evidence is collected before the
     # delete, so nothing is kept alive to be inspected later (roadmap §13.1).
     shutdownPolicy: Delete
+    # `shutdownTime` (RFC3339 UTC absolute expiry) is substituted for the marker
+    # below at claim time by sandbox/gke/session.py, as `now + max lifetime`. It
+    # is the only hard lifetime bound the CRD offers — there is no idle timeout
+    # and no ttlSecondsAfterFinished on this API — so without it a crashed
+    # orchestrator leaves a billed Running pod. A committed absolute timestamp
+    # would be stale on first use, which is why the marker is a comment: a
+    # renderer that fails to substitute produces a claim without expiry, and the
+    # session refuses to apply one.
+    # PATCHAPI_SANDBOX_SHUTDOWN_TIME

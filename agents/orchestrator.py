@@ -9,10 +9,19 @@ only sequence that can happen.
 
 What a stage produced is read from `RunContext`, never from the model's closing
 sentence. A stage whose agent recorded nothing is a failed stage even if the
-agent said it succeeded.
+agent said it succeeded. The Patch stage goes further: the orchestrator re-reads
+the workspace and re-runs the checks itself, so "the migration landed" is a fact
+about the files on disk and an exit code, never a claim in a final message.
 """
 
-from dataclasses import dataclass
+import difflib
+import json
+import os
+import re
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from time import perf_counter
 from typing import Any, Final
 
 from agents.change_intelligence import build_change_intelligence_agent
@@ -23,9 +32,15 @@ from agents.patch import build_patch_agent
 from agents.policy import build_policy_agent
 from agents.pr import build_pr_agent
 from agents.runtime import TurnResult, run_turn
-from agents.trace import ToolTrace
+from agents.tools import build_tool_index, is_refusal
+from agents.tools.migration_skill import SKILLS_DIRNAME
+from agents.trace import ToolStatus, ToolTrace
 from agents.verification import build_verification_agent
-from packages.schemas.run_state import RunState, assert_transition
+from packages.providers.google.normalize import manifest_from_feed_file
+from packages.schemas.change_manifest import ChangeManifest
+from packages.schemas.impact_report import ImpactReport
+from packages.schemas.policy_decision import PolicyDecision
+from packages.schemas.run_state import RunState, assert_transition, is_terminal
 
 # Agent -> the contract a completed stage must have committed.
 STAGE_CONTRACTS: Final[dict[AgentId, str]] = {
@@ -45,6 +60,66 @@ _BUILDERS: Final[dict[AgentId, Any]] = {
     AgentId.PR: build_pr_agent,
 }
 
+# Set to "1" to run the slice with no model in the loop at all: the migration is
+# the deterministic rewrite of the pinned binding, and every judgement field is
+# derived from the manifest and the scanner. It exists so the isolation and
+# state-machine halves of the slice stay testable and demonstrable when Vertex
+# is unreachable — never as a fallback the live path silently degrades into.
+DETERMINISTIC_ENV_VAR: Final[str] = "PATCHAPI_PATCH_LOOP_DETERMINISTIC"
+
+# A module-level assignment of a quoted string, which is the shape the pinned
+# slice's model binding takes. Deliberately not a general Python parse: the
+# orchestrator's post-patch check has to be something a reviewer can read.
+_BINDING_ASSIGNMENT: Final[re.Pattern[str]] = re.compile(
+    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<quote>['\"])(?P<value>[^'\"]*)(?P=quote)",
+    re.MULTILINE,
+)
+
+
+def binding_value(source: str, name: str) -> str | None:
+    """The string `name` is assigned to at module level in `source`, or `None`.
+
+    The check a Patch turn is graded on. It reads the binding rather than
+    searching the whole file because a migration target legitimately keeps the
+    retired identifiers around — `demo/gemini20-hello` lists them in the set it
+    checks against — and a substring search would call a correct patch a failure.
+    """
+    for match in _BINDING_ASSIGNMENT.finditer(source):
+        if match.group("name") == name:
+            return match.group("value")
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class VerticalSlice:
+    """The pinned Phase 1 target: one fixture, one workspace, two checks.
+
+    Everything provider- or repository-specific about the slice is here rather
+    than inlined in a stage, so a second slice is a second constant.
+    """
+
+    change_id: str
+    repo: str
+    skill_id: str
+    entrypoint: str
+    binding: str
+    build_command: str
+    test_command: str
+
+
+# Roadmap Phase 1: the smallest target whose exit code is decided entirely by
+# the model identifier in its source, so a green run proves the patch landed
+# rather than proving a provider was reachable. Fixture: demo/gemini20-hello.
+GEMINI20_SLICE: Final[VerticalSlice] = VerticalSlice(
+    change_id="gemini20-flash-shutdown-2026-06-01",
+    repo="patchapi/gemini20-hello",
+    skill_id="google_gemini20_migration",
+    entrypoint="generate.py",
+    binding="MODEL",
+    build_command="python3 generate.py",
+    test_command="python3 -m unittest test_generate.py",
+)
+
 
 def build_fleet(context: RunContext, trace: ToolTrace) -> dict[AgentId, Any]:
     """Construct all six specialists against one run context and trace.
@@ -62,9 +137,10 @@ class StageResult:
 
     agent: AgentId
     state: RunState
-    turn: TurnResult
+    turn: TurnResult | None
     output: Any | None
     human_required: tuple[dict[str, str], ...]
+    detail: str = ""
 
     @property
     def completed(self) -> bool:
@@ -72,19 +148,37 @@ class StageResult:
         return self.output is not None
 
 
+@dataclass(slots=True)
+class SliceResult:
+    """The end state of a vertical-slice run and the stages that produced it."""
+
+    state: RunState
+    detail: str
+    stages: list[StageResult] = field(default_factory=list)
+
+    @property
+    def reached_testing(self) -> bool:
+        """Whether the patch built and its tests ran green in the workspace."""
+        return self.state is RunState.TESTING
+
+
 class Orchestrator:
     """Drives one remediation run through the deterministic state machine.
 
-    Only the stages whose inputs exist are implemented. Later stages need a
-    sandbox workspace and sandbox evidence, and an orchestrator that pretended
-    to run them would be reporting outcomes nothing produced.
+    The fleet is constructed on first use rather than in `__init__`, so a
+    deterministic slice — the path that exists for when Vertex is unreachable —
+    does not require google-adk to be importable.
     """
 
     def __init__(self, context: RunContext, trace: ToolTrace) -> None:
         self._context = context
         self._trace = trace
         self._state = RunState.RECEIVED
-        self._agents = build_fleet(context, trace)
+        self._agents: dict[AgentId, Any] | None = None
+        # One index, so the impact scan and the report that commits its findings
+        # share a closure, and so an orchestrator-driven check runs exactly the
+        # tool an agent would have run.
+        self._tools = build_tool_index(context, AgentId.ORCHESTRATOR)
 
     @property
     def state(self) -> RunState:
@@ -101,15 +195,61 @@ class Orchestrator:
     @property
     def fleet(self) -> dict[AgentId, Any]:
         """The constructed specialists, keyed by identity."""
+        if self._agents is None:
+            self._agents = build_fleet(self._context, self._trace)
         return dict(self._agents)
 
     def agent(self, agent: AgentId) -> Any:
         """The constructed ADK agent for `agent`."""
+        if self._agents is None:
+            self._agents = build_fleet(self._context, self._trace)
         return self._agents[agent]
+
+    # -- deterministic tool calls ----------------------------------------
+
+    def _call(self, tool_name: str, *, on_behalf_of: AgentId, **arguments: Any) -> dict[str, Any]:
+        """Call one tool directly and trace it as an orchestrator action.
+
+        The event is attributed to the orchestrator, not to the specialist that
+        owns the tool, because no model chose this call. `detail` names the
+        owning agent so a trace still reads as a chain.
+        """
+        function: Callable[..., Any] = self._tools[tool_name]
+        started = perf_counter()
+        result = function(**arguments)
+        duration_ms = (perf_counter() - started) * 1000.0
+        self._trace.record(
+            agent=AgentId.ORCHESTRATOR,
+            tool=tool_name,
+            status=ToolStatus.REFUSED if is_refusal(result) else ToolStatus.OK,
+            arguments=arguments,
+            result=result,
+            duration_ms=duration_ms,
+            detail=f"deterministic call on behalf of {on_behalf_of}; no model in the loop",
+        )
+        return result
 
     def _advance(self, target: RunState) -> None:
         assert_transition(self._state, target)
         self._state = target
+
+    def _fail(self, agent: AgentId, detail: str, turn: TurnResult | None = None) -> StageResult:
+        self._advance(RunState.FAILED)
+        return self._stage(agent, turn, None, detail)
+
+    def _stage(
+        self, agent: AgentId, turn: TurnResult | None, output: Any | None, detail: str
+    ) -> StageResult:
+        return StageResult(
+            agent=agent,
+            state=self._state,
+            turn=turn,
+            output=output,
+            human_required=tuple(self._context.human_required),
+            detail=detail,
+        )
+
+    # -- stages -----------------------------------------------------------
 
     async def run_change_intelligence(self, change_id: str) -> StageResult:
         """Normalize one provider notice into a `ChangeManifest`.
@@ -127,7 +267,7 @@ class Orchestrator:
             "Read the notice, compare it against the deterministic parse, and record "
             "the manifest only if they agree."
         )
-        turn = await run_turn(self._agents[agent], prompt, trace=self._trace)
+        turn = await run_turn(self.agent(agent), prompt, trace=self._trace)
         output = self._context.output(STAGE_CONTRACTS[agent])
 
         if output is None:
@@ -135,13 +275,426 @@ class Orchestrator:
         else:
             self._advance(RunState.NORMALIZED)
 
-        return StageResult(
+        return self._stage(agent, turn, output, "" if output else "no manifest was recorded")
+
+    def seed_change_manifest(self, change_id: str) -> StageResult:
+        """Commit the pinned deterministic parse of a notice as this run's manifest.
+
+        The vertical slice starts from a known change rather than from a model's
+        reading of one, so the stage that is under test is the Patch loop. The
+        manifest is the provider adapter's total mapping of the feed document —
+        no model confirmed it, which is why it is recorded under the
+        orchestrator's identity and not Change Intelligence's.
+
+        RECEIVED → SANITIZED → NORMALIZED, so the run reaches the Impact stage
+        through the same transitions a live Change Intelligence turn would use.
+        """
+        agent = AgentId.ORCHESTRATOR
+        self._advance(RunState.SANITIZED)
+
+        path = self._notice_path(change_id)
+        if path is None:
+            return self._fail(agent, f"no provider notice with change_id {change_id!r}")
+
+        started = perf_counter()
+        try:
+            # Captured-snapshot paths in the pinned fixtures are written
+            # repository-relative, so the repository root is what they resolve
+            # against. A capture the adapter cannot re-hash raises here rather
+            # than downgrading to a manifest with no evidence.
+            manifest = manifest_from_feed_file(path, base_dir=self._context.repo_root)
+        except ValueError as exc:
+            self._trace.record(
+                agent=agent,
+                tool="seed_change_manifest",
+                status=ToolStatus.ERROR,
+                arguments={"change_id": change_id},
+                result={"error": str(exc)},
+                duration_ms=(perf_counter() - started) * 1000.0,
+                detail="the feed document did not normalize",
+            )
+            return self._fail(agent, f"{path.name} did not normalize into a ChangeManifest: {exc}")
+
+        self._context.record(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE], agent, manifest)
+        self._trace.record(
             agent=agent,
-            state=self._state,
-            turn=turn,
-            output=output,
-            human_required=tuple(self._context.human_required),
+            tool="seed_change_manifest",
+            status=ToolStatus.OK,
+            arguments={"change_id": change_id},
+            result={
+                "change_id": manifest.change_id,
+                "affected_identifiers": list(manifest.affected_identifiers),
+                "recommended_replacement": manifest.recommended_replacement,
+                "has_verifiable_evidence": manifest.has_verifiable_evidence,
+            },
+            duration_ms=(perf_counter() - started) * 1000.0,
+            detail="pinned deterministic parse; the Change Intelligence agent did not run",
+        )
+        self._advance(RunState.NORMALIZED)
+        return self._stage(agent, None, manifest, "manifest seeded from the pinned feed document")
+
+    def _notice_path(self, change_id: str) -> Path | None:
+        """The feed document whose `change_id` matches, or `None`."""
+        for path in sorted(self._context.feed_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(payload, dict) and payload.get("change_id") == change_id:
+                return path
+        return None
+
+    async def run_impact(
+        self, slice_: VerticalSlice, *, base_sha: str, deterministic: bool = False
+    ) -> StageResult:
+        """Inventory the workspace for the retired identifiers and judge the hits.
+
+        NORMALIZED → IMPACT_SCANNING, then → UNAFFECTED when the deterministic
+        scan finds nothing, or → POLICY_EVALUATION when it does. The findings
+        that reach the report are the scanner's; the stage cannot report a file
+        `packages.repo_scan` never saw.
+        """
+        agent = AgentId.IMPACT
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        if not isinstance(manifest, ChangeManifest):
+            self._advance(RunState.FAILED)
+            return self._stage(agent, None, None, "the run has no ChangeManifest to scan for")
+
+        self._advance(RunState.IMPACT_SCANNING)
+        turn: TurnResult | None = None
+        if deterministic:
+            self._impact_deterministically(manifest, slice_, base_sha=base_sha)
+        else:
+            prompt = self._impact_prompt(manifest, slice_, base_sha)
+            turn = await run_turn(self.agent(agent), prompt, trace=self._trace)
+
+        report = self._context.output(STAGE_CONTRACTS[agent])
+        if not isinstance(report, ImpactReport):
+            return self._fail(agent, "no ImpactReport was recorded", turn)
+        if not report.affected:
+            self._advance(RunState.UNAFFECTED)
+            return self._stage(agent, turn, report, "the workspace uses none of the retired IDs")
+
+        self._advance(RunState.POLICY_EVALUATION)
+        return self._stage(agent, turn, report, f"{len(report.findings)} findings")
+
+    def _impact_prompt(self, manifest: ChangeManifest, slice_: VerticalSlice, base_sha: str) -> str:
+        identifiers = ", ".join(manifest.affected_identifiers)
+        return (
+            f"Provider change {manifest.change_id!r} retires these identifiers: {identifiers}. "
+            f"Scan the workspace for them, then record the ImpactReport for repository "
+            f"{slice_.repo!r} at base_sha {base_sha!r}. The checks a patch must pass are "
+            f"{slice_.build_command!r} and {slice_.test_command!r}."
         )
 
+    def _impact_deterministically(
+        self, manifest: ChangeManifest, slice_: VerticalSlice, *, base_sha: str
+    ) -> None:
+        scan = self._call(
+            "scan_repository",
+            on_behalf_of=AgentId.IMPACT,
+            identifiers=list(manifest.affected_identifiers),
+        )
+        affected = not is_refusal(scan) and bool(scan.get("total_hits"))
+        character = "semantic" if manifest.semantic_migration_required else "mechanical"
+        self._call(
+            "record_impact_report",
+            on_behalf_of=AgentId.IMPACT,
+            change_id=manifest.change_id,
+            repo=slice_.repo,
+            base_sha=base_sha,
+            affected=affected,
+            # A literal identifier match is exact, and no model weighed it.
+            confidence=1.0 if affected else 0.0,
+            migration_character=character if affected else "",
+            required_checks=[slice_.build_command, slice_.test_command] if affected else [],
+            notes=(
+                "Deterministic slice: findings are the scanner's and the migration "
+                "character is the manifest's. No model judged this repository."
+            ),
+        )
 
-__all__ = ["STAGE_CONTRACTS", "Orchestrator", "StageResult", "build_fleet"]
+    async def run_policy(
+        self, slice_: VerticalSlice, *, deterministic: bool = False
+    ) -> StageResult:
+        """Clear the files the Impact stage found through the deterministic gate.
+
+        POLICY_EVALUATION → PATCHING only when the recorded decision permits an
+        automatic patch. Everything else is a terminal state: BLOCKED when a rule
+        denied a path, HUMAN_REQUIRED when evidence or risk needs a person.
+        """
+        agent = AgentId.POLICY
+        report = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
+        if not isinstance(report, ImpactReport):
+            return self._fail(agent, "the run has no ImpactReport to evaluate")
+
+        proposed = sorted({finding.file for finding in report.findings})
+        turn: TurnResult | None = None
+        if deterministic:
+            self._policy_deterministically(report, slice_, proposed)
+        else:
+            turn = await run_turn(
+                self.agent(agent), self._policy_prompt(report, slice_, proposed), trace=self._trace
+            )
+
+        decision = self._context.output(STAGE_CONTRACTS[agent])
+        if not isinstance(decision, PolicyDecision):
+            return self._fail(agent, "no PolicyDecision was recorded", turn)
+        if str(decision.outcome) == "blocked":
+            self._advance(RunState.BLOCKED)
+            return self._stage(agent, turn, decision, decision.reason)
+        if not decision.auto_patch or decision.human_review_required:
+            self._advance(RunState.HUMAN_REQUIRED)
+            return self._stage(agent, turn, decision, decision.reason)
+
+        self._advance(RunState.PATCHING)
+        return self._stage(agent, turn, decision, decision.reason)
+
+    def _policy_prompt(
+        self, report: ImpactReport, slice_: VerticalSlice, proposed: list[str]
+    ) -> str:
+        return (
+            f"Change {report.change_id!r} affects repository {slice_.repo!r}. A patch would "
+            f"edit these files: {', '.join(proposed)}. Clear them through the deterministic "
+            "gate and record the PolicyDecision."
+        )
+
+    def _policy_deterministically(
+        self, report: ImpactReport, slice_: VerticalSlice, proposed: list[str]
+    ) -> None:
+        self._call("evaluate_policy", on_behalf_of=AgentId.POLICY, proposed_paths=proposed)
+        self._call(
+            "record_policy_decision",
+            on_behalf_of=AgentId.POLICY,
+            change_id=report.change_id,
+            repo=slice_.repo,
+            risk="high" if str(report.migration_character) == "semantic" else "medium",
+            reason=(
+                "Deterministic slice: the risk tier follows the manifest's migration "
+                "character and the outcome is the policy gate's. No model judged this."
+            ),
+            escalate_to_human=False,
+        )
+
+    async def run_patch(
+        self, slice_: VerticalSlice, *, base_sha: str, deterministic: bool = False
+    ) -> StageResult:
+        """Migrate the workspace, then prove it independently of what was said.
+
+        PATCHING → BUILDING once the pinned entry point exits 0, then → TESTING
+        once its unit tests do. Both commands are run by the orchestrator through
+        the session, not by the agent: a model reporting its own green build is
+        exactly the evidence this product does not accept. The binding check runs
+        first, so a patch that made the checks pass without removing the retired
+        identifier still fails the stage.
+        """
+        agent = AgentId.PATCH
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        report = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
+        if not isinstance(manifest, ChangeManifest) or not isinstance(report, ImpactReport):
+            return self._fail(agent, "the Patch stage needs a manifest and an impact report")
+
+        turn: TurnResult | None = None
+        if deterministic:
+            self._patch_deterministically(manifest, slice_, base_sha=base_sha)
+        else:
+            prompt = self._patch_prompt(manifest, report, slice_)
+            turn = await run_turn(self.agent(agent), prompt, trace=self._trace)
+
+        source = self._read_entrypoint(slice_)
+        if source is None:
+            return self._fail(agent, f"{slice_.entrypoint} could not be read after the turn", turn)
+        binding = binding_value(source, slice_.binding)
+        if binding is None:
+            return self._fail(
+                agent, f"{slice_.entrypoint} no longer assigns {slice_.binding}", turn
+            )
+        if binding in manifest.affected_identifiers:
+            return self._fail(
+                agent,
+                f"{slice_.entrypoint} still binds {slice_.binding} to the retired "
+                f"{binding!r}; the migration did not land",
+                turn,
+            )
+
+        build = self._call("run_command", on_behalf_of=agent, command=slice_.build_command)
+        if is_refusal(build) or build["exit_code"] != 0:
+            return self._fail(agent, f"{slice_.build_command} did not exit 0", turn)
+        self._advance(RunState.BUILDING)
+
+        tests = self._call("run_command", on_behalf_of=agent, command=slice_.test_command)
+        if is_refusal(tests) or tests["exit_code"] != 0:
+            return self._fail(agent, f"{slice_.test_command} did not exit 0", turn)
+        self._advance(RunState.TESTING)
+
+        plan = self._context.output(STAGE_CONTRACTS[agent])
+        return self._stage(
+            agent,
+            turn,
+            plan,
+            f"{slice_.binding} now binds {binding!r}; both checks exited 0",
+        )
+
+    def _patch_prompt(
+        self,
+        manifest: ChangeManifest,
+        report: ImpactReport,
+        slice_: VerticalSlice,
+    ) -> str:
+        """The Patch turn's task.
+
+        `repo` and `base_sha` are stated rather than left to the agent. They are
+        already fixed by the ImpactReport, and a model asked to supply them has
+        nothing to supply them from — it invents a null SHA, and the PatchPlan it
+        records then names a tree that does not exist.
+        """
+        findings = "\n".join(
+            f"  - {finding.file}:{finding.line} uses {finding.identifier}"
+            for finding in report.findings
+        )
+        return (
+            f"Provider change {manifest.change_id!r} retires "
+            f"{', '.join(manifest.affected_identifiers)}. The Impact agent found these "
+            f"usages in the sandbox workspace:\n{findings}\n\n"
+            f"This is repository {report.repo!r} at base_sha {report.base_sha!r}; record "
+            f"those verbatim. Load migration skill {slice_.skill_id!r} first. Then iterate "
+            f"with apply_patch and run_command until {slice_.build_command!r} exits 0, and "
+            "record_patch_plan with what you changed. Do not edit any file outside the ones "
+            "listed above."
+        )
+
+    def _patch_deterministically(
+        self, manifest: ChangeManifest, slice_: VerticalSlice, *, base_sha: str
+    ) -> None:
+        source = self._read_entrypoint(slice_)
+        if source is None:
+            return
+        diff = self._known_good_diff(source, slice_, manifest)
+        if diff is None:
+            return
+        version = self._skill_version(slice_.skill_id)
+        self._call("apply_patch", on_behalf_of=AgentId.PATCH, diff=diff)
+        self._call(
+            "record_patch_plan",
+            on_behalf_of=AgentId.PATCH,
+            change_id=manifest.change_id,
+            repo=slice_.repo,
+            base_sha=base_sha,
+            attempt=1,
+            files_expected=[slice_.entrypoint],
+            migration_summary=(
+                f"Rebind {slice_.binding} in {slice_.entrypoint} from the retired identifier "
+                f"to {manifest.recommended_replacement}."
+            ),
+            assumptions=[
+                "Deterministic slice: the rewrite is the manifest's recommended "
+                "replacement applied to the pinned binding, with no model in the loop."
+            ],
+            verification_commands=[slice_.build_command, slice_.test_command],
+            # PatchPlan records a skill and its version together or not at all,
+            # so an unreadable skill package yields neither rather than a plan
+            # that names a provenance it cannot support.
+            skill_id=slice_.skill_id if version else "",
+            skill_version=version,
+        )
+
+    def _skill_version(self, skill_id: str) -> str:
+        """The pinned version of a migration skill package, or an empty string."""
+        manifest_path = self._context.repo_root / SKILLS_DIRNAME / skill_id / "skill.json"
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        skill = payload.get("skill") if isinstance(payload, dict) else None
+        version = skill.get("version") if isinstance(skill, dict) else None
+        return version if isinstance(version, str) else ""
+
+    # -- workspace inspection ---------------------------------------------
+
+    def _read_entrypoint(self, slice_: VerticalSlice) -> str | None:
+        """The pinned entry point's current text, read through the session."""
+        result = self._call("read_file", on_behalf_of=AgentId.PATCH, path=slice_.entrypoint)
+        if is_refusal(result):
+            return None
+        return str(result["content"])
+
+    @staticmethod
+    def _known_good_diff(
+        source: str, slice_: VerticalSlice, manifest: ChangeManifest
+    ) -> str | None:
+        """A one-line unified diff rebinding the pinned identifier, or `None`.
+
+        Built from the file that is actually on disk rather than stored as a
+        fixture, so the deterministic path cannot succeed against a workspace
+        whose entry point has drifted from what the diff expects.
+        """
+        replacement = manifest.recommended_replacement
+        if not replacement:
+            return None
+        for match in _BINDING_ASSIGNMENT.finditer(source):
+            if match.group("name") != slice_.binding:
+                continue
+            before = source.splitlines(keepends=True)
+            index = source.count("\n", 0, match.start())
+            quote = match.group("quote")
+            newline = "\n" if before[index].endswith("\n") else ""
+            after = list(before)
+            after[index] = f"{slice_.binding} = {quote}{replacement}{quote}{newline}"
+            return "".join(
+                difflib.unified_diff(
+                    before,
+                    after,
+                    fromfile=f"a/{slice_.entrypoint}",
+                    tofile=f"b/{slice_.entrypoint}",
+                )
+            )
+        return None
+
+    # -- the slice --------------------------------------------------------
+
+    async def run_vertical_slice(
+        self,
+        slice_: VerticalSlice = GEMINI20_SLICE,
+        *,
+        base_sha: str,
+        deterministic: bool | None = None,
+    ) -> SliceResult:
+        """Run seed → impact → policy → patch and stop. No verification, no PR.
+
+        The slice deliberately ends at TESTING. Opening a pull request needs an
+        independent Verification pass over sandbox evidence (CLAUDE.md constraint
+        6), and the patch-producing turn grading itself is the one thing this
+        stage must never be allowed to look like.
+        """
+        if deterministic is None:
+            deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
+
+        result = SliceResult(state=self._state, detail="")
+
+        def keep(stage: StageResult) -> bool:
+            result.stages.append(stage)
+            result.state = self._state
+            result.detail = stage.detail
+            return not (is_terminal(self._state) or self._context.stopped_for_human)
+
+        if not keep(self.seed_change_manifest(slice_.change_id)):
+            return result
+        if not keep(await self.run_impact(slice_, base_sha=base_sha, deterministic=deterministic)):
+            return result
+        if not keep(await self.run_policy(slice_, deterministic=deterministic)):
+            return result
+        keep(await self.run_patch(slice_, base_sha=base_sha, deterministic=deterministic))
+        return result
+
+
+__all__ = [
+    "DETERMINISTIC_ENV_VAR",
+    "GEMINI20_SLICE",
+    "STAGE_CONTRACTS",
+    "Orchestrator",
+    "SliceResult",
+    "StageResult",
+    "VerticalSlice",
+    "binding_value",
+    "build_fleet",
+]
