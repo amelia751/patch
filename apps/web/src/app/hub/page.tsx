@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Rocket, ArrowRight, Github, Sparkles, Cloud, Database, Code2, Network, Zap, Lock } from "lucide-react";
+import { Waypoints, ArrowRight, Github, Sparkles, Cloud, Database, Code2, Network, Zap, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function HubPage() {
@@ -13,7 +13,7 @@ export default function HubPage() {
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2 group">
               <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center transition-all group-hover:scale-105">
-                <Rocket className="h-5 w-5 text-white" />
+                <Waypoints className="h-5 w-5 text-white" />
               </div>
               <span className="text-base font-semibold text-[var(--text-primary)]">PatchAPI</span>
             </Link>
@@ -248,7 +248,7 @@ export default function HubPage() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center">
-                <Rocket className="h-4 w-4 text-white" />
+                <Waypoints className="h-4 w-4 text-white" />
               </div>
               <span className="text-sm font-semibold text-[var(--text-primary)]">PatchAPI</span>
             </div>

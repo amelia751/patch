@@ -8,7 +8,7 @@ import { useTheme } from "@/lib/theme-context";
 import {
   LayoutDashboard,
   Settings,
-  Rocket,
+  Waypoints,
 } from "lucide-react";
 import {
   Tooltip,
@@ -112,7 +112,7 @@ const Sidebar = ({ onWidthChange }: SidebarProps) => {
       <div className="px-2 py-3 border-b border-[var(--border-color)]">
         <Link href="/hub">
           <div className="flex items-center justify-center p-3 rounded-md bg-primary text-primary-foreground cursor-pointer transition-all duration-200 hover:bg-primary-hover hover:scale-105 active:scale-95">
-            <Rocket className="h-6 w-6" />
+            <Waypoints className="h-6 w-6" />
           </div>
         </Link>
       </div>
