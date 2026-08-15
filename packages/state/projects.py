@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from packages.events.publisher import publish_async
-from packages.events.repo_events import project_repo_added_event
+from packages.events.repo_events import project_repo_added_event, project_repo_removed_event
 from packages.state.pool import StateUnavailableError
 
 if TYPE_CHECKING:
@@ -65,6 +65,19 @@ async def announce_repository_added(project_id: UUID, repository: str, branch: s
     """
     result = await publish_async(
         project_repo_added_event(
+            project_id=str(project_id),
+            repository=repository,
+            branch=branch,
+            occurred_at=datetime.now(UTC).isoformat(),
+        )
+    )
+    return result.published
+
+
+async def announce_repository_removed(project_id: UUID, repository: str, branch: str) -> bool:
+    """Publish `project-repo-removed` after the row is gone. Never raises."""
+    result = await publish_async(
+        project_repo_removed_event(
             project_id=str(project_id),
             repository=repository,
             branch=branch,
@@ -439,4 +452,68 @@ async def add_repository(
     except Exception as exc:
         raise StateUnavailableError(f"could not add repository: {type(exc).__name__}") from exc
     await announce_repository_added(project_id, full_name, branch or DEFAULT_BRANCH)
+    return project
+
+
+async def remove_repository(
+    pool: asyncpg.Pool,
+    project_id: UUID,
+    owner_id: UUID,
+    *,
+    repo_name: str,
+) -> dict[str, Any] | None:
+    """Drop one imported repo from a project. Does not touch GitHub."""
+    wanted = repo_name.strip()
+    if not wanted:
+        raise ValueError("Repository name is required")
+    try:
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                owned = await connection.fetchval(
+                    "SELECT 1 FROM projects WHERE id = $1 AND owner_id = $2",
+                    project_id,
+                    owner_id,
+                )
+                if owned is None:
+                    return None
+                row = await connection.fetchrow(
+                    """
+                    SELECT id, full_name, default_branch
+                    FROM project_repositories
+                    WHERE project_id = $1 AND (name = $2 OR full_name = $2)
+                    ORDER BY created_at
+                    LIMIT 1
+                    """,
+                    project_id,
+                    wanted,
+                )
+                if row is None:
+                    return None
+                await connection.execute(
+                    "DELETE FROM workspaces WHERE project_id = $1 AND repository_id = $2",
+                    project_id,
+                    row["id"],
+                )
+                await connection.execute(
+                    "DELETE FROM project_repositories WHERE id = $1",
+                    row["id"],
+                )
+                await connection.execute(
+                    "UPDATE projects SET updated_at = now() WHERE id = $1",
+                    project_id,
+                )
+                project_row = await connection.fetchrow(
+                    f"{_PROJECT_SELECT} WHERE id = $1",
+                    project_id,
+                )
+                project = await _assemble(connection, project_row)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise StateUnavailableError(f"could not remove repository: {type(exc).__name__}") from exc
+    await announce_repository_removed(
+        project_id,
+        str(row["full_name"]),
+        str(row["default_branch"] or DEFAULT_BRANCH) or DEFAULT_BRANCH,
+    )
     return project

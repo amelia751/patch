@@ -81,13 +81,82 @@ def imported_repo(
     return owner, repo, branch
 
 
+def imported_repos(project: Mapping[str, Any]) -> list[tuple[str, str, str, str]]:
+    """`(name, owner, repo, branch)` for every imported GitHub repo, in order.
+
+    The Codebase tab renders one tree. A single import stays flat. Two or more
+    become JetRun-style repo roots (`type=directory`, paths prefixed by name)
+    so Add Repository does not hide the new tree behind a switcher.
+    """
+    found: list[tuple[str, str, str, str]] = []
+    seen: set[str] = set()
+    for repo in list(project.get("repositories") or []):
+        source = imported_repo(project, full_name=str(repo.get("full_name") or "") or None)
+        if source is None:
+            continue
+        owner, name, branch = source
+        full_name = f"{owner}/{name}"
+        if full_name in seen:
+            continue
+        seen.add(full_name)
+        label = str(repo.get("name") or name) or name
+        found.append((label, owner, name, branch))
+    if found:
+        return found
+    source = imported_repo(project)
+    if source is None:
+        return []
+    owner, name, branch = source
+    return [(name, owner, name, branch)]
+
+
+def resolve_codebase_file(
+    project: Mapping[str, Any], path: str
+) -> tuple[str, str, str, str] | None:
+    """`(owner, repo, branch, repo-relative path)` for a Codebase tab path.
+
+    Multi-repo trees prefix every node with the repo name, the same way JetRun
+    does, so `egaki/src/index.ts` is a file in `egaki` and not a path inside
+    the first import.
+    """
+    repos = imported_repos(project)
+    if not repos:
+        return None
+    if len(repos) == 1:
+        _label, owner, repo, branch = repos[0]
+        relative = safe_repo_path(path)
+        if relative is None:
+            return None
+        return owner, repo, branch, relative
+    parts = path.split("/", 1)
+    label = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
+    match = next((item for item in repos if item[0] == label), None)
+    if match is None:
+        return None
+    _label, owner, repo, branch = match
+    relative = safe_repo_path(rest)
+    if relative is None:
+        return None
+    return owner, repo, branch, relative
+
+
 def _skipped(path: str) -> bool:
     return any(part in _SKIP_SEGMENTS for part in path.split("/"))
 
 
-def build_file_tree(entries: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Nest GitHub git-tree entries into the dashboard's `file_tree` shape."""
+def build_file_tree(
+    entries: list[Mapping[str, Any]], *, path_prefix: str = ""
+) -> list[dict[str, Any]]:
+    """Nest GitHub git-tree entries into the dashboard's `file_tree` shape.
+
+    `path_prefix` is the repo name on a multi-repo project. The frontend sends
+    that prefixed path back to `/codebase/file`, which strips it to find the
+    GitHub blob. Regular folders stay `folder`; only the repo root is
+    `directory`.
+    """
     root: dict[str, Any] = {"children": {}}
+    prefix = path_prefix.strip().strip("/")
     for entry in entries:
         path = str(entry.get("path") or "")
         kind = entry.get("type")
@@ -100,6 +169,8 @@ def build_file_tree(entries: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
             is_last = index == len(parts) - 1
             if part not in children:
                 node_path = "/".join(parts[: index + 1])
+                if prefix:
+                    node_path = f"{prefix}/{node_path}"
                 is_file = is_last and kind == "blob"
                 children[part] = {
                     "id": node_path,
@@ -110,6 +181,18 @@ def build_file_tree(entries: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 }
             cursor = children[part]
     return _children_list(root)
+
+
+def repo_root_node(name: str, children: list[dict[str, Any]]) -> dict[str, Any]:
+    """JetRun repo header: GitHub icon, disconnect menu, children underneath."""
+    label = name.strip()
+    return {
+        "id": f"repo:{label}",
+        "name": label,
+        "path": label,
+        "type": "directory",
+        "children": children,
+    }
 
 
 def _children_list(node: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -173,4 +256,57 @@ def codebase_payload(tree: Mapping[str, Any]) -> dict[str, Any]:
         },
         "source": "github",
         "truncated": bool(tree.get("truncated")),
+    }
+
+
+def codebase_payload_from_repos(
+    named_trees: list[tuple[str, Mapping[str, Any]]],
+) -> dict[str, Any]:
+    """One Codebase tab payload for every imported repo.
+
+    One repo stays a flat tree. Two or more wrap each tree in a `directory`
+    root named after the repo, matching JetRun's multi-repo Codebase tab.
+    """
+    if not named_trees:
+        return codebase_payload({})
+    if len(named_trees) == 1:
+        return codebase_payload(named_trees[0][1])
+    combined: list[dict[str, Any]] = []
+    files = 0
+    folders = 0
+    truncated = False
+    first = named_trees[0][1]
+    for name, tree in named_trees:
+        inner = build_file_tree(list(tree.get("entries") or []), path_prefix=name)
+        inner_files, inner_folders = _count(inner)
+        files += inner_files
+        folders += inner_folders + 1
+        truncated = truncated or bool(tree.get("truncated"))
+        combined.append(repo_root_node(name, inner))
+    sha = str(first.get("sha") or "")
+    short = sha[:7] if sha else ""
+    branch = str(first.get("ref") or first.get("default_branch") or "main") or "main"
+    return {
+        "current_version": short or branch,
+        "branch": branch,
+        "repository": "",
+        "versions": [
+            {
+                "id": short or branch,
+                "created_at": str(first.get("committed_at") or ""),
+                "created_by": str(first.get("created_by") or ""),
+                "label": branch,
+                "status": "imported",
+                "commit_sha": short or sha,
+            }
+        ],
+        "file_tree": combined,
+        "services": [],
+        "stats": {
+            "total_files": files,
+            "total_lines": 0,
+            "total_folders": folders,
+        },
+        "source": "github",
+        "truncated": truncated,
     }

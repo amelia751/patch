@@ -3,7 +3,10 @@
 from packages.state.codebase import (
     build_file_tree,
     codebase_payload,
+    codebase_payload_from_repos,
     imported_repo,
+    imported_repos,
+    resolve_codebase_file,
     safe_repo_path,
 )
 
@@ -112,6 +115,15 @@ def test_imported_repo_rejects_a_repo_the_project_did_not_import() -> None:
     )
 
 
+def test_build_file_tree_prefixes_paths_for_a_second_repo() -> None:
+    tree = build_file_tree(
+        [{"path": "generate.py", "type": "blob"}],
+        path_prefix="gemini20-hello",
+    )
+    assert tree[0]["path"] == "gemini20-hello/generate.py"
+    assert tree[0]["id"] == "gemini20-hello/generate.py"
+
+
 def test_build_file_tree_nests_blobs_under_folders() -> None:
     tree = build_file_tree(
         [
@@ -136,6 +148,97 @@ def test_build_file_tree_skips_vendor_directories() -> None:
         ]
     )
     assert [node["path"] for node in tree] == ["package.json"]
+
+
+def test_imported_repos_lists_every_import_in_order() -> None:
+    found = imported_repos(
+        {
+            "repositories": [
+                {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
+                {
+                    "name": "gemini20-hello",
+                    "full_name": "amelia751/gemini20-hello",
+                    "default_branch": "main",
+                },
+            ],
+            "workspaces": [],
+        }
+    )
+    assert [item[0] for item in found] == ["egaki", "gemini20-hello"]
+
+
+def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> None:
+    project = {
+        "repositories": [
+            {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
+            {
+                "name": "gemini20-hello",
+                "full_name": "amelia751/gemini20-hello",
+                "default_branch": "main",
+            },
+        ],
+        "workspaces": [],
+    }
+    assert resolve_codebase_file(project, "gemini20-hello/generate.py") == (
+        "amelia751",
+        "gemini20-hello",
+        "main",
+        "generate.py",
+    )
+    assert resolve_codebase_file(project, "generate.py") is None
+
+
+def test_resolve_codebase_file_is_flat_for_a_single_import() -> None:
+    project = {
+        "repositories": [
+            {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
+        ],
+        "workspaces": [],
+    }
+    assert resolve_codebase_file(project, "src/index.ts") == (
+        "amelia751",
+        "egaki",
+        "main",
+        "src/index.ts",
+    )
+
+
+def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
+    payload = codebase_payload_from_repos(
+        [
+            (
+                "egaki",
+                {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main", "sha": "aaa"},
+            ),
+            (
+                "gemini20-hello",
+                {
+                    "entries": [{"path": "generate.py", "type": "blob"}],
+                    "ref": "main",
+                    "sha": "bbb",
+                },
+            ),
+        ]
+    )
+    assert [node["type"] for node in payload["file_tree"]] == ["directory", "directory"]
+    assert [node["name"] for node in payload["file_tree"]] == ["egaki", "gemini20-hello"]
+    assert payload["file_tree"][1]["children"][0]["path"] == "gemini20-hello/generate.py"
+    assert payload["stats"]["total_files"] == 2
+
+
+def test_combined_payload_keeps_an_empty_second_repo_as_a_directory() -> None:
+    payload = codebase_payload_from_repos(
+        [
+            (
+                "egaki",
+                {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main"},
+            ),
+            ("gemini20-hello", {"entries": [], "ref": "main"}),
+        ]
+    )
+    assert [node["name"] for node in payload["file_tree"]] == ["egaki", "gemini20-hello"]
+    assert payload["file_tree"][1]["type"] == "directory"
+    assert payload["file_tree"][1]["children"] == []
 
 
 def test_codebase_payload_matches_the_dashboard_shape() -> None:

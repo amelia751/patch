@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -15,7 +16,11 @@ from packages.auth.github_oauth import (
     fetch_repository_file,
     fetch_repository_tree,
 )
-from packages.state.codebase import codebase_payload, imported_repo, safe_repo_path
+from packages.state.codebase import (
+    codebase_payload_from_repos,
+    imported_repos,
+    resolve_codebase_file,
+)
 from packages.state.console_events import (
     ConsoleHub,
     project_event_stream,
@@ -30,6 +35,7 @@ from packages.state.projects import (
     import_repo_workspace,
     list_projects,
     read_project,
+    remove_repository,
     update_project_name,
 )
 from packages.state.session import COOKIE_NAME, load_session_secret, parse
@@ -176,13 +182,11 @@ async def get_owned_codebase_file(
     project_id: UUID,
     path: str = "",
     ref: str | None = None,
-    repo: str | None = None,
 ) -> JSONResponse:
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
         return user_id
-    safe_path = safe_repo_path(path)
-    if safe_path is None:
+    if not path.strip():
         return JSONResponse({"detail": "path is required"}, status_code=400)
     try:
         project = await read_project(_pool(request), project_id, user_id)
@@ -194,12 +198,12 @@ async def get_owned_codebase_file(
         )
     if project is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
-    source = imported_repo(project, full_name=(repo or "").strip() or None)
+    source = resolve_codebase_file(project, path)
     if source is None:
         return JSONResponse({"detail": "Project has no imported repository"}, status_code=404)
     if connection is None:
         return JSONResponse({"detail": "GitHub App is not installed"}, status_code=409)
-    owner, repo_name, default_branch = source
+    owner, repo_name, default_branch, relative = source
     config = load_config()
     try:
         file = await fetch_repository_file(
@@ -207,7 +211,7 @@ async def get_owned_codebase_file(
             connection["installation_id"],
             owner=owner,
             repo=repo_name,
-            path=safe_path,
+            path=relative,
             ref=(ref or "").strip() or default_branch,
         )
     except GitHubResourceError:
@@ -222,7 +226,6 @@ async def get_owned_codebase(
     request: Request,
     project_id: UUID,
     ref: str | None = None,
-    repo: str | None = None,
 ) -> JSONResponse:
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
@@ -237,26 +240,60 @@ async def get_owned_codebase(
         )
     if project is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
-    source = imported_repo(project, full_name=(repo or "").strip() or None)
-    if source is None:
+    sources = imported_repos(project)
+    if not sources:
         return JSONResponse({"detail": "Project has no imported repository"}, status_code=404)
     if connection is None:
         return JSONResponse({"detail": "GitHub App is not installed"}, status_code=409)
-    owner, repo_name, default_branch = source
     config = load_config()
-    try:
-        tree = await fetch_repository_tree(
-            config,
-            connection["installation_id"],
-            owner=owner,
-            repo=repo_name,
-            ref=(ref or "").strip() or default_branch,
-        )
-    except GitHubResourceError:
+    override = (ref or "").strip()
+
+    async def _tree(
+        source: tuple[str, str, str, str],
+    ) -> tuple[str, dict[str, Any] | None, Exception | None]:
+        name, owner, repo_name, default_branch = source
+        try:
+            tree = await fetch_repository_tree(
+                config,
+                connection["installation_id"],
+                owner=owner,
+                repo=repo_name,
+                ref=override or default_branch,
+            )
+        except GitHubResourceError as exc:
+            return name, None, exc
+        except (AuthConfigurationError, AuthUnavailableError) as exc:
+            return name, None, exc
+        return name, tree, None
+
+    results = await asyncio.gather(*[_tree(source) for source in sources])
+    empty_tree = {
+        "entries": [],
+        "ref": override or "main",
+        "default_branch": "main",
+        "full_name": "",
+        "sha": "",
+        "truncated": False,
+    }
+    named: list[tuple[str, dict[str, Any]]] = []
+    auth_failure: AuthConfigurationError | AuthUnavailableError | None = None
+    fetched = 0
+    for name, tree, exc in results:
+        if tree is not None:
+            named.append((name, tree))
+            fetched += 1
+            continue
+        if isinstance(exc, (AuthConfigurationError, AuthUnavailableError)):
+            auth_failure = exc
+        # Keep every imported repo in the payload. Dropping a failed fetch
+        # collapses two imports into a flat first-repo tree, and the Codebase
+        # tab then has no `directory` roots to render.
+        named.append((name, dict(empty_tree)))
+    if fetched == 0:
+        if auth_failure is not None:
+            return _github_failure(auth_failure)
         return JSONResponse({"detail": "Codebase not found"}, status_code=404)
-    except (AuthConfigurationError, AuthUnavailableError) as exc:
-        return _github_failure(exc)
-    return JSONResponse(codebase_payload(tree))
+    return JSONResponse(codebase_payload_from_repos(named))
 
 
 @router.get("")
@@ -409,3 +446,29 @@ async def add_owned_repository(request: Request, project_id: UUID) -> JSONRespon
     if project is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
     return JSONResponse(project)
+
+
+@router.delete("/{project_id}/repositories/{repo_name:path}")
+async def disconnect_owned_repository(
+    request: Request, project_id: UUID, repo_name: str
+) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await remove_repository(
+            _pool(request),
+            project_id,
+            user_id,
+            repo_name=repo_name,
+        )
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if project is None:
+        return JSONResponse({"detail": "Repository not found"}, status_code=404)
+    return JSONResponse({"ok": True})

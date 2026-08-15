@@ -30,5 +30,9 @@ export PATCHAPI_CORS_ORIGINS="${PATCHAPI_CORS_ORIGINS:-http://localhost:3000}"
 export PATCHAPI_FRONTEND_ORIGIN="${PATCHAPI_FRONTEND_ORIGIN:-http://localhost:3000}"
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8080}"
+# patchapi-state is installed as a wheel copy. Without the repo root on
+# sys.path, `patchapi-serve` keeps serving yesterday's codebase routes and
+# the Codebase tab never sees new `directory` roots.
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 exec uv run --package patchapi-state patchapi-serve
