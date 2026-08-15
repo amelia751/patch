@@ -15,7 +15,7 @@ from patchapi_repo_indexer.errors import UnknownProviderError
 
 # Bumped when the inventory-building logic changes shape. Recorded on every
 # inventory so a stored document can be traced to the indexer that wrote it.
-INDEXER_VERSION: Final[str] = "1.1.0"
+INDEXER_VERSION: Final[str] = "1.2.0"
 
 # Document version of the inventory contract itself. Consumers refuse a version
 # they do not know rather than misread a document written by a newer producer.
@@ -67,9 +67,20 @@ IMAGEN_4_IDENTIFIERS: Final[tuple[str, ...]] = (
     "imagen-4.0-ultra-generate-001",
 )
 
+# The Gemini 2.0 Flash family retired 2026-06-01. Kept in step with
+# `demo/fixtures/google-gemini20-deprecation.json`. Without these, importing
+# `gemini20-hello` indexes as ready with 0 usages and the Codebase tab looks
+# like the add failed.
+GEMINI_20_IDENTIFIERS: Final[tuple[str, ...]] = (
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-lite-001",
+)
+
 WATCHLISTS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyType(
     {
-        DEFAULT_PROVIDER: IMAGEN_4_IDENTIFIERS,
+        DEFAULT_PROVIDER: IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS,
     }
 )
 
@@ -84,6 +95,7 @@ __all__ = [
     "DEFAULT_PROVIDER",
     "DETECTION_LAYER",
     "DETECTION_LAYERS",
+    "GEMINI_20_IDENTIFIERS",
     "IMAGEN_4_IDENTIFIERS",
     "INDEXER_VERSION",
     "INDEXER_WORKDIR",

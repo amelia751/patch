@@ -13,6 +13,7 @@ import pytest
 from patchapi_repo_indexer.errors import UnknownProviderError, ZoektUnavailableError
 from patchapi_repo_indexer.zoekt import query as query_module
 from patchapi_repo_indexer.zoekt.patterns import (
+    GOOGLE_GEMINI20_FAMILY,
     GOOGLE_IMAGEN_FAMILY,
     GOOGLE_IMAGEN_PREVIEW,
     compile_patterns,
@@ -104,6 +105,15 @@ def test_the_preview_pattern_is_its_own_finding():
 def test_the_patterns_do_not_match_the_replacement_model():
     compiled = compile_patterns(patterns_for("google"))
     assert match_identifiers("gemini-3.1-flash-image", compiled) == ()
+    assert match_identifiers("gemini-3.5-flash", compiled) == ()
+    assert match_identifiers("gemini-2.5-flash", compiled) == ()
+
+
+def test_the_gemini20_pattern_matches_the_retired_flash_family():
+    assert re.search(GOOGLE_GEMINI20_FAMILY, "gemini-2.0-flash")
+    assert re.search(GOOGLE_GEMINI20_FAMILY, "gemini-2.0-flash-lite-001")
+    compiled = compile_patterns(patterns_for("google"))
+    assert match_identifiers('MODEL = "gemini-2.0-flash"', compiled) == ("gemini-2.0-flash",)
 
 
 def test_match_identifiers_names_the_concrete_model_in_a_line():
@@ -130,7 +140,11 @@ def test_an_identifier_outside_the_family_is_added_as_a_literal():
 
 
 def test_a_watchlist_identifier_the_family_covers_is_not_duplicated():
-    assert patterns_for("google", [GA_MODEL]) == (GOOGLE_IMAGEN_FAMILY, GOOGLE_IMAGEN_PREVIEW)
+    assert patterns_for("google", [GA_MODEL]) == (
+        GOOGLE_IMAGEN_FAMILY,
+        GOOGLE_IMAGEN_PREVIEW,
+        GOOGLE_GEMINI20_FAMILY,
+    )
 
 
 def test_unknown_provider_has_no_patterns():

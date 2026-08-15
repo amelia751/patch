@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from patchapi_repo_indexer.config import (
     DETECTION_LAYER,
+    GEMINI_20_IDENTIFIERS,
     IMAGEN_4_IDENTIFIERS,
     LITERAL_MATCH_CONFIDENCE,
     SCOPE_CHANGED_PATHS,
@@ -43,7 +44,7 @@ def test_finds_the_retired_imagen_identifier(fixture_repo):
     assert not inventory.is_empty
     assert inventory.scope == SCOPE_FULL_TREE
     assert inventory.provider == "google"
-    assert inventory.watched_identifiers == IMAGEN_4_IDENTIFIERS
+    assert inventory.watched_identifiers == IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS
 
 
 def test_reports_the_runtime_call_site_with_its_line(fixture_repo):
@@ -149,8 +150,18 @@ def test_unknown_provider_fails_closed(fixture_repo):
         index(fixture_repo, provider="acme")
 
 
-def test_watchlist_for_returns_the_pinned_imagen_family():
-    assert watchlist_for("google") == IMAGEN_4_IDENTIFIERS
+def test_watchlist_for_returns_the_pinned_imagen_and_gemini20_families():
+    assert watchlist_for("google") == IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS
+
+
+def test_indexes_the_gemini20_hello_fixture():
+    root = Path(__file__).resolve().parents[3] / "demo" / "gemini20-hello"
+    inventory = index(root, repository="amelia751/gemini20-hello")
+
+    assert "gemini-2.0-flash" in inventory.matched_identifiers
+    runtime = [usage for usage in inventory.usages if usage.file_path == "generate.py"]
+    assert runtime
+    assert runtime[0].identifier == "gemini-2.0-flash"
 
 
 def test_missing_root_is_an_error(tmp_path):
