@@ -119,16 +119,29 @@ The list APIs have launch stage / preview; they do not return retirement dates.
 | Snapshot | [`packages/state/data/google_models.json`](./packages/state/data/google_models.json) |
 | Refresh | `refresh_google_models` in [`packages/state/google_models.py`](./packages/state/google_models.py) |
 
-Both snapshots are served together:
+`GET /api/providers/google` serves the Service Usage file plus Gemini / Vertex
+`models`. Model lifecycle rows with a day-precision shutdown date stay on
+`modelChanges`. Month-only strings stay on the model and are not turned into
+a date.
 
-```text
-GET /api/providers/google
-```
+**Release notes (Changes tab)** — not Service Usage. The public BigQuery table
+is one job (~5s for the last 365 days), not a 1 QPS list, and a year is
+thousands of rows of changelog text. Do not fetch this when someone opens the
+tab; refresh writes a file.
 
-`services` comes from the Service Usage file. `models` and `changes` come from
-the Gemini / Vertex file. A change row is emitted only when the provider page
-gave a day-precision shutdown or retirement date — month-only strings stay on
-the model and are not turned into a date.
+| | |
+|---|---|
+| Table | `bigquery-public-data.google_cloud_release_notes.release_notes` |
+| Window | Last 365 days (~12k rows / ~8MB raw; snapshot stores stripped text) |
+| Auth | Same project service account (queries bill to `patch-505223`) |
+| Types | FEATURE, NON_BREAKING_CHANGE, FIX, SERVICE_ANNOUNCEMENT, SECURITY_BULLETIN, ISSUE, DEPRECATION, LIBRARIES, BREAKING_CHANGE, OTHER |
+| Not in the table | Typed `{service, status, shutdown_date}` — descriptions are HTML changelog |
+| Snapshot | [`packages/state/data/google_release_notes.json`](./packages/state/data/google_release_notes.json) |
+| Refresh | `refresh_google_release_notes` in [`packages/state/google_release_notes.py`](./packages/state/google_release_notes.py) |
+| Serve | `GET /api/providers/google/changes` |
+
+RSS (`https://cloud.google.com/feeds/gcp-release-notes.xml`) is a 30-entry
+Atom window, not the bulk table. Use it later as a delta, not as the catalog.
 
 ## GitHub: OAuth login + import App
 

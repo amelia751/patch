@@ -186,7 +186,7 @@ def test_google_route_includes_model_changes() -> None:
     response = TestClient(app).get("/api/providers/google")
     assert response.status_code == 200
     body = response.json()
-    assert len(body["changes"]) >= 10
+    assert len(body["modelChanges"]) >= 10
     assert any(row["id"] == "imagen-4.0-generate-001" for row in body["models"])
     assert body["modelTrust"]["classification"] == "untrusted_provider_input"
 

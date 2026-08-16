@@ -21,7 +21,15 @@ export type ChangeKind =
   | "deprecation"
   | "replacement"
   | "new_identifier"
-  | "breaking_change";
+  | "breaking_change"
+  | "feature"
+  | "fix"
+  | "issue"
+  | "security"
+  | "announcement"
+  | "change"
+  | "libraries"
+  | "other";
 
 export type ChangeStatus = "draft" | "published" | "superseded";
 
@@ -70,6 +78,8 @@ export interface PublishedChange {
   recommendedReplacement: string | null;
   sourceUrl: string;
   publishedAt: string;
+  product?: string;
+  summary?: string;
 }
 
 export const CATEGORY_LABELS: Record<ProviderCategory, string> = {
@@ -106,7 +116,21 @@ export const CHANGE_KIND_LABELS: Record<ChangeKind, string> = {
   replacement: "Replacement",
   new_identifier: "New identifier",
   breaking_change: "Breaking change",
+  feature: "Feature",
+  fix: "Fix",
+  issue: "Issue",
+  security: "Security",
+  announcement: "Announcement",
+  change: "Change",
+  libraries: "Libraries",
+  other: "Other",
 };
+
+const CHANGE_KINDS = new Set<string>(Object.keys(CHANGE_KIND_LABELS));
+
+export function asChangeKind(value: string): ChangeKind {
+  return CHANGE_KINDS.has(value) ? (value as ChangeKind) : "other";
+}
 
 export const GOOGLE_CLOUD_PROVIDER: ProviderProfile = {
   id: "prov_google",
@@ -297,30 +321,41 @@ export function catalogChangeFromApi(raw: {
   recommendedReplacement: string | null;
   sourceUrl: string;
   publishedAt: string;
+  product?: string;
+  summary?: string;
 }): PublishedChange | null {
   if (!raw.effectiveAt || raw.effectiveAt.length < 10) return null;
-  const kind: ChangeKind =
-    raw.kind === "replacement"
-      ? "replacement"
-      : raw.kind === "new_identifier"
-        ? "new_identifier"
-        : raw.kind === "breaking_change"
-          ? "breaking_change"
-          : "deprecation";
   const status: ChangeStatus =
     raw.status === "superseded" ? "superseded" : raw.status === "draft" ? "draft" : "published";
   return {
     id: raw.id,
     serviceId: raw.serviceId,
     title: raw.title,
-    kind,
+    kind: asChangeKind(raw.kind),
     status,
     effectiveAt: raw.effectiveAt,
     retiredIdentifiers: Array.isArray(raw.retiredIdentifiers) ? raw.retiredIdentifiers : [],
     recommendedReplacement: raw.recommendedReplacement || null,
     sourceUrl: raw.sourceUrl,
     publishedAt: raw.publishedAt || raw.effectiveAt,
+    product: raw.product,
+    summary: raw.summary,
   };
+}
+
+export function coerceSummary(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value) && "summary" in value) {
+    return coerceSummary((value as { summary: unknown }).summary);
+  }
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const wrapped = trimmed.match(
+    /^\{['"]summary['"]\s*:\s*['"]([\s\S]*)['"]\s*\}$/,
+  );
+  if (wrapped) {
+    return wrapped[1].replace(/\\n/g, " ").replace(/\s+/g, " ").trim();
+  }
+  return trimmed;
 }
 
 export function catalogServiceFromApi(raw: {
@@ -342,7 +377,7 @@ export function catalogServiceFromApi(raw: {
     id: raw.id,
     name: raw.name,
     slug: raw.slug,
-    summary: raw.summary,
+    summary: coerceSummary(raw.summary),
     status,
     product: raw.product,
     group: asServiceGroup(raw.group),

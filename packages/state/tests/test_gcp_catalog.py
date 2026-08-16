@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from packages.state.gcp_catalog import (
     CatalogUnavailableError,
     classify_group,
+    coerce_summary,
     display_name,
     is_first_party,
     load_google_catalog,
@@ -84,6 +85,22 @@ def test_display_name_strips_catalog_api_suffix_only() -> None:
     assert display_name("Content API for Shopping") == "Content API for Shopping"
     assert display_name("Google Cloud APIs") == "Google Cloud APIs"
     assert display_name("Anthos Identity Service") == "Anthos Identity Service"
+
+
+def test_coerce_summary_unwraps_documentation_objects_and_reprs() -> None:
+    assert coerce_summary({"summary": "Train, serve, and manage ML models."}) == (
+        "Train, serve, and manage ML models."
+    )
+    assert coerce_summary(
+        "{'summary': 'Retrieves the list of AMP URLs (and equivalent AMP Cache URLs) "
+        "for a given list of public URL(s).\\n'}"
+    ) == (
+        "Retrieves the list of AMP URLs (and equivalent AMP Cache URLs) "
+        "for a given list of public URL(s)."
+    )
+    assert coerce_summary("Views Abusive Experience Report data.") == (
+        "Views Abusive Experience Report data."
+    )
 
 
 def test_normalize_service_reads_documentation_summary() -> None:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -116,7 +116,6 @@ export function ProviderPortal() {
   const [publishChangeOpen, setPublishChangeOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-
   const openCatalog = async () => {
     setProfile(GOOGLE_CLOUD_PROVIDER);
     setServices([]);
@@ -134,13 +133,7 @@ export function ProviderPortal() {
         throw new Error(body?.detail || `Catalog unavailable (${response.status})`);
       }
       const rows = Array.isArray(body?.services) ? body.services : [];
-      const changeRows = Array.isArray(body?.changes) ? body.changes : [];
       setServices(rows.map((row: Parameters<typeof catalogServiceFromApi>[0]) => catalogServiceFromApi(row)));
-      setChanges(
-        changeRows
-          .map((row: Parameters<typeof catalogChangeFromApi>[0]) => catalogChangeFromApi(row))
-          .filter((change: PublishedChange | null): change is PublishedChange => change !== null),
-      );
     } catch (error) {
       setCatalogError(
         error instanceof Error ? error.message : "Could not load the Google Cloud catalog",
@@ -248,8 +241,8 @@ export function ProviderPortal() {
 
         <TabsContent value="changes" className="flex-1 m-0 p-0 overflow-hidden">
           <ChangesTab
-            changes={changes}
             services={services}
+            localChanges={changes}
             onPublish={() => setPublishChangeOpen(true)}
           />
         </TabsContent>
@@ -619,35 +612,161 @@ function ServicesTab({
   );
 }
 
+const CHANGE_PAGE_SIZE = 75;
+
+function matchesChangeFilter(
+  change: PublishedChange,
+  q: string,
+  kind: ChangeKind | "all",
+): boolean {
+  if (kind !== "all" && change.kind !== kind) return false;
+  if (!q) return true;
+  return (
+    change.title.toLowerCase().includes(q) ||
+    (change.product || "").toLowerCase().includes(q) ||
+    (change.summary || "").toLowerCase().includes(q) ||
+    change.serviceId.toLowerCase().includes(q)
+  );
+}
+
 function ChangesTab({
-  changes,
   services,
+  localChanges,
   onPublish,
 }: {
-  changes: PublishedChange[];
   services: PublishedService[];
+  localChanges: PublishedChange[];
   onPublish: () => void;
 }) {
-  const serviceName = (id: string) => services.find((s) => s.id === id)?.name ?? "Service";
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
+  const [changes, setChanges] = useState<PublishedChange[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (changes.length === 0) {
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedQuery(searchQuery.trim()), 250);
+    return () => window.clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setOffset(0);
+    setChanges([]);
+  }, [debouncedQuery, kindFilter]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      limit: String(CHANGE_PAGE_SIZE),
+      offset: String(offset),
+    });
+    if (debouncedQuery) params.set("q", debouncedQuery);
+    if (kindFilter !== "all") params.set("kind", kindFilter);
+    setLoading(true);
+    setError(null);
+    void fetch(`${API_URL}/api/providers/google/changes?${params}`, {
+      credentials: "include",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(body?.detail || `Release notes unavailable (${response.status})`);
+        }
+        const rows = Array.isArray(body?.changes) ? body.changes : [];
+        const mapped = rows
+          .map((row: Parameters<typeof catalogChangeFromApi>[0]) => catalogChangeFromApi(row))
+          .filter((change: PublishedChange | null): change is PublishedChange => change !== null);
+        setTotal(typeof body?.total === "number" ? body.total : mapped.length);
+        setChanges((prev) => (offset === 0 ? mapped : [...prev, ...mapped]));
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Could not load release notes");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [debouncedQuery, kindFilter, offset]);
+
+  const q = debouncedQuery.toLowerCase();
+  const filtered = useMemo(() => {
+    const remote = changes.filter((change) => matchesChangeFilter(change, q, kindFilter));
+    const extras = localChanges.filter((change) => matchesChangeFilter(change, q, kindFilter));
+    const seen = new Set(remote.map((change) => change.id));
+    return [...extras.filter((change) => !seen.has(change.id)), ...remote];
+  }, [changes, kindFilter, localChanges, q]);
+
+  const serviceName = (change: PublishedChange) =>
+    change.product ||
+    services.find((s) => s.id === change.serviceId)?.name ||
+    services.find((s) => s.product === change.serviceId)?.name ||
+    change.serviceId;
+
+  if (loading && filtered.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[var(--bg-secondary)]">
+        <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading release notes…
+        </div>
+      </div>
+    );
+  }
+
+  if (error && filtered.length === 0) {
     return (
       <TabEmpty
         icon={FilePlus2}
-        title="No change events"
-        body="Announce a deprecation or replacement for one of your services. PatchAPI treats every claim as untrusted input."
+        title="Release notes unavailable"
+        body={error}
         actionLabel="Publish change"
         onAction={onPublish}
         actionDisabled={services.length === 0}
-        actionHint={services.length === 0 ? "Publish a service first." : undefined}
       />
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--bg-secondary)]">
-      <div className="max-w-5xl mx-auto px-6 py-6">
-        <div className="flex items-center justify-end mb-4">
+    <div className="h-full flex flex-col bg-[var(--bg-secondary)]">
+      <div className="px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
+        <div className="max-w-5xl mx-auto flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)]" />
+            <Input
+              placeholder="Search release notes…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8 pl-9 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+            />
+          </div>
+          <Select
+            value={kindFilter}
+            onValueChange={(value) => setKindFilter(value as ChangeKind | "all")}
+          >
+            <SelectTrigger className="h-8 w-[150px] text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+              <Filter className="h-3 w-3 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+              <SelectItem value="all" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">
+                All types
+              </SelectItem>
+              {(Object.keys(CHANGE_KIND_LABELS) as ChangeKind[]).map((key) => (
+                <SelectItem
+                  key={key}
+                  value={key}
+                  className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
+                >
+                  {CHANGE_KIND_LABELS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             onClick={onPublish}
             disabled={services.length === 0}
@@ -657,15 +776,41 @@ function ChangesTab({
             Publish change
           </Button>
         </div>
-        <div className="space-y-3">
-          {changes.map((change) => (
-            <div
-              key={change.id}
-              className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4"
-            >
-              <ChangeRow change={change} serviceName={serviceName(change.serviceId)} />
+        <p className="max-w-5xl mx-auto mt-2 text-[10px] text-[var(--text-secondary)]">
+          {filtered.length.toLocaleString()}
+          {total > filtered.length ? ` of ${total.toLocaleString()}` : ""} notes
+          {loading ? " · loading…" : ""}
+          · last 365 days · untrusted provider input
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-6 py-6 space-y-3">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-[var(--text-secondary)] text-center py-10">
+              No release notes match that filter.
+            </p>
+          ) : (
+            filtered.map((change, index) => (
+              <div
+                key={`${change.id}:${index}`}
+                className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4"
+              >
+                <ChangeRow change={change} serviceName={serviceName(change)} />
+              </div>
+            ))
+          )}
+          {changes.length < total && (
+            <div className="flex justify-center pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setOffset(changes.length)}
+                disabled={loading}
+                className={cn("h-8 text-xs", outlineButtonClass)}
+              >
+                Show more ({(total - changes.length).toLocaleString()} left)
+              </Button>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>
@@ -1388,7 +1533,7 @@ function PublishChangeDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className={selectContentClass}>
-                  {(Object.keys(CHANGE_KIND_LABELS) as ChangeKind[]).map((key) => (
+                  {(["deprecation", "replacement", "new_identifier", "breaking_change"] as ChangeKind[]).map((key) => (
                     <SelectItem key={key} value={key} className={selectItemClass}>
                       {CHANGE_KIND_LABELS[key]}
                     </SelectItem>
@@ -1473,6 +1618,11 @@ function ChangeRow({
         <p className="text-sm font-medium text-[var(--text-primary)] leading-snug">
           {change.title}
         </p>
+        {change.summary && change.summary !== change.title && (
+          <p className="mt-1.5 text-[11px] text-[var(--text-secondary)] leading-relaxed">
+            {change.summary}
+          </p>
+        )}
         {change.retiredIdentifiers.length > 0 && (
           <div className="mt-2 space-y-1">
             {change.retiredIdentifiers.map((id) => (
@@ -1500,7 +1650,7 @@ function ChangeRow({
       </div>
       <div className="text-right flex-shrink-0">
         <p className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
-          Effective
+          Published
         </p>
         <p
           className={cn(
@@ -1542,6 +1692,14 @@ function KindPill({ kind }: { kind: ChangeKind }) {
     replacement: "text-amber-400 bg-amber-500/10 border-amber-500/20",
     new_identifier: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
     breaking_change: "text-red-400 bg-red-500/10 border-red-500/20",
+    feature: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+    fix: "text-sky-400 bg-sky-500/10 border-sky-500/20",
+    issue: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+    security: "text-red-400 bg-red-500/10 border-red-500/20",
+    announcement: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
+    change: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
+    libraries: "text-sky-400 bg-sky-500/10 border-sky-500/20",
+    other: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
   };
   return (
     <span

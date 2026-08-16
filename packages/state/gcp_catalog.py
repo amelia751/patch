@@ -8,6 +8,7 @@ never calls Google.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import os
@@ -222,15 +223,37 @@ def _product(title: str) -> str:
     return display_name(title)
 
 
+def coerce_summary(value: object, *, fallback: str = "") -> str:
+    """Return the human sentence, never a documentation object or its repr.
+
+    Service Usage stores `documentation: {summary: "..."}`. An earlier snapshot
+    wrote `str(that_dict)`, which the UI then rendered as
+    `{'summary': 'Retrieves the list of AMP URLs...'}`.
+    """
+    if isinstance(value, dict):
+        return coerce_summary(value.get("summary"), fallback=fallback)
+    if not isinstance(value, str):
+        return fallback
+    text = value.strip()
+    if text.startswith("{") and "summary" in text[:24]:
+        parsed: object | None
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                parsed = None
+        if isinstance(parsed, dict):
+            return coerce_summary(parsed.get("summary"), fallback=fallback)
+    return text or fallback
+
+
 def _documentation_summary(config: Mapping[str, Any], api_name: str) -> str:
+    fallback = f"Google Cloud service {api_name}"
     documentation = config.get("documentation")
-    if isinstance(documentation, dict):
-        text = str(documentation.get("summary") or "").strip()
-        if text:
-            return text
-    if isinstance(documentation, str) and documentation.strip():
-        return documentation.strip()
-    return f"Google Cloud service {api_name}"
+    text = coerce_summary(documentation, fallback="")
+    return text or fallback
 
 
 def normalize_service(raw: Mapping[str, Any]) -> CatalogService | None:
@@ -375,7 +398,7 @@ def catalog_from_payload(payload: Mapping[str, Any]) -> GoogleCatalog:
                 slug=str(row.get("slug") or ""),
                 product=str(row.get("product") or ""),
                 group=str(row.get("group") or "api"),
-                summary=str(row.get("summary") or ""),
+                summary=coerce_summary(row.get("summary"), fallback=""),
                 status=str(row.get("status") or "live"),
                 identifiers=tuple(str(item) for item in identifiers)
                 if isinstance(identifiers, list)
