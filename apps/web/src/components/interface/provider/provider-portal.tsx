@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getGCPCategoryIcon, getGCPServiceIcon } from "@/lib/gcp-icons";
 import {
   Dialog,
   DialogContent,
@@ -27,24 +30,37 @@ import {
   BadgeCheck,
   Blocks,
   Building2,
+  ChevronDown,
+  ChevronRight,
+  Clock,
   Clock3,
+  ExternalLink,
   Eye,
   FilePlus2,
+  Filter,
+  Globe,
   Info,
   Layers,
   Link2,
+  Loader2,
+  Mail,
+  MapPin,
   Plus,
+  Search,
+  Shield,
 } from "lucide-react";
 import {
   CATEGORY_LABELS,
   CHANGE_KIND_LABELS,
-  GOOGLE_CLOUD_CHANGES,
   GOOGLE_CLOUD_PROVIDER,
-  GOOGLE_CLOUD_SERVICES,
+  SERVICE_GROUP_LABELS,
   SERVICE_STATUS_LABELS,
+  catalogChangeFromApi,
+  catalogServiceFromApi,
   daysUntil,
   formatShortDate,
   formatWatchers,
+  inferServiceMeta,
   initials,
   slugify,
   type ChangeKind,
@@ -52,6 +68,7 @@ import {
   type ProviderProfile,
   type PublishedChange,
   type PublishedService,
+  type ServiceGroup,
   type ServiceStatus,
 } from "./data";
 
@@ -79,6 +96,15 @@ const selectItemClass =
 const tabTriggerClass =
   "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/** Outline actions — same dark hover as the header theme toggle. */
+const outlineButtonClass =
+  "border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]";
+
+const outlineMutedButtonClass =
+  "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]";
+
 export function ProviderPortal() {
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
   const [services, setServices] = useState<PublishedService[]>([]);
@@ -88,14 +114,40 @@ export function ProviderPortal() {
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [publishServiceOpen, setPublishServiceOpen] = useState(false);
   const [publishChangeOpen, setPublishChangeOpen] = useState(false);
-  const [selectedService, setSelectedService] = useState<PublishedService | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  const openCatalog = () => {
+  const openCatalog = async () => {
     setProfile(GOOGLE_CLOUD_PROVIDER);
-    setServices(GOOGLE_CLOUD_SERVICES);
-    setChanges(GOOGLE_CLOUD_CHANGES);
+    setServices([]);
+    setChanges([]);
     setTab("services");
     setShowRegister(false);
+    setCatalogError(null);
+    setCatalogLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/providers/google`, {
+        credentials: "include",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.detail || `Catalog unavailable (${response.status})`);
+      }
+      const rows = Array.isArray(body?.services) ? body.services : [];
+      const changeRows = Array.isArray(body?.changes) ? body.changes : [];
+      setServices(rows.map(catalogServiceFromApi));
+      setChanges(
+        changeRows
+          .map(catalogChangeFromApi)
+          .filter((change): change is NonNullable<typeof change> => change !== null),
+      );
+    } catch (error) {
+      setCatalogError(
+        error instanceof Error ? error.message : "Could not load the Google Cloud catalog",
+      );
+    } finally {
+      setCatalogLoading(false);
+    }
   };
 
   const handleRegistered = (next: ProviderProfile) => {
@@ -146,7 +198,7 @@ export function ProviderPortal() {
               <Button
                 variant="outline"
                 onClick={openCatalog}
-                className="border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                className={outlineButtonClass}
               >
                 Open Google Cloud catalog
               </Button>
@@ -169,23 +221,13 @@ export function ProviderPortal() {
       <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
         <div className="border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2 transition-colors">
           <TabsList className="inline-flex w-full h-9 items-center justify-between rounded-lg bg-[var(--bg-secondary)] p-1 text-[var(--text-secondary)] transition-colors">
-            <TabsTrigger value="services" className={cn(tabTriggerClass, "relative")}>
+            <TabsTrigger value="services" className={tabTriggerClass}>
               <Layers className="w-3 h-3 mr-2" />
               Services
-              {services.length > 0 && (
-                <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold px-1">
-                  {services.length}
-                </span>
-              )}
             </TabsTrigger>
-            <TabsTrigger value="changes" className={cn(tabTriggerClass, "relative")}>
+            <TabsTrigger value="changes" className={tabTriggerClass}>
               <FilePlus2 className="w-3 h-3 mr-2" />
               Changes
-              {changes.length > 0 && (
-                <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold px-1">
-                  {changes.length}
-                </span>
-              )}
             </TabsTrigger>
             <TabsTrigger value="profile" className={tabTriggerClass}>
               <Building2 className="w-3 h-3 mr-2" />
@@ -197,8 +239,10 @@ export function ProviderPortal() {
         <TabsContent value="services" className="flex-1 m-0 p-0 overflow-hidden">
           <ServicesTab
             services={services}
+            loading={catalogLoading}
+            error={catalogError}
+            onRetry={() => void openCatalog()}
             onPublish={() => setPublishServiceOpen(true)}
-            onSelect={setSelectedService}
           />
         </TabsContent>
 
@@ -211,7 +255,11 @@ export function ProviderPortal() {
         </TabsContent>
 
         <TabsContent value="profile" className="flex-1 m-0 p-0 overflow-hidden">
-          <ProfileTab profile={profile} serviceCount={services.length} onLeave={leaveProvider} />
+          <ProfileTab
+            profile={profile}
+            services={services}
+            onLeave={leaveProvider}
+          />
         </TabsContent>
       </Tabs>
 
@@ -232,26 +280,108 @@ export function ProviderPortal() {
           setTab("changes");
         }}
       />
-      <ServiceDetailDialog
-        service={selectedService}
-        changes={changes}
-        onOpenChange={(open) => {
-          if (!open) setSelectedService(null);
-        }}
-      />
     </>
   );
 }
 
+const SERVICE_STATUS_STYLE: Record<ServiceStatus, { color: string; bg: string }> = {
+  live: { color: "text-[#10b981]", bg: "bg-[#10b981]/10 border-[#10b981]/30" },
+  preview: { color: "text-amber-500", bg: "bg-amber-500/10 border-amber-500/30" },
+  deprecated: { color: "text-red-500", bg: "bg-red-500/10 border-red-500/30" },
+};
+
 function ServicesTab({
   services,
+  loading,
+  error,
+  onRetry,
   onPublish,
-  onSelect,
 }: {
   services: PublishedService[];
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onPublish: () => void;
-  onSelect: (service: PublishedService) => void;
 }) {
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-[var(--bg-primary)]">
+        <Loader2 className="h-5 w-5 animate-spin text-[var(--text-secondary)] mb-3" />
+        <p className="text-xs text-[var(--text-secondary)]">Loading Google Cloud services…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-[var(--bg-primary)] px-4">
+        <div className="text-center max-w-md">
+          <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
+            <Layers className="h-5 w-5 text-[var(--text-secondary)]" />
+          </div>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
+            Catalog unavailable
+          </h2>
+          <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">{error}</p>
+          {onRetry && (
+            <Button
+              size="sm"
+              onClick={onRetry}
+              className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              Retry
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ServiceStatus | "all">("all");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return services.filter((service) => {
+      const matchesSearch =
+        !q ||
+        service.name.toLowerCase().includes(q) ||
+        service.slug.toLowerCase().includes(q) ||
+        service.product.toLowerCase().includes(q) ||
+        service.identifiers.some((id) => id.toLowerCase().includes(q));
+      const matchesStatus = statusFilter === "all" || service.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [services, searchQuery, statusFilter]);
+
+  const grouped = useMemo(() => {
+    const next: Record<string, PublishedService[]> = {};
+    for (const service of filtered) {
+      if (!next[service.group]) next[service.group] = [];
+      next[service.group].push(service);
+    }
+    return next;
+  }, [filtered]);
+
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
+
+  const toggleService = (id: string) => {
+    setExpandedServices((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   if (services.length === 0) {
     return (
       <TabEmpty
@@ -265,9 +395,33 @@ function ServicesTab({
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--bg-secondary)]">
-      <div className="max-w-5xl mx-auto px-6 py-6">
-        <div className="flex items-center justify-end mb-4">
+    <div className="h-full flex flex-col bg-[var(--bg-primary)]">
+      <div className="border-b border-[var(--border-color)] p-4">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)]" />
+            <Input
+              placeholder="Search services..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8 pl-9 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+            />
+          </div>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as ServiceStatus | "all")}
+          >
+            <SelectTrigger className="h-8 w-[130px] text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+              <Filter className="h-3 w-3 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+              <SelectItem value="all" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">All status</SelectItem>
+              <SelectItem value="live" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Live</SelectItem>
+              <SelectItem value="preview" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Preview</SelectItem>
+              <SelectItem value="deprecated" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Deprecated</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             onClick={onPublish}
             className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -276,52 +430,189 @@ function ServicesTab({
             Publish service
           </Button>
         </div>
-        <div className="grid md:grid-cols-2 gap-3">
-          {services.map((service) => (
-            <button
-              key={service.id}
-              type="button"
-              onClick={() => onSelect(service)}
-              className="text-left rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4 hover:border-primary/40 transition-colors group"
-            >
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--text-primary)] group-hover:text-primary transition-colors">
-                    {service.name}
-                  </p>
-                  <p className="font-mono text-[10px] text-[var(--text-secondary)] mt-0.5">
-                    {service.slug}
-                  </p>
-                </div>
-                <StatusPill status={service.status} />
-              </div>
-              <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed mb-3 line-clamp-2">
-                {service.summary}
-              </p>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {service.identifiers.slice(0, 2).map((id) => (
-                  <span
-                    key={id}
-                    className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)]"
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-5xl mx-auto space-y-3">
+          {Object.keys(grouped).length === 0 ? (
+            <p className="text-xs text-[var(--text-secondary)] text-center py-10">
+              No services match that filter.
+            </p>
+          ) : (
+            Object.entries(grouped).map(([group, items]) => {
+              const isExpanded = !collapsedGroups.has(group);
+              const live = items.filter((s) => s.status === "live").length;
+              const deprecated = items.filter((s) => s.status === "deprecated").length;
+              const preview = items.filter((s) => s.status === "preview").length;
+
+              return (
+                <div
+                  key={group}
+                  className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden"
+                >
+                  <div
+                    className="p-3 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors flex items-center justify-between"
+                    onClick={() => toggleGroup(group)}
                   >
-                    {id}
-                  </span>
-                ))}
-                {service.identifiers.length > 2 && (
-                  <span className="text-[10px] text-[var(--text-secondary)] px-1">
-                    +{service.identifiers.length - 2}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
-                <span className="inline-flex items-center gap-1">
-                  <Eye className="h-3 w-3" />
-                  {formatWatchers(service.watchers)} watching
-                </span>
-                <span>Updated {formatShortDate(service.lastPublishedAt)}</span>
-              </div>
-            </button>
-          ))}
+                    <div className="flex items-center gap-3">
+                      <Image
+                        src={getGCPCategoryIcon(group)}
+                        alt={SERVICE_GROUP_LABELS[group as ServiceGroup] || group}
+                        width={20}
+                        height={20}
+                        className="h-5 w-5 object-contain"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-[var(--text-primary)]">
+                            {SERVICE_GROUP_LABELS[group as ServiceGroup] || group}
+                          </span>
+                          <Badge variant="outline" className="text-[9px] text-[var(--text-secondary)] border-[var(--border-color)]">
+                            {items.length}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-[10px]">
+                          {live > 0 && (
+                            <span className="text-[#10b981]">● {live} Live</span>
+                          )}
+                          {preview > 0 && (
+                            <span className="text-amber-500">● {preview} Preview</span>
+                          )}
+                          {deprecated > 0 && (
+                            <span className="text-red-500">● {deprecated} Deprecated</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-[var(--text-secondary)]" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-[var(--text-secondary)]" />
+                    )}
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t border-[var(--border-color)]">
+                      {items.map((service) => {
+                        const open = expandedServices.has(service.id);
+                        const status = SERVICE_STATUS_STYLE[service.status];
+                        return (
+                          <div
+                            key={service.id}
+                            className="border-b border-[var(--border-color)] last:border-b-0"
+                          >
+                            <div
+                              className="p-3 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors"
+                              onClick={() => toggleService(service.id)}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-3 flex-1 min-w-0">
+                                  <div className="relative mt-0.5 flex-shrink-0">
+                                    <Image
+                                      src={getGCPServiceIcon(service.product)}
+                                      alt={service.product}
+                                      width={20}
+                                      height={20}
+                                      className="h-5 w-5 object-contain"
+                                    />
+                                    <div
+                                      className={cn(
+                                        "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-[var(--bg-tertiary)]",
+                                        service.status === "live" && "bg-[#10b981]",
+                                        service.status === "preview" && "bg-amber-500",
+                                        service.status === "deprecated" && "bg-red-500",
+                                      )}
+                                    />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-medium text-[var(--text-primary)]">
+                                        {service.name}
+                                      </span>
+                                      <Badge variant="outline" className={cn("text-[9px]", status.bg, status.color)}>
+                                        {SERVICE_STATUS_LABELS[service.status]}
+                                      </Badge>
+                                      {service.product !== service.name && (
+                                        <Badge variant="outline" className="text-[9px] text-[var(--text-secondary)] border-[var(--border-color)]">
+                                          {service.product}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-1 text-[10px] text-[var(--text-secondary)]">
+                                      <span className="font-mono">{service.slug}</span>
+                                      <span className="flex items-center gap-1">
+                                        <Layers className="h-3 w-3" />
+                                        {service.identifiers.length} identifiers
+                                      </span>
+                                      {service.watchers > 0 && (
+                                        <span className="flex items-center gap-1">
+                                          <Eye className="h-3 w-3" />
+                                          {formatWatchers(service.watchers)} watching
+                                        </span>
+                                      )}
+                                      <span className="flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        {formatShortDate(service.lastPublishedAt)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                                {open ? (
+                                  <ChevronDown className="h-4 w-4 text-[var(--text-secondary)] ml-2" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-[var(--text-secondary)] ml-2" />
+                                )}
+                              </div>
+                            </div>
+
+                            {open && (
+                              <div className="bg-[var(--bg-tertiary)] p-4 space-y-3">
+                                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                                  {service.summary}
+                                </p>
+                                <div>
+                                  <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
+                                    Identifiers
+                                  </label>
+                                  <div className="mt-1 space-y-1.5">
+                                    {service.identifiers.map((id) => (
+                                      <p
+                                        key={id}
+                                        className="font-mono text-[12px] text-[var(--text-primary)] px-2 py-1.5 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-color)]"
+                                      >
+                                        {id}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 pt-1">
+                                  <a
+                                    href={service.docsUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex"
+                                  >
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className={cn("h-7 text-xs", outlineButtonClass)}
+                                    >
+                                      <ExternalLink className="h-3 w-3 mr-1" />
+                                      View docs
+                                    </Button>
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
@@ -383,70 +674,204 @@ function ChangesTab({
 
 function ProfileTab({
   profile,
-  serviceCount,
+  services,
   onLeave,
 }: {
   profile: ProviderProfile;
-  serviceCount: number;
+  services: PublishedService[];
   onLeave: () => void;
 }) {
+  const products = useMemo(() => {
+    if (profile.featuredProducts?.length) return profile.featuredProducts;
+    const seen = new Set<string>();
+    const next: string[] = [];
+    for (const service of services) {
+      if (seen.has(service.product)) continue;
+      seen.add(service.product);
+      next.push(service.product);
+      if (next.length >= 8) break;
+    }
+    return next;
+  }, [profile.featuredProducts, services]);
+
+  const host = profile.website.replace(/^https?:\/\//, "");
+
   return (
     <div className="h-full overflow-y-auto bg-[var(--bg-secondary)]">
-      <div className="max-w-xl mx-auto px-6 py-8 space-y-6">
-        <div className="flex items-start gap-3">
-          <div className="h-11 w-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
-            {initials(profile.name)}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">{profile.name}</h2>
-              {profile.verified ? (
-                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500">
-                  <BadgeCheck className="h-3 w-3" />
-                  Verified
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
-                  <Clock3 className="h-3 w-3" />
-                  Review pending
-                </span>
-              )}
+      <div className="max-w-2xl mx-auto px-6 py-8 space-y-5">
+        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-5">
+          <div className="flex items-start gap-4">
+            {profile.logoUrl ? (
+              <div className="h-14 w-14 rounded-2xl bg-white border border-[var(--border-color)] flex items-center justify-center flex-shrink-0 shadow-sm">
+                <Image
+                  src={profile.logoUrl}
+                  alt={profile.name}
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 object-contain"
+                />
+              </div>
+            ) : (
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-base font-semibold text-primary flex-shrink-0">
+                {initials(profile.name)}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base font-semibold text-[var(--text-primary)] tracking-tight">
+                      {profile.name}
+                    </h2>
+                    {profile.verified ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+                        <BadgeCheck className="h-3 w-3" />
+                        Verified publisher
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500">
+                        <Clock3 className="h-3 w-3" />
+                        Review pending
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-1">
+                    {CATEGORY_LABELS[profile.category]}
+                    {profile.since && (
+                      <>
+                        <span className="mx-1.5">·</span>
+                        Since {profile.since}
+                      </>
+                    )}
+                    {profile.hq && (
+                      <>
+                        <span className="mx-1.5">·</span>
+                        {profile.hq}
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed mt-3">
+                {profile.description}
+              </p>
             </div>
-            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-              <span className="font-mono">{profile.slug}</span>
-              <span className="mx-1.5">·</span>
-              {CATEGORY_LABELS[profile.category]}
-              <span className="mx-1.5">·</span>
-              {serviceCount} {serviceCount === 1 ? "service" : "services"}
-            </p>
-            <p className="text-xs text-[var(--text-secondary)] leading-relaxed mt-2">
-              {profile.description}
-            </p>
           </div>
         </div>
+
+        {products.length > 0 && (
+          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)] mb-3">
+              Surfaces
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {products.map((product) => (
+                <span
+                  key={product}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2 py-1.5 text-[11px] text-[var(--text-primary)]"
+                >
+                  <Image
+                    src={getGCPServiceIcon(product)}
+                    alt=""
+                    width={14}
+                    height={14}
+                    className="h-3.5 w-3.5 object-contain"
+                  />
+                  {product}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] divide-y divide-[var(--border-color)]">
-          <ProfileRow label="Website" value={profile.website.replace(/^https?:\/\//, "")} />
-          <ProfileRow label="Contact" value={profile.contactEmail} />
-          <ProfileRow label="Watching orgs" value={formatWatchers(profile.watchingOrgs)} />
-          <ProfileRow label="Registered" value={formatShortDate(profile.registeredAt)} />
+          <DetailRow icon={Globe} label="Website" value={host} href={profile.website} />
+          {profile.consoleUrl && (
+            <DetailRow
+              icon={ExternalLink}
+              label="Console"
+              value={profile.consoleUrl.replace(/^https?:\/\//, "")}
+              href={profile.consoleUrl}
+            />
+          )}
+          {profile.docsUrl && (
+            <DetailRow
+              icon={Layers}
+              label="Docs"
+              value={profile.docsUrl.replace(/^https?:\/\//, "")}
+              href={profile.docsUrl}
+            />
+          )}
+          {profile.statusUrl && (
+            <DetailRow
+              icon={Eye}
+              label="Status"
+              value={profile.statusUrl.replace(/^https?:\/\//, "")}
+              href={profile.statusUrl}
+            />
+          )}
+          <DetailRow icon={Mail} label="Contact" value={profile.contactEmail} href={`mailto:${profile.contactEmail}`} />
+          {profile.hq && <DetailRow icon={MapPin} label="Headquarters" value={profile.hq} />}
         </div>
 
-        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-          Provider material is untrusted input. Registering does not grant access to
-          customer repositories, secrets, or merge rights.
-        </p>
+        <div className="flex items-start gap-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3">
+          <Shield className="h-3.5 w-3.5 text-[var(--text-secondary)] mt-0.5 flex-shrink-0" />
+          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+            Provider material is untrusted input. Opening this catalog does not grant
+            access to customer repositories, secrets, or merge rights.
+          </p>
+        </div>
 
         <Button
           variant="outline"
           onClick={onLeave}
-          className="h-8 text-xs border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+          className={cn("h-8 text-xs", outlineMutedButtonClass)}
         >
           Leave catalog
         </Button>
       </div>
     </div>
   );
+}
+
+function DetailRow({
+  icon: Icon,
+  label,
+  value,
+  href,
+}: {
+  icon: typeof Globe;
+  label: string;
+  value: string;
+  href?: string;
+}) {
+  const inner = (
+    <>
+      <span className="inline-flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </span>
+      <span className="inline-flex items-center gap-1 text-xs text-[var(--text-primary)] truncate min-w-0">
+        <span className="truncate">{value}</span>
+        {href && <ArrowUpRight className="h-3 w-3 text-[var(--text-secondary)] flex-shrink-0" />}
+      </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target={href.startsWith("mailto:") ? undefined : "_blank"}
+        rel={href.startsWith("mailto:") ? undefined : "noreferrer"}
+        className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-[var(--bg-tertiary)] transition-colors"
+      >
+        {inner}
+      </a>
+    );
+  }
+
+  return <div className="flex items-center justify-between gap-4 px-4 py-3">{inner}</div>;
 }
 
 function TabEmpty({
@@ -684,7 +1109,7 @@ function RegisterDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="h-7 text-xs border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className={cn("h-7 text-xs", outlineMutedButtonClass)}
           >
             Cancel
           </Button>
@@ -736,12 +1161,15 @@ function PublishServiceDialog({
       .map((s) => s.trim())
       .filter(Boolean);
     if (ids.length === 0) return setError("List at least one identifier.");
+    const meta = inferServiceMeta(name);
     onPublish({
       id: `svc_${slugify(slug || name)}_${Date.now()}`,
       name: name.trim(),
       slug: slugify(slug || name),
       summary: summary.trim() || "Published service. Identifiers are available for inventory.",
       status,
+      product: meta.product,
+      group: meta.group,
       identifiers: ids,
       docsUrl: docsUrl.trim() || "https://example.com/docs",
       watchers: 0,
@@ -837,7 +1265,7 @@ function PublishServiceDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="h-7 text-xs border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className={cn("h-7 text-xs", outlineMutedButtonClass)}
           >
             Cancel
           </Button>
@@ -1007,7 +1435,7 @@ function PublishChangeDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="h-7 text-xs border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className={cn("h-7 text-xs", outlineMutedButtonClass)}
           >
             Cancel
           </Button>
@@ -1018,89 +1446,6 @@ function PublishChangeDialog({
             Publish
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ServiceDetailDialog({
-  service,
-  changes,
-  onOpenChange,
-}: {
-  service: PublishedService | null;
-  changes: PublishedChange[];
-  onOpenChange: (open: boolean) => void;
-}) {
-  const related = useMemo(
-    () => (service ? changes.filter((c) => c.serviceId === service.id) : []),
-    [service, changes],
-  );
-
-  return (
-    <Dialog open={!!service} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-lg">
-        {service && (
-          <>
-            <DialogHeader>
-              <div className="flex items-center gap-2 mb-1">
-                <StatusPill status={service.status} />
-              </div>
-              <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-                {service.name}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                {service.summary}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-1">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)] mb-2">
-                  Identifiers
-                </p>
-                <div className="space-y-1.5">
-                  {service.identifiers.map((id) => (
-                    <p
-                      key={id}
-                      className="font-mono text-[12px] text-[var(--text-primary)] px-2 py-1.5 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-color)]"
-                    >
-                      {id}
-                    </p>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)]">
-                <span className="inline-flex items-center gap-1">
-                  <Eye className="h-3 w-3" />
-                  {formatWatchers(service.watchers)} watching
-                </span>
-                <a
-                  href={service.docsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 hover:text-primary transition-colors"
-                >
-                  Docs
-                  <ArrowUpRight className="h-3 w-3" />
-                </a>
-              </div>
-              {related.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)] mb-2">
-                    Attached changes
-                  </p>
-                  <div className="space-y-2">
-                    {related.map((change) => (
-                      <p key={change.id} className="text-xs text-[var(--text-primary)]">
-                        {change.title}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
       </DialogContent>
     </Dialog>
   );
@@ -1188,33 +1533,6 @@ function Field({
       {children}
       {hint && <p className="text-[10px] text-[var(--text-secondary)]">{hint}</p>}
     </div>
-  );
-}
-
-function ProfileRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-xs text-[var(--text-secondary)]">{label}</span>
-      <span className="text-xs text-[var(--text-primary)] truncate">{value}</span>
-    </div>
-  );
-}
-
-function StatusPill({ status }: { status: ServiceStatus }) {
-  const styles: Record<ServiceStatus, string> = {
-    live: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    preview: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    deprecated: "text-red-400 bg-red-500/10 border-red-500/20",
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-        styles[status],
-      )}
-    >
-      {SERVICE_STATUS_LABELS[status]}
-    </span>
   );
 }
 

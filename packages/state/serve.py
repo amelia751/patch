@@ -32,6 +32,7 @@ from packages.state.github_routes import router as github_router
 from packages.state.notification_routes import router as notification_router
 from packages.state.pool import StateUnavailableError, create_pool, ping
 from packages.state.project_routes import router as project_router
+from packages.state.provider_routes import router as provider_router
 from packages.state.runs import PostgresRunStateReader
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -91,6 +92,7 @@ def build_app() -> FastAPI:
     app.include_router(github_router)
     app.include_router(project_router)
     app.include_router(notification_router)
+    app.include_router(provider_router)
     app.state.readiness_probes = (
         *app.state.readiness_probes,
         ReadinessProbe(name=POSTGRES_PROBE, check=_postgres_probe(app)),

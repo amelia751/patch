@@ -15,6 +15,13 @@ in `db/migrations/`.
 | `pool.py` | asyncpg pool lifecycle and JSON/numeric codecs |
 | `runs.py` | `PostgresRunStateReader` — the narrow, pollable run-state read |
 | `dashboard.py` | `PostgresDashboardReader` — the dashboard's read projections |
+| `gcp_catalog.py` | Google Cloud service snapshot (Service Usage `services.list`) |
+| `google_models.py` | Gemini / Vertex model snapshot (deprecation pages + list APIs) |
+| `provider_routes.py` | `GET /api/providers/google` — serves those files |
+| `data/google_services.json` | Committed Service Usage snapshot (stand-in for Postgres) |
+| `data/google_models.json` | Committed Gemini / Vertex lifecycle snapshot |
+
+How those files are downloaded: root [`README.md`](../../README.md) § Provider catalog snapshots.
 
 ## What deliberately does not live here
 

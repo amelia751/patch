@@ -74,7 +74,12 @@ const GCP_SERVICE_ICONS: Record<string, string> = {
   
   // AI/ML
   "vertex ai": `${UNIQUE_BASE}/Vertex AI/SVG/VertexAI-512-color.svg`,
+  "vertex ai prediction": `${UNIQUE_BASE}/Vertex AI/SVG/VertexAI-512-color.svg`,
   "ai platform": `${UNIQUE_BASE}/Vertex AI/SVG/VertexAI-512-color.svg`,
+  "gemini": `${UNIQUE_BASE}/Vertex AI/SVG/VertexAI-512-color.svg`,
+  "gemini api": `${UNIQUE_BASE}/Vertex AI/SVG/VertexAI-512-color.svg`,
+  "imagen": `${UNIQUE_BASE}/AI Hypercomputer/SVG/AIHypercomputer-512-color.svg`,
+  "ai hypercomputer": `${UNIQUE_BASE}/AI Hypercomputer/SVG/AIHypercomputer-512-color.svg`,
   "automl": `${LEGACY_BASE}/automl/automl.svg`,
   "document ai": `${LEGACY_BASE}/document_ai/document_ai.svg`,
   "documentai": `${LEGACY_BASE}/document_ai/document_ai.svg`,
@@ -286,6 +291,8 @@ const GCP_CATEGORY_ICON_PATHS: Record<string, string> = {
   "storage": `${CATEGORY_BASE}/Storage/SVG/Storage-512-color.svg`,
   "networking": `${CATEGORY_BASE}/Networking/SVG/Networking-512-color-rgb.svg`,
   "security": `${CATEGORY_BASE}/Security Identity/SVG/SecurityIdentity-512-color.svg`,
+  "ai": `${CATEGORY_BASE}/AI _ Machine Learning/SVG/AIMachineLearning-512-color.svg`,
+  "api": `${UNIQUE_BASE}/Apigee/SVG/Apigee-512-color-rgb.svg`,
 };
 
 /**

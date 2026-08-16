@@ -77,6 +77,59 @@ Terraform for the same surface: [`infra/terraform/README.md`](./infra/terraform/
 were bootstrapped with `./scripts/bootstrap_cloud_run.sh` and
 `./scripts/bootstrap_cloud_sql.sh`). Full service list: `roadmap.md` §20–§21.
 
+### Provider catalog snapshots
+
+The `/provider` console reads committed JSON, not Google, on each page load.
+Postgres replaces those files later. Provider pages and list APIs are
+untrusted input.
+
+**Google Cloud services** — Service Usage
+[`services.list`](https://cloud.google.com/service-usage/docs/list-services)
+(`serviceusage.googleapis.com`).
+
+| | |
+|---|---|
+| Endpoint | `GET https://serviceusage.googleapis.com/v1/projects/{project}/services` |
+| Auth | Project service account (`.secrets/gcp-service-account.json` or `GOOGLE_APPLICATION_CREDENTIALS`) |
+| Keep | First-party hosts ending in `.googleapis.com` |
+| Drop | Marketplace listings (`*.endpoints.*.cloud.goog`) |
+| Quota | `list_available_requests` defaults to 1 QPS — page slowly or the list 429s |
+| Snapshot | [`packages/state/data/google_services.json`](./packages/state/data/google_services.json) |
+| Refresh | `refresh_google_catalog` in [`packages/state/gcp_catalog.py`](./packages/state/gcp_catalog.py) |
+
+Same list via CLI (also Service Usage):
+
+```bash
+gcloud services list --available --filter="config.name:googleapis.com"
+```
+
+Service Usage titles are enable-an-API labels (`AlloyDB API`). The snapshot
+stores the product name (`AlloyDB`). The host stays on the identifier
+(`alloydb.googleapis.com`).
+
+**Gemini / Vertex models** — two official HTML tables plus two list APIs.
+The list APIs have launch stage / preview; they do not return retirement dates.
+
+| Source | What it gives |
+|---|---|
+| [Gemini API deprecations](https://ai.google.dev/gemini-api/docs/deprecations) | Shutdown dates and replacements (HTML tables) |
+| [Vertex model versions and lifecycle](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/model-versions) | Retirement dates and replacements (HTML tables) |
+| Gemini [`models.list`](https://ai.google.dev/api/models) `GET https://generativelanguage.googleapis.com/v1beta/models` | Currently served Gemini API models (`.secrets/gemini_api_key.txt` or `GOOGLE_API_KEY`) |
+| Vertex [`publishers.models.list`](https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/v1beta1/publishers.models/list) `GET …/v1beta1/publishers/google/models` (global and `us-central1`) | Model Garden / Vertex models, including `launchStage` (same service account) |
+| Snapshot | [`packages/state/data/google_models.json`](./packages/state/data/google_models.json) |
+| Refresh | `refresh_google_models` in [`packages/state/google_models.py`](./packages/state/google_models.py) |
+
+Both snapshots are served together:
+
+```text
+GET /api/providers/google
+```
+
+`services` comes from the Service Usage file. `models` and `changes` come from
+the Gemini / Vertex file. A change row is emitted only when the provider page
+gave a day-precision shutdown or retirement date — month-only strings stay on
+the model and are not turned into a date.
+
 ## GitHub: OAuth login + import App
 
 Create **one** GitHub App (not a separate OAuth App). The App’s user-to-server
