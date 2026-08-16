@@ -24,3 +24,10 @@ def test_disconnect_route_is_a_delete_on_connection() -> None:
     source = GITHUB_ROUTES_PY.read_text(encoding="utf-8")
     assert '@router.delete("/connection")' in source
     assert "delete_github_connection" in source
+
+
+def test_files_route_lists_repository_contents() -> None:
+    """Add Secret and the import picker call GET .../repos/{owner}/{repo}/files."""
+    source = GITHUB_ROUTES_PY.read_text(encoding="utf-8")
+    assert '@router.get("/repos/{owner}/{repo}/files")' in source
+    assert "list_repository_contents" in source

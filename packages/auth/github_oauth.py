@@ -374,6 +374,15 @@ def public_repository(entry: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def public_contents_entry(entry: Mapping[str, Any]) -> dict[str, str] | None:
+    """Project a GitHub contents item onto the folder picker (`name` + `type`)."""
+    name = str(entry.get("name") or "")
+    kind = str(entry.get("type") or "")
+    if not name or kind not in {"file", "dir", "symlink", "submodule"}:
+        return None
+    return {"name": name, "type": "dir" if kind == "dir" else "file"}
+
+
 async def list_installation_repositories(
     config: IdentityPlatformConfig, installation_id: str
 ) -> list[dict[str, Any]]:
@@ -509,6 +518,47 @@ async def fetch_repository_tree(
         "truncated": bool(tree_body.get("truncated")),
         "entries": entries,
     }
+
+
+async def list_repository_contents(
+    config: IdentityPlatformConfig,
+    installation_id: str,
+    *,
+    owner: str,
+    repo: str,
+    path: str | None,
+    ref: str | None,
+) -> list[dict[str, str]]:
+    """Immediate children of a path the installation can see. Token is not stored."""
+    token = await mint_installation_token(config, installation_id)
+    headers = _installation_headers(token)
+    repo_path = _repo_path(owner, repo)
+    relative = (path or "").strip().lstrip("/")
+    params: dict[str, str] = {}
+    if (ref or "").strip():
+        params["ref"] = ref.strip()
+    url = f"{GITHUB_API}/repos/{repo_path}/contents"
+    if relative:
+        url = f"{url}/{_file_path(relative)}"
+    try:
+        async with httpx.AsyncClient(timeout=max(config.timeout_seconds, TREE_TIMEOUT_SECONDS)) as client:
+            response = await client.get(url, headers=headers, params=params or None)
+            _raise_for_github(response, what="directory")
+            body = response.json()
+    except GitHubResourceError:
+        raise
+    except httpx.HTTPError as exc:
+        raise AuthUnavailableError(f"could not list GitHub directory: {exc}") from exc
+    if not isinstance(body, list):
+        return []
+    entries: list[dict[str, str]] = []
+    for item in body:
+        if not isinstance(item, dict):
+            continue
+        projected = public_contents_entry(item)
+        if projected is not None:
+            entries.append(projected)
+    return entries
 
 
 async def fetch_repository_file(

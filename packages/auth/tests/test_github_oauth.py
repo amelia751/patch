@@ -80,3 +80,22 @@ def test_public_repository_projects_the_import_list_fields() -> None:
         "html_url": "https://github.com/amelia751/egaki",
     }
     assert "permissions" not in projected
+
+
+def test_public_contents_entry_keeps_dirs_and_files() -> None:
+    from packages.auth.github_oauth import public_contents_entry
+
+    assert public_contents_entry({"name": "src", "type": "dir"}) == {
+        "name": "src",
+        "type": "dir",
+    }
+    assert public_contents_entry({"name": "README.md", "type": "file"}) == {
+        "name": "README.md",
+        "type": "file",
+    }
+    assert public_contents_entry({"name": "link", "type": "symlink"}) == {
+        "name": "link",
+        "type": "file",
+    }
+    assert public_contents_entry({"name": "", "type": "dir"}) is None
+    assert public_contents_entry({"name": "x", "type": "unknown"}) is None
