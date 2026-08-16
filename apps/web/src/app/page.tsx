@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { CodebaseTab } from "@/components/interface/ops/codebase-tab";
 import { ConfigureTab } from "@/components/interface/ops/configure-tab";
 import { DeployTab } from "@/components/interface/ops/resources-tab";
-import { KnowledgeTab } from "@/components/interface/ops/knowledge-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Cloud, Github, Info, Code, Rocket, BookOpen } from "lucide-react";
+import { Cloud, Github, Info, Code, Rocket } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/lib/auth-context";
 import { useProject } from "@/lib/project-context";
@@ -116,16 +115,16 @@ function SystemPageContent() {
     | "auth"
     | undefined;
 
-  // Tab state (CI/CD pipeline tab hidden until the feature is ready for users)
+  // Tab state (CI/CD and Knowledge hidden until those surfaces are ready)
   const [activeTab, setActiveTab] = useState("code");
 
   const setMainWorkspaceTab = useCallback((tab: string) => {
-    if (tab === "pipeline") tab = "code";
+    if (tab === "pipeline" || tab === "knowledge") tab = "code";
     setActiveTab(tab);
   }, []);
 
   useEffect(() => {
-    if (activeTab === "pipeline") setActiveTab("code");
+    if (activeTab === "pipeline" || activeTab === "knowledge") setActiveTab("code");
   }, [activeTab]);
 
   // Project status
@@ -726,7 +725,7 @@ function SystemPageContent() {
     );
   }
 
-  // ─── Main workspace: Code, Configure, Resources (CI/CD tab hidden for now) ──
+  // ─── Main workspace: Code, Configure, Resources (CI/CD and Knowledge hidden) ──
   return (
     <>
       <Tabs value={activeTab} onValueChange={setMainWorkspaceTab} className="h-full flex flex-col">
@@ -753,10 +752,6 @@ function SystemPageContent() {
                   {resourcesBadgeCount}
                 </span>
               )}
-            </TabsTrigger>
-            <TabsTrigger value="knowledge" className="flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow">
-              <BookOpen className="w-3 h-3 mr-2" />
-              Knowledge
             </TabsTrigger>
           </TabsList>
         </div>
@@ -825,13 +820,6 @@ function SystemPageContent() {
             projectId={configureProject?.id}
             mockResources={!isAuthenticated ? (demo?.architecture?.deployed_resources || opsData.deployed_resources) : undefined}
             cloudProvider={cloudProvider ?? undefined}
-          />
-        </TabsContent>
-
-        <TabsContent value="knowledge" className="flex-1 m-0 p-0 overflow-hidden">
-          <KnowledgeTab
-            projectId={configureProject?.id || ""}
-            hasProject={!!configureProject || !isAuthenticated}
           />
         </TabsContent>
       </Tabs>
