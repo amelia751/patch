@@ -37,7 +37,7 @@ export function NoProjectEmptyState() {
           <Button
             variant="outline"
             onClick={() => router.push("/")}
-            className="w-full text-sm border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+            className="w-full text-sm border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
           >
             View All Projects
           </Button>

@@ -57,7 +57,7 @@ export default function HubPage() {
               </Link>
               <Button
                 variant="outline"
-                className="bg-transparent border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] px-6 h-10"
+                className="bg-transparent border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] px-6 h-10"
               >
                 <Github className="mr-2 h-4 w-4" />
                 Connect GitHub

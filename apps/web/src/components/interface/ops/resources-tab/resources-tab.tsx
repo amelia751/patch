@@ -910,7 +910,7 @@ export function DeployTab({ hasProject = true, projectId, mockResources, cloudPr
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                                  className="h-7 text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
                                 >
                                   <ExternalLink className="h-3 w-3 mr-1" />
                                   View in GCP Console
