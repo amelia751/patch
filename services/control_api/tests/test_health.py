@@ -51,6 +51,26 @@ def test_readyz_reports_a_raising_probe_as_not_ready() -> None:
     }
 
 
+def test_cors_preflight_allows_patch() -> None:
+    """Configure → Connection uses PATCH /cloud-provider. JetRun allows all
+    methods; omitting PATCH here makes the browser report Failed to fetch.
+    """
+    from patchapi_control_api.app import create_app
+
+    app = create_app(allowed_origins=["http://localhost:3000"])
+    response = TestClient(app).options(
+        "/api/projects/example/cloud-provider",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    allowed = response.headers.get("access-control-allow-methods", "")
+    assert "PATCH" in allowed.upper()
+
+
 def test_openapi_document_describes_the_whole_surface(unwired_client: TestClient) -> None:
     document = unwired_client.get("/openapi.json").json()
 

@@ -237,6 +237,43 @@ async def read_project(
         raise StateUnavailableError(f"could not read project: {type(exc).__name__}") from exc
 
 
+async def update_project_cloud_provider(
+    pool: asyncpg.Pool,
+    project_id: UUID,
+    owner_id: UUID,
+    *,
+    cloud_provider: str | None,
+) -> dict[str, Any] | None:
+    """Set or clear the project's hosting provider. Does not connect a cloud account."""
+    if cloud_provider is not None and cloud_provider not in {"aws", "gcp"}:
+        raise ValueError("Invalid cloud provider. Must be 'aws', 'gcp', or null to clear")
+    try:
+        async with pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                UPDATE projects
+                SET cloud_provider = $3::cloud_provider, updated_at = now()
+                WHERE id = $1 AND owner_id = $2
+                RETURNING id, owner_id, team_id, name, description,
+                          status::text AS status,
+                          cloud_provider::text AS cloud_provider,
+                          created_at, updated_at
+                """,
+                project_id,
+                owner_id,
+                cloud_provider,
+            )
+            if row is None:
+                return None
+            return await _assemble(connection, row)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise StateUnavailableError(
+            f"could not update cloud provider: {type(exc).__name__}"
+        ) from exc
+
+
 async def update_project_name(
     pool: asyncpg.Pool, project_id: UUID, owner_id: UUID, name: str
 ) -> dict[str, Any] | None:

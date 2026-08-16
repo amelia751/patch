@@ -36,6 +36,7 @@ from packages.state.projects import (
     list_projects,
     read_project,
     remove_repository,
+    update_project_cloud_provider,
     update_project_name,
 )
 from packages.state.session import COOKIE_NAME, load_session_secret, parse
@@ -341,6 +342,45 @@ async def get_owned_project(request: Request, project_id: UUID) -> JSONResponse:
         return user_id
     try:
         project = await read_project(_pool(request), project_id, user_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if project is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    return JSONResponse(project)
+
+
+@router.patch("/{project_id}/cloud-provider")
+async def update_owned_project_cloud_provider(
+    request: Request, project_id: UUID
+) -> JSONResponse:
+    """Set or clear `projects.cloud_provider`. Same contract as JetRun."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    body = await _json_body(request)
+    if "cloud_provider" not in body:
+        return JSONResponse({"detail": "cloud_provider is required"}, status_code=400)
+    raw = body.get("cloud_provider")
+    if raw is not None and not isinstance(raw, str):
+        return JSONResponse(
+            {"detail": "Invalid cloud provider. Must be 'aws', 'gcp', or null to clear"},
+            status_code=400,
+        )
+    provider = raw.strip().lower() if isinstance(raw, str) else None
+    if provider == "":
+        provider = None
+    try:
+        project = await update_project_cloud_provider(
+            _pool(request),
+            project_id,
+            user_id,
+            cloud_provider=provider,
+        )
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
     except StateUnavailableError as exc:
         return JSONResponse(
             {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
