@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
 import {
   LayoutDashboard,
-  Settings,
+  Blocks,
   Waypoints,
 } from "lucide-react";
 import {
@@ -97,7 +97,7 @@ const Sidebar = ({ onWidthChange }: SidebarProps) => {
 
   const navItems: NavItem[] = [
     { title: "Workspace", href: "/", icon: <LayoutDashboard className="h-5 w-5" /> },
-    { title: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },
+    { title: "Providers", href: "/provider", icon: <Blocks className="h-5 w-5" /> },
   ];
 
   useEffect(() => {
