@@ -135,11 +135,11 @@ export function ProviderPortal() {
       }
       const rows = Array.isArray(body?.services) ? body.services : [];
       const changeRows = Array.isArray(body?.changes) ? body.changes : [];
-      setServices(rows.map(catalogServiceFromApi));
+      setServices(rows.map((row: Parameters<typeof catalogServiceFromApi>[0]) => catalogServiceFromApi(row)));
       setChanges(
         changeRows
-          .map(catalogChangeFromApi)
-          .filter((change): change is NonNullable<typeof change> => change !== null),
+          .map((row: Parameters<typeof catalogChangeFromApi>[0]) => catalogChangeFromApi(row))
+          .filter((change: PublishedChange | null): change is PublishedChange => change !== null),
       );
     } catch (error) {
       setCatalogError(
