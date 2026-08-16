@@ -667,24 +667,14 @@ export function Header({ className }: HeaderProps) {
       <div className="flex items-center space-x-2">
         {isGitHubLinked ? (
           <DropdownMenu>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="p-1.5 rounded-md transition-colors border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10"
-                    >
-                      <Github className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent className="bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]">
-                  <p className="text-xs">
-                    {githubUsername ? `Connected as @${githubUsername}` : "GitHub connected"}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <DropdownMenuTrigger asChild>
+              <button
+                title={githubUsername ? `Connected as @${githubUsername}` : "GitHub connected"}
+                className="p-1.5 rounded-md transition-colors border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10"
+              >
+                <Github className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44 bg-[var(--bg-primary)] border-[var(--border-color)]">
               <DropdownMenuItem
                 onClick={() => setDisconnectGitHubOpen(true)}
