@@ -17,7 +17,7 @@ from packages.auth.errors import AuthConfigurationError, AuthUnavailableError
 from packages.auth.github_oauth import list_installation_repositories
 from packages.state.pool import StateUnavailableError
 from packages.state.session import COOKIE_NAME, load_session_secret, parse
-from packages.state.users import read_github_connection
+from packages.state.users import delete_github_connection, read_github_connection
 
 if TYPE_CHECKING:
     import asyncpg
@@ -76,3 +76,21 @@ async def list_repos(request: Request) -> JSONResponse:
             status_code=503,
         )
     return JSONResponse(repos)
+
+
+@router.delete("/connection")
+async def disconnect_github(request: Request) -> JSONResponse:
+    """Forget the signed-in user's GitHub App install. Does not touch GitHub.com."""
+    user_id = _session_user_id(request)
+    if user_id is None:
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    try:
+        user = await delete_github_connection(_pool(request), user_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if user is None:
+        return JSONResponse({"detail": "GitHub App is not installed"}, status_code=404)
+    return JSONResponse({"ok": True})

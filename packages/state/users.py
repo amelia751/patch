@@ -295,6 +295,39 @@ async def find_user_id_by_github_login(pool: asyncpg.Pool, login: str) -> UUID |
     return row["user_id"] if row is not None else None
 
 
+async def delete_github_connection(pool: asyncpg.Pool, user_id: UUID) -> dict[str, Any] | None:
+    """Drop the App install and GitHub identity. Does not touch GitHub.com.
+
+    The identity must go too: `/me` re-binds an install when `github_username`
+    is set and no `github_connections` row exists.
+    """
+    try:
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchval(
+                    """
+                    DELETE FROM github_connections
+                    WHERE user_id = $1
+                    RETURNING user_id
+                    """,
+                    user_id,
+                )
+                if row is None:
+                    return None
+                await connection.execute(
+                    """
+                    DELETE FROM user_identities
+                    WHERE user_id = $1 AND provider = 'github'
+                    """,
+                    user_id,
+                )
+        return await read_user(pool, user_id)
+    except Exception as exc:
+        raise StateUnavailableError(
+            f"could not disconnect GitHub: {type(exc).__name__}"
+        ) from exc
+
+
 async def read_github_connection(pool: asyncpg.Pool, user_id: UUID) -> dict[str, Any] | None:
     """Return the GitHub App installation bound to this user, if any."""
     try:

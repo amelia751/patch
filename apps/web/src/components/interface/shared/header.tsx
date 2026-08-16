@@ -68,7 +68,7 @@ import {
   Mail,
   Crown,
   MoreHorizontal,
-  Slack,
+  Unplug,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -103,8 +103,95 @@ import {
 // Notification component
 import { NotificationCenter } from "@/components/interface/shared/notifications";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 interface HeaderProps {
   className?: string;
+}
+
+function DisconnectGitHubModal({
+  username,
+  open,
+  onOpenChange,
+  onDisconnected,
+}: {
+  username: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDisconnected?: () => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const matches = confirmText === username;
+
+  const handleConfirm = async () => {
+    if (!matches) return;
+    setIsDisconnecting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/github/connection`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || `Failed to disconnect (${res.status})`);
+      }
+      onOpenChange(false);
+      setConfirmText("");
+      onDisconnected?.();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to disconnect");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setConfirmText(""); setError(null); } }}>
+      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+            Disconnect GitHub
+          </DialogTitle>
+          <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
+            This will disconnect <span className="font-medium text-[var(--text-primary)]">@{username}</span> from your account. Your repositories on GitHub will not be affected.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            Type <strong className="text-red-500 font-medium">{username}</strong> to confirm:
+          </p>
+          <Input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={username}
+            className="h-8 text-xs bg-[var(--bg-secondary)] border-red-500/30 text-[var(--text-primary)] focus:border-red-500 focus:ring-red-500/20 placeholder:text-[var(--text-secondary)]/40"
+          />
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="flex gap-2 justify-end pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              onClick={() => { onOpenChange(false); setConfirmText(""); setError(null); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!matches || isDisconnecting}
+              onClick={handleConfirm}
+              className="h-7 text-xs bg-red-500 hover:bg-red-600 text-white disabled:opacity-40"
+            >
+              {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // Import mock data from JSON
@@ -529,8 +616,9 @@ function EmailVerificationBanner() {
 // ============================================================================
 export function Header({ className }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, refreshUser } = useAuth();
   const [showLinkGitHub, setShowLinkGitHub] = useState(false);
+  const [disconnectGitHubOpen, setDisconnectGitHubOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Prevent hydration errors by waiting for client mount
@@ -541,12 +629,12 @@ export function Header({ className }: HeaderProps) {
   // Check if user has GitHub App installed (for repo access)
   // Note: github_id/github_username is just OAuth login, github_app_installed means we can access repos
   const isGitHubLinked = user?.github_app_installed ?? false;
+  const githubUsername = user?.github_username ?? "";
 
   const handleGitHubClick = () => {
     if (!isGitHubLinked && isAuthenticated) {
       setShowLinkGitHub(true);
     }
-    // If linked, could open GitHub settings or nothing for now
   };
 
   return (
@@ -575,50 +663,57 @@ export function Header({ className }: HeaderProps) {
         </Breadcrumb>
         </div>
 
-      {/* Right side - GitHub, Slack, Notifications, Theme & User Account */}
+      {/* Right side - GitHub, Notifications, Theme & User Account */}
       <div className="flex items-center space-x-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={handleGitHubClick}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors border",
-                  isGitHubLinked
-                    ? "text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] border-[var(--border-color)]"
-                )}
+        {isGitHubLinked ? (
+          <DropdownMenu>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="p-1.5 rounded-md transition-colors border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10"
+                    >
+                      <Github className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]">
+                  <p className="text-xs">
+                    {githubUsername ? `Connected as @${githubUsername}` : "GitHub connected"}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <DropdownMenuContent align="end" className="w-44 bg-[var(--bg-primary)] border-[var(--border-color)]">
+              <DropdownMenuItem
+                onClick={() => setDisconnectGitHubOpen(true)}
+                className="flex items-center gap-2 p-2 cursor-pointer text-red-500 hover:bg-red-500/10 focus:bg-red-500/10 focus:text-red-500"
               >
-                <Github className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]">
-              <p className="text-xs">
-                {isGitHubLinked
-                  ? `Connected as @${user?.github_username}`
-                  : isAuthenticated
-                    ? "Click to link GitHub"
-                    : "GitHub"
-                }
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="p-1.5 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors border border-[var(--border-color)]"
-              >
-                <Slack className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]">
-              <p className="text-xs">Slack integration</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+                <Unplug className="h-3.5 w-3.5" />
+                <span className="text-xs">Disconnect GitHub</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleGitHubClick}
+                  className="p-1.5 rounded-md transition-colors border text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] border-[var(--border-color)]"
+                >
+                  <Github className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]">
+                <p className="text-xs">
+                  {isAuthenticated ? "Click to link GitHub" : "GitHub"}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
 
         {/* Notification Center */}
         <NotificationCenter />
@@ -651,6 +746,12 @@ export function Header({ className }: HeaderProps) {
 
     {/* Link GitHub Dialog - shown when clicking GitHub icon when not linked */}
     <LinkGitHubDialog open={showLinkGitHub} onOpenChange={setShowLinkGitHub} />
+    <DisconnectGitHubModal
+      username={githubUsername || "github"}
+      open={disconnectGitHubOpen}
+      onOpenChange={setDisconnectGitHubOpen}
+      onDisconnected={() => { void refreshUser(); }}
+    />
     </div>
   );
 }
