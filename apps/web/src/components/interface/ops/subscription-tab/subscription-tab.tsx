@@ -19,12 +19,11 @@ import { cn } from "@/lib/utils";
 import { getGCPServiceIcon } from "@/lib/gcp-icons";
 import { CheckCircle2, Rss, Search, Store, Unplug } from "lucide-react";
 import {
-  MARKETPLACE_OFFERS,
-  applySubscriptions,
-  loadSubscribedIds,
-  saveSubscribedIds,
-  type MarketplaceOffer,
-} from "./data";
+  fetchProjectProviders,
+  subscribeProjectProvider,
+  unsubscribeProjectProvider,
+} from "@/lib/providers";
+import { type MarketplaceOffer } from "./data";
 import {
   MarketplaceEmptyState,
   NoProjectEmptyState,
@@ -41,21 +40,43 @@ export function SubscriptionTab({
   projectId?: string;
 }) {
   const [section, setSection] = useState<Section>("subscribed");
-  const [offers, setOffers] = useState<MarketplaceOffer[]>(() =>
-    applySubscriptions(MARKETPLACE_OFFERS, {}),
-  );
+  const [offers, setOffers] = useState<MarketplaceOffer[]>([]);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<{
     offer: MarketplaceOffer;
     action: "subscribe" | "unsubscribe";
   } | null>(null);
 
+  const loadOffers = async (id: string) => {
+    const rows = await fetchProjectProviders(id);
+    setOffers(
+      rows.map((row) => ({
+        id: row.slug,
+        slug: row.slug,
+        name: row.name,
+        provider: row.name,
+        product: row.slug,
+        description: row.description,
+        category: row.category,
+        logoUrl: row.logoUrl,
+        subscribed: row.subscribed,
+        watchingSince: row.subscribed_at
+          ? new Date(row.subscribed_at).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })
+          : undefined,
+      })),
+    );
+  };
+
   useEffect(() => {
     if (!projectId) {
-      setOffers(applySubscriptions(MARKETPLACE_OFFERS, {}));
+      setOffers([]);
       return;
     }
-    setOffers(applySubscriptions(MARKETPLACE_OFFERS, loadSubscribedIds(projectId)));
+    void loadOffers(projectId).catch(() => setOffers([]));
   }, [projectId]);
 
   const subscribed = offers.filter((offer) => offer.subscribed);
@@ -74,30 +95,12 @@ export function SubscriptionTab({
     );
   }, [available, query, section, subscribed]);
 
-  const toggle = (id: string, next: boolean) => {
-    const watchingSince = next
-      ? new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-      : undefined;
-    setOffers((prev) => {
-      const nextOffers = prev.map((offer) =>
-        offer.id === id
-          ? {
-              ...offer,
-              subscribed: next,
-              watchingSince: next ? watchingSince : undefined,
-            }
-          : offer,
-      );
-      if (projectId) {
-        const ids = Object.fromEntries(
-          nextOffers
-            .filter((offer) => offer.subscribed && offer.watchingSince)
-            .map((offer) => [offer.id, offer.watchingSince as string]),
-        );
-        saveSubscribedIds(projectId, ids);
-      }
-      return nextOffers;
-    });
+  const toggle = (slug: string, next: boolean) => {
+    if (!projectId) return;
+    const action = next
+      ? subscribeProjectProvider(projectId, slug)
+      : unsubscribeProjectProvider(projectId, slug);
+    void action.then(() => loadOffers(projectId)).catch(() => undefined);
   };
 
   if (!hasProject) {

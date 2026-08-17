@@ -62,6 +62,11 @@ projects
 project_repositories
 workspaces
 project_secrets
+providers
+provider_connections
+provider_services
+provider_change_notes
+project_provider_subscriptions
 ```
 
 | Table | Role |
@@ -102,3 +107,6 @@ project_secrets
 `seeds/0001_demo_console.sql` inserts a labelled demo user, a GitHub connection
 for `amelia751`, and a draft project importing `amelia751/egaki`. Every seeded
 row uses a UUID in the reserved `5eedda7a-` prefix.
+
+`seeds/0002_google_provider.sql` upserts Google Cloud as a system provider
+(no owner). Run `./scripts/seed_google_provider.sh` against Cloud SQL.

@@ -24,6 +24,17 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getGCPCategoryIcon, getGCPServiceIcon } from "@/lib/gcp-icons";
 import {
+  connectProvider,
+  disconnectProvider,
+  fetchProvider,
+  providersApiUrl as API_URL,
+  registerProvider,
+  type ProviderConnection,
+  type ProviderRecord,
+  type RegisterProviderInput,
+} from "@/lib/providers";
+import { ConnectionChip, ConnectionDialog } from "./connection-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -63,7 +74,6 @@ import {
 import {
   CATEGORY_LABELS,
   CHANGE_KIND_LABELS,
-  GOOGLE_CLOUD_PROVIDER,
   SERVICE_GROUP_LABELS,
   SERVICE_STATUS_LABELS,
   catalogChangeFromApi,
@@ -105,21 +115,6 @@ const selectItemClass =
 const tabTriggerClass =
   "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-const SERVICE_USAGE_HOST = "serviceusage.googleapis.com";
-
-type CatalogSource = {
-  source: string;
-  project: string;
-  fetchedAt: string;
-};
-
-function serviceUsageListUrl(project: string): string {
-  const id = project.trim() || "{project}";
-  return `https://${SERVICE_USAGE_HOST}/v1/projects/${id}/services`;
-}
-
 /** Outline actions — same dark hover as the header theme toggle. */
 const outlineButtonClass =
   "border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]";
@@ -128,23 +123,19 @@ const outlineMutedButtonClass =
   "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]";
 
 export function ProviderPortal() {
-  const [profile, setProfile] = useState<ProviderProfile | null>(null);
+  const [profile, setProfile] = useState<ProviderRecord | null>(null);
   const [services, setServices] = useState<PublishedService[]>([]);
   const [tab, setTab] = useState("services");
   const [showRegister, setShowRegister] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
-  const [catalogSource, setCatalogSource] = useState<CatalogSource | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const openCatalog = async () => {
-    setProfile(GOOGLE_CLOUD_PROVIDER);
-    setServices([]);
-    setTab("services");
-    setShowRegister(false);
+
+  const loadServices = async (slug: string) => {
     setCatalogError(null);
     setCatalogLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/providers/google`, {
+      const response = await fetch(`${API_URL}/api/providers/${encodeURIComponent(slug)}/services`, {
         credentials: "include",
       });
       const body = await response.json().catch(() => null);
@@ -153,24 +144,42 @@ export function ProviderPortal() {
       }
       const rows = Array.isArray(body?.services) ? body.services : [];
       setServices(rows.map((row: Parameters<typeof catalogServiceFromApi>[0]) => catalogServiceFromApi(row)));
-      setCatalogSource({
-        source:
-          typeof body?.source === "string" && body.source
-            ? body.source
-            : SERVICE_USAGE_HOST,
-        project: typeof body?.project === "string" ? body.project : "",
-        fetchedAt: typeof body?.fetched_at === "string" ? body.fetched_at : "",
-      });
     } catch (error) {
+      setServices([]);
       setCatalogError(
-        error instanceof Error ? error.message : "Could not load the Google Cloud catalog",
+        error instanceof Error ? error.message : "Could not load the catalog",
       );
     } finally {
       setCatalogLoading(false);
     }
   };
 
-  const handleRegistered = (next: ProviderProfile) => {
+  const refreshProfile = async (slug: string) => {
+    const next = await fetchProvider(slug);
+    setProfile(next);
+    return next;
+  };
+
+  const openCatalog = async () => {
+    setServices([]);
+    setTab("services");
+    setShowRegister(false);
+    setCatalogError(null);
+    setCatalogLoading(true);
+    try {
+      const next = await fetchProvider("google");
+      setProfile(next);
+      await loadServices(next.slug);
+    } catch (error) {
+      setCatalogError(
+        error instanceof Error ? error.message : "Could not load the Google Cloud catalog",
+      );
+      setCatalogLoading(false);
+    }
+  };
+
+  const handleRegistered = async (input: RegisterProviderInput) => {
+    const next = await registerProvider(input);
     setProfile(next);
     setServices([]);
     setTab("services");
@@ -180,9 +189,26 @@ export function ProviderPortal() {
   const leaveProvider = () => {
     setProfile(null);
     setServices([]);
-    setCatalogSource(null);
     setTab("services");
   };
+
+  useEffect(() => {
+    if (!profile) return;
+    const pending = [profile.connections.catalog, profile.connections.changes].some(
+      (item) => item?.status === "pending",
+    );
+    if (!pending) return;
+    const handle = window.setInterval(() => {
+      void refreshProfile(profile.slug)
+        .then((next) => {
+          if (next.connections.catalog?.status === "connected") {
+            void loadServices(next.slug);
+          }
+        })
+        .catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(handle);
+  }, [profile]);
 
   if (!profile) {
     return (
@@ -257,16 +283,25 @@ export function ProviderPortal() {
 
         <TabsContent value="services" className="flex-1 m-0 p-0 overflow-hidden">
           <ServicesTab
+            slug={profile.slug}
             services={services}
-            source={catalogSource}
+            connection={profile.connections.catalog}
             loading={catalogLoading}
             error={catalogError}
-            onRetry={() => void openCatalog()}
+            onRetry={() => void loadServices(profile.slug)}
+            onConnectionChange={async () => {
+              const next = await refreshProfile(profile.slug);
+              await loadServices(next.slug);
+            }}
           />
         </TabsContent>
 
         <TabsContent value="changes" className="flex-1 m-0 p-0 overflow-hidden">
-          <ChangesTab />
+          <ChangesTab
+            slug={profile.slug}
+            connection={profile.connections.changes}
+            onConnectionChange={() => void refreshProfile(profile.slug)}
+          />
         </TabsContent>
 
         <TabsContent value="profile" className="flex-1 m-0 p-0 overflow-hidden">
@@ -295,23 +330,29 @@ const SERVICE_STATUS_DOT: Record<ServiceStatus, string> = {
 };
 
 function ServicesTab({
+  slug,
   services,
-  source,
+  connection,
   loading,
   error,
   onRetry,
+  onConnectionChange,
 }: {
+  slug: string;
   services: PublishedService[];
-  source: CatalogSource | null;
+  connection: ProviderConnection | null;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  onConnectionChange: () => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ServiceStatus | "all">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -417,15 +458,7 @@ function ServicesTab({
               </button>
             )}
           </div>
-          <button
-            type="button"
-            title="Catalog source"
-            onClick={() => setSourceOpen(true)}
-            className="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10 text-xs font-medium transition-colors"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
-            Connected
-          </button>
+          <ConnectionChip connection={connection} onClick={() => setSourceOpen(true)} />
         </div>
 
         <div className="flex items-center gap-2 min-w-0">
@@ -662,10 +695,38 @@ function ServicesTab({
         </div>
       </div>
 
-      <CatalogSourceDialog
+      <ConnectionDialog
         open={sourceOpen}
         onOpenChange={setSourceOpen}
-        source={source}
+        kind="catalog"
+        connection={connection}
+        pending={sourceBusy}
+        error={sourceError}
+        onConnect={async (url) => {
+          setSourceBusy(true);
+          setSourceError(null);
+          try {
+            await connectProvider(slug, "catalog", url);
+            await onConnectionChange();
+          } catch (err) {
+            setSourceError(err instanceof Error ? err.message : "Could not connect");
+          } finally {
+            setSourceBusy(false);
+          }
+        }}
+        onDisconnect={async () => {
+          setSourceBusy(true);
+          setSourceError(null);
+          try {
+            await disconnectProvider(slug, "catalog");
+            await onConnectionChange();
+            setSourceOpen(false);
+          } catch (err) {
+            setSourceError(err instanceof Error ? err.message : "Could not disconnect");
+          } finally {
+            setSourceBusy(false);
+          }
+        }}
       />
     </div>
   );
@@ -942,37 +1003,15 @@ function FilterChip({
   );
 }
 
-const RELEASE_NOTES_TABLE = "bigquery-public-data.google_cloud_release_notes.release_notes";
-
-type ReleaseNotesSource = {
-  table: string;
-  fetchedAt: string;
-};
-
-function bigQueryTableUrl(table: string): string {
-  const parts = splitQualifiedTable(table);
-  const params = new URLSearchParams({
-    p: parts.project,
-    d: parts.dataset,
-    t: parts.name,
-    page: "table",
-  });
-  return `https://console.cloud.google.com/bigquery?${params}`;
-}
-
-function splitQualifiedTable(table: string): { project: string; dataset: string; name: string } {
-  const parts = table.split(".");
-  if (parts.length < 3) {
-    return { project: "", dataset: "", name: table };
-  }
-  return {
-    project: parts[0],
-    dataset: parts.slice(1, -1).join("."),
-    name: parts[parts.length - 1],
-  };
-}
-
-function ChangesTab() {
+function ChangesTab({
+  slug,
+  connection,
+  onConnectionChange,
+}: {
+  slug: string;
+  connection: ProviderConnection | null;
+  onConnectionChange: () => void;
+}) {
   const listRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -982,8 +1021,9 @@ function ChangesTab() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [changes, setChanges] = useState<PublishedChange[]>([]);
-  const [source, setSource] = useState<ReleaseNotesSource | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
@@ -1020,7 +1060,7 @@ function ChangesTab() {
     if (timeWindow.until) params.set("until", timeWindow.until);
     setLoading(true);
     setError(null);
-    void fetch(`${API_URL}/api/providers/google/changes?${params}`, {
+    void fetch(`${API_URL}/api/providers/${encodeURIComponent(slug)}/changes?${params}`, {
       credentials: "include",
       signal: controller.signal,
     })
@@ -1035,10 +1075,6 @@ function ChangesTab() {
           .filter((change: PublishedChange | null): change is PublishedChange => change !== null);
         const nextTotal = typeof body?.total === "number" ? body.total : mapped.length;
         setTotal(nextTotal);
-        setSource({
-          table: typeof body?.source === "string" && body.source ? body.source : RELEASE_NOTES_TABLE,
-          fetchedAt: typeof body?.fetched_at === "string" ? body.fetched_at : "",
-        });
         setChanges(mapped);
         listRef.current?.scrollTo({ top: 0 });
       })
@@ -1050,7 +1086,7 @@ function ChangesTab() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [debouncedQuery, kindFilter, page, reload, timeWindow.since, timeWindow.until]);
+  }, [debouncedQuery, kindFilter, page, reload, slug, timeWindow.since, timeWindow.until, connection?.status]);
 
   const totalPages = Math.max(1, Math.ceil(total / CHANGE_PAGE_SIZE));
 
@@ -1098,15 +1134,7 @@ function ChangesTab() {
               </button>
             )}
           </div>
-          <button
-            type="button"
-            title="Release notes source"
-            onClick={() => setSourceOpen(true)}
-            className="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10 text-xs font-medium transition-colors"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
-            Connected
-          </button>
+          <ConnectionChip connection={connection} onClick={() => setSourceOpen(true)} />
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -1401,173 +1429,45 @@ function ChangesTab() {
         </div>
       )}
 
-      <ReleaseNotesSourceDialog
+      <ConnectionDialog
         open={sourceOpen}
         onOpenChange={setSourceOpen}
-        source={source}
+        kind="changes"
+        connection={connection}
+        pending={sourceBusy}
+        error={sourceError}
+        onConnect={async (url) => {
+          setSourceBusy(true);
+          setSourceError(null);
+          try {
+            await connectProvider(slug, "changes", url);
+            onConnectionChange();
+            setReload((value) => value + 1);
+          } catch (err) {
+            setSourceError(err instanceof Error ? err.message : "Could not connect");
+          } finally {
+            setSourceBusy(false);
+          }
+        }}
+        onDisconnect={async () => {
+          setSourceBusy(true);
+          setSourceError(null);
+          try {
+            await disconnectProvider(slug, "changes");
+            onConnectionChange();
+            setReload((value) => value + 1);
+            setSourceOpen(false);
+          } catch (err) {
+            setSourceError(err instanceof Error ? err.message : "Could not disconnect");
+          } finally {
+            setSourceBusy(false);
+          }
+        }}
       />
     </div>
   );
 }
 
-function CatalogSourceDialog({
-  open,
-  onOpenChange,
-  source,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  source: CatalogSource | null;
-}) {
-  const host = source?.source || SERVICE_USAGE_HOST;
-  const project = source?.project || "";
-  const endpoint = serviceUsageListUrl(project);
-  const fields = [
-    { label: "Source", value: host, mono: true },
-    { label: "Project", value: project, mono: true },
-    {
-      label: "Fetched",
-      value: source?.fetchedAt ? formatShortDate(source.fetchedAt) : "—",
-      mono: false,
-    },
-  ].filter((field) => field.value);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
-        <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
-          <DialogHeader className="space-y-0 text-left">
-            <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-              Source
-            </DialogTitle>
-            <DialogDescription className="text-xs text-[var(--text-secondary)] pt-2">
-              Imported from the destination catalog endpoint.
-            </DialogDescription>
-          </DialogHeader>
-        </div>
-
-        <div className="px-6 py-4 space-y-4">
-          {fields.map((field) => (
-            <div key={field.label} className="grid gap-2">
-              <Label className="text-xs text-[var(--text-secondary)]">{field.label}</Label>
-              <div
-                className={cn(
-                  "h-8 px-3 flex items-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)]",
-                  field.mono && "font-mono",
-                )}
-              >
-                {field.value}
-              </div>
-            </div>
-          ))}
-          <div className="grid gap-2">
-            <Label className="text-xs text-[var(--text-secondary)]">Endpoint</Label>
-            <a
-              href={endpoint}
-              target="_blank"
-              rel="noreferrer"
-              className="min-h-8 px-3 py-2 flex items-start gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)] hover:border-primary/40 hover:text-primary transition-colors font-mono break-all leading-snug"
-            >
-              <span className="flex-1 min-w-0">{endpoint}</span>
-              <ArrowUpRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-[var(--text-secondary)]" />
-            </a>
-          </div>
-        </div>
-
-        <DialogFooter className="shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-4">
-          <Button
-            variant="outline"
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
-          >
-            Done
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ReleaseNotesSourceDialog({
-  open,
-  onOpenChange,
-  source,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  source: ReleaseNotesSource | null;
-}) {
-  const table = source?.table || RELEASE_NOTES_TABLE;
-  const parts = splitQualifiedTable(table);
-  const sourceUrl = bigQueryTableUrl(table);
-  const fields = [
-    { label: "Project", value: parts.project, mono: true },
-    { label: "Dataset", value: parts.dataset, mono: true },
-    { label: "Table", value: parts.name, mono: true },
-    {
-      label: "Fetched",
-      value: source?.fetchedAt ? formatShortDate(source.fetchedAt) : "—",
-      mono: false,
-    },
-  ].filter((field) => field.value);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
-        <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
-          <DialogHeader className="space-y-0 text-left">
-            <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-              Source
-            </DialogTitle>
-            <DialogDescription className="text-xs text-[var(--text-secondary)] pt-2">
-              Imported from the destination release endpoint.
-            </DialogDescription>
-          </DialogHeader>
-        </div>
-
-        <div className="px-6 py-4 space-y-4">
-          {fields.map((field) => (
-            <div key={field.label} className="grid gap-2">
-              <Label className="text-xs text-[var(--text-secondary)]">{field.label}</Label>
-              <div
-                className={cn(
-                  "h-8 px-3 flex items-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)]",
-                  field.mono && "font-mono",
-                )}
-              >
-                {field.value}
-              </div>
-            </div>
-          ))}
-          <div className="grid gap-2">
-            <Label className="text-xs text-[var(--text-secondary)]">Endpoint</Label>
-            <a
-              href={sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="min-h-8 px-3 py-2 flex items-start gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)] hover:border-primary/40 hover:text-primary transition-colors font-mono break-all leading-snug"
-            >
-              <span className="flex-1 min-w-0">{sourceUrl}</span>
-              <ArrowUpRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-[var(--text-secondary)]" />
-            </a>
-          </div>
-        </div>
-
-        <DialogFooter className="shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-4">
-          <Button
-            variant="outline"
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
-          >
-            Done
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function ProfileTab({
   profile,
@@ -1591,7 +1491,7 @@ function ProfileTab({
     return next;
   }, [profile.featuredProducts, services]);
 
-  const host = profile.website.replace(/^https?:\/\//, "");
+  const host = profile.website ? profile.website.replace(/^https?:\/\//, "") : "";
 
   return (
     <div className="h-full overflow-y-auto bg-[var(--bg-secondary)]">
@@ -1682,7 +1582,9 @@ function ProfileTab({
         )}
 
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] divide-y divide-[var(--border-color)]">
-          <DetailRow icon={Globe} label="Website" value={host} href={profile.website} />
+          {host && profile.website && (
+            <DetailRow icon={Globe} label="Website" value={host} href={profile.website} />
+          )}
           {profile.consoleUrl && (
             <DetailRow
               icon={ExternalLink}
@@ -1798,8 +1700,8 @@ function HowItWorksDialog({
         <div className="space-y-3 py-4">
           {[
             { n: "1", title: "Register as a provider", desc: "This organization becomes a publisher. You never receive customer source." },
-            { n: "2", title: "Publish services", desc: "An org can list multiple APIs, each with the identifiers enterprises actually call." },
-            { n: "3", title: "Announce changes", desc: "Deprecations and replacements attach to a service, with a source URL." },
+            { n: "2", title: "Connect a catalog URL", desc: "Paste a Service Usage link. Services are imported from that endpoint." },
+            { n: "3", title: "Connect a changes URL", desc: "Paste a BigQuery or release-notes link. Project and table are read from it." },
             { n: "4", title: "Runs stop at the PR", desc: "PatchAPI treats your catalog as untrusted input and opens a pull request for review." },
           ].map((step) => (
             <div key={step.n} className="flex gap-3">
@@ -1825,7 +1727,7 @@ function RegisterDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onRegister: (profile: ProviderProfile) => void;
+  onRegister: (input: RegisterProviderInput) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -1849,26 +1751,27 @@ function RegisterDialog({
     setError(null);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) return setError("Enter an organization name.");
     if (!slugify(slug)) return setError("Enter a URL slug.");
-    if (!email.trim() || !email.includes("@")) return setError("Enter a contact email.");
+    if (email.trim() && !email.includes("@")) return setError("Enter a valid contact email, or leave it blank.");
+    if (!description.trim()) return setError("Describe what you publish.");
     if (!attested) return setError("Confirm the trust boundary before registering.");
-    onRegister({
-      id: `prov_${slugify(slug) || "new"}`,
-      name: name.trim(),
-      slug: slugify(slug),
-      website: website.trim() || "https://example.com",
-      contactEmail: email.trim(),
-      category,
-      description:
-        description.trim() ||
-        "Newly registered provider. Publish services and change events from this catalog.",
-      verified: false,
-      registeredAt: new Date().toISOString(),
-      watchingOrgs: 0,
-    });
-    reset();
+    setError(null);
+    try {
+      await onRegister({
+        name: name.trim(),
+        slug: slugify(slug),
+        website: website.trim(),
+        contact_email: email.trim(),
+        category,
+        description: description.trim(),
+        attested: true,
+      });
+      reset();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not register.");
+    }
   };
 
   return (
@@ -1885,7 +1788,7 @@ function RegisterDialog({
             Register as provider
           </DialogTitle>
           <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            Hardcoded for now — nothing is written to a backend. One org, many services.
+            Required: organization, slug, category, and what you publish. Website and email are optional.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3.5 py-1">
@@ -1914,7 +1817,7 @@ function RegisterDialog({
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Website">
+            <Field label="Website" hint="Optional">
               <Input
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
@@ -1922,7 +1825,7 @@ function RegisterDialog({
                 className={fieldClass}
               />
             </Field>
-            <Field label="Contact email">
+            <Field label="Contact email" hint="Optional">
               <Input
                 type="email"
                 value={email}

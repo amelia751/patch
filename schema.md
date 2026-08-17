@@ -87,7 +87,13 @@ organizations ──────────── organization_members ── u
        └── projects
               ├── project_repositories ── workspaces
               ├── project_secrets
-              └── project_notifications
+              ├── project_notifications
+              └── project_provider_subscriptions
+
+providers ── provider_connections
+       ├── provider_services          -- catalog ingest; not provider_usages
+       └── provider_change_notes      -- raw notes; not change_events
+-- Google Cloud is seeded with both owner columns NULL.
 
 repo_index_state          -- keyed by (full_name, branch), shared, refcounted
 provider_usages                -- facts about a commit; no project_id
@@ -650,15 +656,17 @@ The preview flag flips to `false`.
 | # | File | Adds |
 |---|---|---|
 | 0007 | `provider_usages.sql` | enums `detection_layer`, `usage_kind`, `index_status`; `provider_usages`; `repo_index_state`; `project_provider_usages` |
-| 0008 | `organizations.sql` | `organizations`, members, BYOK pointers; `projects.organization_id` |
-| 0009 | `change_events.sql` | `change_kind`, `severity`; `change_events` |
-| 0010 | `runs.sql` | `run_state` and the run family (`remediation_runs` … `pull_requests`) |
-| 0011 | `audit.sql` | `audit_events`, `idempotency_keys` |
+| 0008 | `providers.sql` | vendor registry, connections, services, change notes, project subscriptions; Google seed with no owner |
+| 0009 | `organizations.sql` | `organizations`, members, BYOK pointers; `projects.organization_id` |
+| 0010 | `change_events.sql` | `change_kind`, `severity`; `change_events` |
+| 0011 | `runs.sql` | `run_state` and the run family (`remediation_runs` … `pull_requests`) |
+| 0012 | `audit.sql` | `audit_events`, `idempotency_keys` |
 
-0007 is also task 1 of [`repo-indexer.md`](./repo-indexer.md). It does not
-depend on organizations or runs. 0008 can wait until the org UI is more than
-a client of a missing API. 0009–0011 are the workflow product
-`packages/state/dashboard.py` already thinks exists.
+0007 is also task 1 of [`repo-indexer.md`](./repo-indexer.md). 0008 is
+[`provider.md`](./provider.md). It does not depend on organizations. Google's
+`owner_user_id` and `owner_organization_id` stay NULL. 0009 can wait until
+the org UI is more than a client of a missing API. 0010–0012 are the
+workflow product `packages/state/dashboard.py` already thinks exists.
 
 ---
 

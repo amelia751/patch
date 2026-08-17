@@ -84,8 +84,8 @@ def test_load_google_release_notes_fails_closed_when_missing(tmp_path: Path) -> 
 def test_changes_route_is_mounted() -> None:
     source = Path(__file__).resolve().parents[1] / "provider_routes.py"
     text = source.read_text(encoding="utf-8")
-    assert '@router.get("/google/changes")' in text
-    assert "load_google_release_notes" in text
+    assert '@router.get("/{slug}/changes")' in text
+    assert "list_change_notes" in text
 
 
 def test_uniquify_note_ids_disambiguates_collisions() -> None:
@@ -144,38 +144,8 @@ def test_filter_notes_matches_kind_and_query() -> None:
     )
 
 
-def test_changes_route_serves_the_committed_snapshot() -> None:
+def test_changes_route_needs_postgres() -> None:
     app = FastAPI()
     app.include_router(provider_router)
     response = TestClient(app).get("/api/providers/google/changes")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["window_days"] == 365
-    assert body["total"] >= 1000
-    assert len(body["changes"]) <= 75
-    assert body["trust"]["classification"] == "untrusted_provider_input"
-    first = body["changes"][0]
-    assert first["product"]
-    assert first["effectiveAt"]
-    assert "<p>" not in (first.get("summary") or "")
-    ids = [row["id"] for row in body["changes"]]
-    assert len(ids) == len(set(ids))
-
-
-def test_changes_route_filters_on_the_server() -> None:
-    app = FastAPI()
-    app.include_router(provider_router)
-    response = TestClient(app).get("/api/providers/google/changes?kind=deprecation&limit=30")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["kind"] == "deprecation"
-    assert all(row["kind"] == "deprecation" for row in body["changes"])
-    searched = TestClient(app).get("/api/providers/google/changes?q=bigquery&limit=20")
-    assert searched.status_code == 200
-    for row in searched.json()["changes"]:
-        hay = f"{row.get('product', '')} {row.get('title', '')} {row.get('summary', '')}".lower()
-        assert "bigquery" in hay
-    empty = TestClient(app).get("/api/providers/google/changes?since=2099-01-01&limit=10")
-    assert empty.status_code == 200
-    assert empty.json()["total"] == 0
-    assert empty.json()["since"] == "2099-01-01"
+    assert response.status_code == 503

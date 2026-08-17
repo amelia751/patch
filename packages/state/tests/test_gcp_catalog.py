@@ -141,12 +141,13 @@ def test_project_id_fails_closed_on_garbage(tmp_path: Path) -> None:
         raise AssertionError("expected CatalogUnavailableError")
 
 
-def test_google_route_is_mounted_at_providers_google() -> None:
+def test_google_route_is_mounted_at_providers_slug() -> None:
     source = Path(__file__).resolve().parents[1] / "provider_routes.py"
     text = source.read_text(encoding="utf-8")
     assert 'prefix="/api/providers"' in text
-    assert '@router.get("/google")' in text
-    assert "load_google_catalog" in text
+    assert '@router.get("/{slug}")' in text
+    assert '@router.get("/{slug}/services")' in text
+    assert "list_services" in text
 
 
 def test_load_google_catalog_reads_the_committed_snapshot() -> None:
@@ -158,26 +159,11 @@ def test_load_google_catalog_reads_the_committed_snapshot() -> None:
     assert "storage.googleapis.com" in names
 
 
-def test_google_route_serves_the_committed_snapshot() -> None:
-    app = FastAPI()
-    app.include_router(provider_router)
-    response = TestClient(app).get("/api/providers/google")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["provider"]["id"] == "google"
-    assert len(body["services"]) >= 500
-
-
-def test_google_route_returns_503_when_the_catalog_is_unavailable(monkeypatch) -> None:
-    def boom(**_kwargs):
-        raise CatalogUnavailableError("google catalog snapshot is missing")
-
-    monkeypatch.setattr("packages.state.provider_routes.load_google_catalog", boom)
+def test_google_route_needs_postgres() -> None:
     app = FastAPI()
     app.include_router(provider_router)
     response = TestClient(app).get("/api/providers/google")
     assert response.status_code == 503
-    assert response.json()["detail"] == "google catalog snapshot is missing"
 
 
 def test_load_google_catalog_fails_closed_when_snapshot_is_missing(tmp_path: Path) -> None:

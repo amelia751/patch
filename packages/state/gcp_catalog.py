@@ -27,9 +27,10 @@ DEFAULT_CREDENTIALS_FILE: Final[str] = ".secrets/gcp-service-account.json"
 SERVICE_USAGE_URL: Final[str] = "https://serviceusage.googleapis.com/v1/projects/{project}/services"
 PAGE_SIZE: Final[int] = 200
 REQUEST_TIMEOUT_SECONDS: Final[float] = 30.0
-# list_available_requests defaults to 1 QPS. Bursting pages 429s the catalog.
+# Enabled-only lists are one or two pages. Sleep only on 429, not every page.
 PAGE_PAUSE_SECONDS: Final[float] = 1.1
 RATE_LIMIT_RETRIES: Final[int] = 5
+ENABLED_FILTER: Final[str] = "state:ENABLED"
 
 # First-party Google APIs end in this suffix. Marketplace listings use
 # `*.endpoints.*.cloud.goog` and are not a provider catalog.
@@ -303,7 +304,7 @@ async def _fetch_pages(project: str, token: str, client: httpx.AsyncClient) -> l
     services: list[dict[str, Any]] = []
     page_token = ""
     while True:
-        params: dict[str, str | int] = {"pageSize": PAGE_SIZE}
+        params: dict[str, str | int] = {"pageSize": PAGE_SIZE, "filter": ENABLED_FILTER}
         if page_token:
             params["pageToken"] = page_token
         response = await _get_page(client, project, token, params)
@@ -314,7 +315,6 @@ async def _fetch_pages(project: str, token: str, client: httpx.AsyncClient) -> l
         page_token = str(payload.get("nextPageToken") or "")
         if not page_token:
             break
-        await asyncio.sleep(PAGE_PAUSE_SECONDS)
     return services
 
 
@@ -432,18 +432,17 @@ def load_google_catalog(*, path: Path | None = None) -> GoogleCatalog:
     return catalog_from_payload(payload)
 
 
-async def refresh_google_catalog(
+async def fetch_service_usage_catalog(
+    project: str,
     *,
     environ: Mapping[str, str] | None = None,
     base_dir: Path | None = None,
     client: httpx.AsyncClient | None = None,
     now: float | None = None,
-    dest: Path | None = None,
 ) -> GoogleCatalog:
-    """Fetch Service Usage and rewrite the committed snapshot."""
+    """List ENABLED first-party APIs for `project`. Does not write a file."""
     clock = time.time() if now is None else now
     key_path = credentials_path(environ, base_dir=base_dir)
-    project = project_id(key_path, environ)
     token = await asyncio.to_thread(_mint_token, key_path)
     fetched_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(clock))
 
@@ -460,13 +459,27 @@ async def refresh_google_catalog(
         for service in (normalize_service(raw) for raw in raw_services)
         if service is not None
     )
-    catalog = GoogleCatalog(
-        project="google",
+    return GoogleCatalog(
+        project=project,
         fetched_at=fetched_at,
         source="serviceusage.googleapis.com",
         services=normalized,
     )
-    target = dest or catalog_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(catalog_to_payload(catalog), indent=2) + "\n", encoding="utf-8")
-    return catalog
+
+
+async def refresh_google_catalog(
+    *,
+    environ: Mapping[str, str] | None = None,
+    base_dir: Path | None = None,
+    client: httpx.AsyncClient | None = None,
+    now: float | None = None,
+    dest: Path | None = None,
+    project: str | None = None,
+) -> GoogleCatalog:
+    """Fetch Service Usage for a project. Persistence is Postgres, not `dest`."""
+    del dest
+    key_path = credentials_path(environ, base_dir=base_dir)
+    target = (project or "").strip() or project_id(key_path, environ)
+    return await fetch_service_usage_catalog(
+        target, environ=environ, base_dir=base_dir, client=client, now=now
+    )

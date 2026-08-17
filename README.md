@@ -77,11 +77,32 @@ Terraform for the same surface: [`infra/terraform/README.md`](./infra/terraform/
 were bootstrapped with `./scripts/bootstrap_cloud_run.sh` and
 `./scripts/bootstrap_cloud_sql.sh`). Full service list: `roadmap.md` §20–§21.
 
-### Provider catalog snapshots
+### Provider registry
 
-The `/provider` console reads committed JSON, not Google, on each page load.
-Postgres replaces those files later. Provider pages and list APIs are
-untrusted input.
+`/provider` registers vendors and connects ingest URLs. Postgres is the
+read model. A page load does not crawl Google. Plan: [`provider.md`](./provider.md).
+
+Seed Google Cloud (no org owner) onto local Docker or Cloud SQL:
+
+```bash
+./scripts/run_cloud_sql_proxy.sh          # 127.0.0.1:5433 → patchapi-console
+./scripts/seed_google_provider.sh         # migrate 0008 + upsert google
+```
+
+`seed_google_provider.sh` writes the profile only. Connect the two endpoints
+in the portal by pasting one URL each:
+
+| Tab | Example URL |
+|---|---|
+| Services | `https://serviceusage.googleapis.com/v1/projects/patch-505223/services` |
+| Changes | `https://console.cloud.google.com/bigquery?p=bigquery-public-data&d=google_cloud_release_notes&t=release_notes` |
+
+Connect returns immediately (`pending`). Ingest runs in the background:
+
+- **Catalog** lists `state:ENABLED` first-party APIs (one or two pages). It does
+  not crawl `--available` at 1 QPS.
+- **Changes** is one BigQuery job against the pasted table. Billing project is
+  the PatchAPI service account.
 
 **Google Cloud services** — Service Usage
 [`services.list`](https://cloud.google.com/service-usage/docs/list-services)
@@ -89,22 +110,14 @@ untrusted input.
 
 | | |
 |---|---|
-| Endpoint | `GET https://serviceusage.googleapis.com/v1/projects/{project}/services` |
+| Endpoint | `GET https://serviceusage.googleapis.com/v1/projects/{project}/services?filter=state:ENABLED` |
 | Auth | Project service account (`.secrets/gcp-service-account.json` or `GOOGLE_APPLICATION_CREDENTIALS`) |
 | Keep | First-party hosts ending in `.googleapis.com` |
 | Drop | Marketplace listings (`*.endpoints.*.cloud.goog`) |
-| Quota | `list_available_requests` defaults to 1 QPS — page slowly or the list 429s |
-| Snapshot | [`packages/state/data/google_services.json`](./packages/state/data/google_services.json) |
-| Refresh | `refresh_google_catalog` in [`packages/state/gcp_catalog.py`](./packages/state/gcp_catalog.py) |
+| Persist | `provider_services` (not a JSON file) |
 
-Same list via CLI (also Service Usage):
-
-```bash
-gcloud services list --available --filter="config.name:googleapis.com"
-```
-
-Service Usage titles are enable-an-API labels (`AlloyDB API`). The snapshot
-stores the product name (`AlloyDB`). The host stays on the identifier
+Service Usage titles are enable-an-API labels (`AlloyDB API`). The store
+keeps the product name (`AlloyDB`). The host stays on the identifier
 (`alloydb.googleapis.com`).
 
 **Gemini / Vertex models** — two official HTML tables plus two list APIs.
@@ -136,9 +149,9 @@ tab; refresh writes a file.
 | Auth | Same project service account (queries bill to `patch-505223`) |
 | Types | FEATURE, NON_BREAKING_CHANGE, FIX, SERVICE_ANNOUNCEMENT, SECURITY_BULLETIN, ISSUE, DEPRECATION, LIBRARIES, BREAKING_CHANGE, OTHER |
 | Not in the table | Typed `{service, status, shutdown_date}` — descriptions are HTML changelog |
-| Snapshot | [`packages/state/data/google_release_notes.json`](./packages/state/data/google_release_notes.json) |
-| Refresh | `refresh_google_release_notes` in [`packages/state/google_release_notes.py`](./packages/state/google_release_notes.py) |
-| Serve | `GET /api/providers/google/changes` |
+| Persist | `provider_change_notes` after Connect |
+| Refresh | `fetch_release_notes` in [`packages/state/google_release_notes.py`](./packages/state/google_release_notes.py) |
+| Serve | `GET /api/providers/{slug}/changes` |
 
 RSS (`https://cloud.google.com/feeds/gcp-release-notes.xml`) is a 30-entry
 Atom window, not the bulk table. Use it later as a delta, not as the catalog.

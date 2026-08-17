@@ -34,6 +34,11 @@ projects
 project_repositories
 workspaces
 project_secrets
+providers
+provider_connections
+provider_services
+provider_change_notes
+project_provider_subscriptions
 ```
 
 | Table | Role |

@@ -39,6 +39,13 @@ from packages.state.projects import (
     update_project_cloud_provider,
     update_project_name,
 )
+from packages.state.providers import (
+    ProviderStoreError,
+    list_project_subscriptions,
+    list_providers,
+    subscribe_project,
+    unsubscribe_project,
+)
 from packages.state.session import COOKIE_NAME, load_session_secret, parse
 from packages.state.users import read_github_connection
 
@@ -511,4 +518,72 @@ async def disconnect_owned_repository(
         )
     if project is None:
         return JSONResponse({"detail": "Repository not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/{project_id}/providers")
+async def get_project_providers(request: Request, project_id: UUID) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        catalog = await list_providers(_pool(request))
+        subscribed = await list_project_subscriptions(_pool(request), project_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    watching = {row["slug"]: row.get("subscribed_at") for row in subscribed}
+    offers = [
+        {
+            **row,
+            "subscribed": row["slug"] in watching,
+            "subscribed_at": watching.get(row["slug"]),
+        }
+        for row in catalog
+    ]
+    return JSONResponse({"providers": offers})
+
+
+@router.put("/{project_id}/providers/{slug}")
+async def put_project_provider(request: Request, project_id: UUID, slug: str) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        await subscribe_project(_pool(request), project_id, slug)
+    except ProviderStoreError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/{project_id}/providers/{slug}")
+async def delete_project_provider(request: Request, project_id: UUID, slug: str) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        await unsubscribe_project(_pool(request), project_id, slug)
+    except ProviderStoreError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
     return JSONResponse({"ok": True})

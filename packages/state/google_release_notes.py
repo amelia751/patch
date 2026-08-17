@@ -49,17 +49,29 @@ _TYPE_TO_KIND: Final[dict[str, str]] = {
     "OTHER": "other",
 }
 
-_SELECT: Final[str] = f"""
+_TABLE_PART: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def release_notes_query(qualified_table: str) -> str:
+    """Return the notes SELECT. Table parts must be identifiers."""
+    parts = qualified_table.split(".")
+    if len(parts) != 3 or not all(_TABLE_PART.fullmatch(part) for part in parts):
+        raise CatalogUnavailableError("release notes table is not a qualified BigQuery id")
+    table = ".".join(parts)
+    return f"""
 SELECT
   CAST(published_at AS STRING) AS published_at,
   product_name,
   release_note_type,
   IFNULL(product_version_name, "") AS product_version_name,
   description
-FROM `{TABLE}`
+FROM `{table}`
 WHERE published_at >= DATE_SUB(CURRENT_DATE(), INTERVAL {WINDOW_DAYS} DAY)
 ORDER BY published_at DESC, product_name
 """
+
+
+_SELECT: Final[str] = release_notes_query(TABLE)
 
 
 class _HTMLText(HTMLParser):
@@ -306,14 +318,18 @@ def _rows_from_bq(rows: list[Any]) -> list[dict[str, str]]:
 
 
 async def _query_release_notes(
-    client: httpx.AsyncClient, *, project: str, token: str
+    client: httpx.AsyncClient,
+    *,
+    project: str,
+    token: str,
+    qualified_table: str = TABLE,
 ) -> list[dict[str, str]]:
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     start = await client.post(
         f"https://bigquery.googleapis.com/bigquery/v2/projects/{project}/queries",
         headers=headers,
         json={
-            "query": _SELECT,
+            "query": release_notes_query(qualified_table),
             "useLegacySql": False,
             "maxResults": PAGE_SIZE,
             "timeoutMs": QUERY_TIMEOUT_MS,
@@ -344,7 +360,10 @@ async def _query_release_notes(
 
 
 def build_snapshot(
-    rows: list[Mapping[str, Any]], *, fetched_at: str
+    rows: list[Mapping[str, Any]],
+    *,
+    fetched_at: str,
+    source: str = TABLE,
 ) -> ReleaseNotesSnapshot:
     notes = uniquify_note_ids(
         tuple(note for note in (normalize_note(row) for row in rows) if note is not None)
@@ -352,9 +371,35 @@ def build_snapshot(
     return ReleaseNotesSnapshot(
         fetched_at=fetched_at,
         window_days=WINDOW_DAYS,
-        source=TABLE,
+        source=source,
         notes=notes,
     )
+
+
+async def fetch_release_notes(
+    *,
+    qualified_table: str = TABLE,
+    environ: Mapping[str, str] | None = None,
+    base_dir: Path | None = None,
+    client: httpx.AsyncClient | None = None,
+    now: float | None = None,
+) -> ReleaseNotesSnapshot:
+    """Query a release-notes table. Billing project is the service account."""
+    clock = time.time() if now is None else now
+    fetched_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(clock))
+    key_path = credentials_path(environ, base_dir=base_dir)
+    billing_project = project_id(key_path, environ)
+    token = await asyncio.to_thread(_mint_token, key_path)
+    own_client = client is None
+    http = client or httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
+    try:
+        rows = await _query_release_notes(
+            http, project=billing_project, token=token, qualified_table=qualified_table
+        )
+    finally:
+        if own_client:
+            await http.aclose()
+    return build_snapshot(rows, fetched_at=fetched_at, source=qualified_table)
 
 
 async def refresh_google_release_notes(
@@ -364,25 +409,14 @@ async def refresh_google_release_notes(
     client: httpx.AsyncClient | None = None,
     now: float | None = None,
     dest: Path | None = None,
+    qualified_table: str = TABLE,
 ) -> ReleaseNotesSnapshot:
-    """Query the public table and rewrite the committed snapshot."""
-    clock = time.time() if now is None else now
-    fetched_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(clock))
-    key_path = credentials_path(environ, base_dir=base_dir)
-    project = project_id(key_path, environ)
-    token = await asyncio.to_thread(_mint_token, key_path)
-    own_client = client is None
-    http = client or httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
-    try:
-        rows = await _query_release_notes(http, project=project, token=token)
-    finally:
-        if own_client:
-            await http.aclose()
-    snapshot = build_snapshot(rows, fetched_at=fetched_at)
-    target = dest or notes_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(snapshot_to_payload(snapshot), separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    """Query the public table. Persistence is Postgres, not `dest`."""
+    del dest
+    return await fetch_release_notes(
+        qualified_table=qualified_table,
+        environ=environ,
+        base_dir=base_dir,
+        client=client,
+        now=now,
     )
-    return snapshot
