@@ -39,6 +39,7 @@ export interface ProviderProfile {
   slug: string;
   website: string;
   contactEmail: string;
+  contactUrl?: string;
   category: ProviderCategory;
   description: string;
   verified: boolean;
@@ -137,15 +138,16 @@ export const GOOGLE_CLOUD_PROVIDER: ProviderProfile = {
   name: "Google Cloud",
   slug: "google",
   website: "https://cloud.google.com",
-  contactEmail: "api-changes@google.com",
+  contactEmail: "",
+  contactUrl: "https://cloud.google.com/contact",
   category: "cloud",
   description:
-    "First-party Google Cloud APIs — Vertex AI, Gemini, Cloud Storage, GKE, and the rest of the surface enterprises call. Change events arrive as structured manifests. PatchAPI treats every claim as untrusted input.",
+    "A suite of cloud services for compute, storage, data analytics, and machine learning.",
   verified: true,
   registeredAt: "2025-11-04T00:00:00Z",
   watchingOrgs: 1847,
   logoUrl: "/google-cloud.svg",
-  hq: "Mountain View, California",
+  hq: "1600 Amphitheatre Parkway, Mountain View, CA",
   since: "2008",
   consoleUrl: "https://console.cloud.google.com",
   docsUrl: "https://cloud.google.com/docs",

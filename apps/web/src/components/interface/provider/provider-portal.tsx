@@ -1,14 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
+import { format, startOfDay, subDays } from "date-fns";
+import { type DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getGCPCategoryIcon, getGCPServiceIcon } from "@/lib/gcp-icons";
 import {
   Dialog,
@@ -29,7 +42,8 @@ import {
   ArrowUpRight,
   BadgeCheck,
   Blocks,
-  Building2,
+  Building,
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -41,13 +55,13 @@ import {
   Globe,
   Info,
   Layers,
-  Link2,
   Loader2,
   Mail,
   MapPin,
   Plus,
   Search,
   Shield,
+  X,
 } from "lucide-react";
 import {
   CATEGORY_LABELS,
@@ -57,7 +71,6 @@ import {
   SERVICE_STATUS_LABELS,
   catalogChangeFromApi,
   catalogServiceFromApi,
-  daysUntil,
   formatShortDate,
   formatWatchers,
   inferServiceMeta,
@@ -108,18 +121,15 @@ const outlineMutedButtonClass =
 export function ProviderPortal() {
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
   const [services, setServices] = useState<PublishedService[]>([]);
-  const [changes, setChanges] = useState<PublishedChange[]>([]);
   const [tab, setTab] = useState("services");
   const [showRegister, setShowRegister] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [publishServiceOpen, setPublishServiceOpen] = useState(false);
-  const [publishChangeOpen, setPublishChangeOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const openCatalog = async () => {
     setProfile(GOOGLE_CLOUD_PROVIDER);
     setServices([]);
-    setChanges([]);
     setTab("services");
     setShowRegister(false);
     setCatalogError(null);
@@ -146,7 +156,6 @@ export function ProviderPortal() {
   const handleRegistered = (next: ProviderProfile) => {
     setProfile(next);
     setServices([]);
-    setChanges([]);
     setTab("services");
     setShowRegister(false);
   };
@@ -154,7 +163,6 @@ export function ProviderPortal() {
   const leaveProvider = () => {
     setProfile(null);
     setServices([]);
-    setChanges([]);
     setTab("services");
   };
 
@@ -223,7 +231,7 @@ export function ProviderPortal() {
               Changes
             </TabsTrigger>
             <TabsTrigger value="profile" className={tabTriggerClass}>
-              <Building2 className="w-3 h-3 mr-2" />
+              <Building className="w-3 h-3 mr-2" />
               Profile
             </TabsTrigger>
           </TabsList>
@@ -240,11 +248,7 @@ export function ProviderPortal() {
         </TabsContent>
 
         <TabsContent value="changes" className="flex-1 m-0 p-0 overflow-hidden">
-          <ChangesTab
-            services={services}
-            localChanges={changes}
-            onPublish={() => setPublishChangeOpen(true)}
-          />
+          <ChangesTab />
         </TabsContent>
 
         <TabsContent value="profile" className="flex-1 m-0 p-0 overflow-hidden">
@@ -262,15 +266,6 @@ export function ProviderPortal() {
         onPublish={(service) => {
           setServices((prev) => [service, ...prev]);
           setTab("services");
-        }}
-      />
-      <PublishChangeDialog
-        open={publishChangeOpen}
-        onOpenChange={setPublishChangeOpen}
-        services={services}
-        onPublish={(change) => {
-          setChanges((prev) => [change, ...prev]);
-          setTab("changes");
         }}
       />
     </>
@@ -612,14 +607,233 @@ function ServicesTab({
   );
 }
 
-const CHANGE_PAGE_SIZE = 75;
+const CHANGE_PAGE_SIZE = 25;
+
+function pageWindow(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => index + 1);
+  }
+  const items: (number | "ellipsis")[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) items.push("ellipsis");
+  for (let page = start; page <= end; page += 1) items.push(page);
+  if (end < total - 1) items.push("ellipsis");
+  items.push(total);
+  return items;
+}
+
+function productFamily(product: string): string {
+  const trimmed = product.trim();
+  if (!trimmed) return "Google Cloud";
+  return (
+    trimmed
+      .replace(/\s+(flexible|standard)\s+environment\b.*$/i, "")
+      .replace(/\s+\((?:new|legacy)\)\s*$/i, "")
+      .trim() || trimmed
+  );
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function noteBody(change: PublishedChange): string {
+  const summary = collapseWhitespace(change.summary || "");
+  const title = collapseWhitespace(change.title);
+  if (!summary) return title;
+  const titleCore = title.replace(/…$/, "").trim();
+  const summaryCore = summary.replace(/…$/, "").trim();
+  if (summary.startsWith(titleCore) || title.startsWith(summaryCore)) return summary;
+  return summary;
+}
+
+function summaryStem(text: string): string {
+  return collapseWhitespace(text).slice(0, 80).toLowerCase();
+}
+
+function variantLabel(product: string, family: string): string {
+  const rest = product.slice(family.length).replace(/^[\s\-–—:]+/, "").trim();
+  if (!rest) return "";
+  return rest
+    .replace(/^flexible environment\s+/i, "Flexible · ")
+    .replace(/^standard environment\s+/i, "Standard · ");
+}
+
+function formatDayHeading(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+type ChangeCluster = {
+  id: string;
+  dateKey: string;
+  date: string;
+  kind: ChangeKind;
+  product: string;
+  body: string;
+  sourceUrl: string;
+  members: PublishedChange[];
+};
+
+function clusterChanges(changes: PublishedChange[]): ChangeCluster[] {
+  const clusters: ChangeCluster[] = [];
+  const index = new Map<string, number>();
+  for (const change of changes) {
+    const product = productFamily(change.product || change.serviceId);
+    const key = `${change.effectiveAt.slice(0, 10)}|${change.kind}|${product}|${summaryStem(noteBody(change))}`;
+    const existing = index.get(key);
+    if (existing !== undefined) {
+      clusters[existing].members.push(change);
+      continue;
+    }
+    index.set(key, clusters.length);
+    clusters.push({
+      id: change.id,
+      dateKey: change.effectiveAt.slice(0, 10),
+      date: change.effectiveAt,
+      kind: change.kind,
+      product,
+      body: noteBody(change),
+      sourceUrl: change.sourceUrl,
+      members: [change],
+    });
+  }
+  return clusters;
+}
+
+function groupClustersByDate(
+  clusters: ChangeCluster[],
+): { dateKey: string; label: string; clusters: ChangeCluster[] }[] {
+  const groups: { dateKey: string; label: string; clusters: ChangeCluster[] }[] = [];
+  const seen = new Map<string, number>();
+  for (const cluster of clusters) {
+    const at = seen.get(cluster.dateKey);
+    if (at !== undefined) {
+      groups[at].clusters.push(cluster);
+      continue;
+    }
+    seen.set(cluster.dateKey, groups.length);
+    groups.push({
+      dateKey: cluster.dateKey,
+      label: formatDayHeading(cluster.date),
+      clusters: [cluster],
+    });
+  }
+  return groups;
+}
+
+const KIND_TONE: Record<ChangeKind, string> = {
+  deprecation: "text-red-400",
+  replacement: "text-amber-400",
+  new_identifier: "text-emerald-500",
+  breaking_change: "text-red-400",
+  feature: "text-emerald-500",
+  fix: "text-sky-400",
+  issue: "text-amber-400",
+  security: "text-red-400",
+  announcement: "text-[var(--text-secondary)]",
+  change: "text-[var(--text-secondary)]",
+  libraries: "text-sky-400",
+  other: "text-[var(--text-secondary)]",
+};
+
+const KIND_DOT: Record<ChangeKind, string> = {
+  deprecation: "bg-red-400",
+  replacement: "bg-amber-400",
+  new_identifier: "bg-emerald-500",
+  breaking_change: "bg-red-400",
+  feature: "bg-emerald-500",
+  fix: "bg-sky-400",
+  issue: "bg-amber-400",
+  security: "bg-red-400",
+  announcement: "bg-[var(--text-secondary)]",
+  change: "bg-[var(--text-secondary)]",
+  libraries: "bg-sky-400",
+  other: "bg-[var(--text-secondary)]",
+};
+
+type TimePreset = "7d" | "30d" | "90d" | "all" | "custom";
+
+const TIME_PRESETS: { id: Exclude<TimePreset, "custom">; label: string }[] = [
+  { id: "7d", label: "7d" },
+  { id: "30d", label: "30d" },
+  { id: "90d", label: "90d" },
+  { id: "all", label: "All" },
+];
+
+const FEATURED_KINDS: ChangeKind[] = [
+  "feature",
+  "breaking_change",
+  "deprecation",
+  "security",
+  "fix",
+];
+
+const MORE_KINDS = (Object.keys(CHANGE_KIND_LABELS) as ChangeKind[]).filter(
+  (kind) => !FEATURED_KINDS.includes(kind),
+);
+
+const SNAPSHOT_DAYS = 365;
+
+function isoDay(date: Date): string {
+  return format(date, "yyyy-MM-dd");
+}
+
+function presetBounds(preset: "7d" | "30d" | "90d"): { since: string; until: string } {
+  const until = startOfDay(new Date());
+  const back = preset === "7d" ? 6 : preset === "30d" ? 29 : 89;
+  return { since: isoDay(subDays(until, back)), until: isoDay(until) };
+}
+
+function resolveTimeWindow(
+  preset: TimePreset,
+  custom: DateRange | undefined,
+): { since?: string; until?: string; label: string } {
+  if (preset === "custom" && custom?.from) {
+    const since = isoDay(custom.from);
+    const until = isoDay(custom.to ?? custom.from);
+    const fromLabel = format(custom.from, "MMM d");
+    const toLabel = format(custom.to ?? custom.from, "MMM d");
+    return {
+      since,
+      until,
+      label: since === until ? fromLabel : `${fromLabel} – ${toLabel}`,
+    };
+  }
+  if (preset === "7d" || preset === "30d" || preset === "90d") {
+    const bounds = presetBounds(preset);
+    return {
+      ...bounds,
+      label: preset === "7d" ? "last 7 days" : preset === "30d" ? "last 30 days" : "last 90 days",
+    };
+  }
+  return { label: "all time" };
+}
+
+function calendarSelection(preset: TimePreset, custom: DateRange | undefined): DateRange | undefined {
+  if (preset === "custom") return custom;
+  if (preset === "7d" || preset === "30d" || preset === "90d") {
+    const bounds = presetBounds(preset);
+    return { from: new Date(`${bounds.since}T00:00:00`), to: new Date(`${bounds.until}T00:00:00`) };
+  }
+  return undefined;
+}
 
 function matchesChangeFilter(
   change: PublishedChange,
   q: string,
   kind: ChangeKind | "all",
+  since?: string,
+  until?: string,
 ): boolean {
   if (kind !== "all" && change.kind !== kind) return false;
+  const day = change.effectiveAt.slice(0, 10);
+  if (since && day < since) return false;
+  if (until && day > until) return false;
   if (!q) return true;
   return (
     change.title.toLowerCase().includes(q) ||
@@ -629,23 +843,97 @@ function matchesChangeFilter(
   );
 }
 
-function ChangesTab({
-  services,
-  localChanges,
-  onPublish,
+function FilterChip({
+  active,
+  onClick,
+  children,
+  className,
+  tone = "track",
 }: {
-  services: PublishedService[];
-  localChanges: PublishedChange[];
-  onPublish: () => void;
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+  tone?: "track" | "pill";
 }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[11px] font-medium transition-colors",
+        tone === "track" &&
+          (active
+            ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
+            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]/70"),
+        tone === "pill" &&
+          (active
+            ? "border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+            : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"),
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+const RELEASE_NOTES_TABLE = "bigquery-public-data.google_cloud_release_notes.release_notes";
+
+type ReleaseNotesSource = {
+  table: string;
+  fetchedAt: string;
+};
+
+function bigQueryTableUrl(table: string): string {
+  const parts = splitQualifiedTable(table);
+  const params = new URLSearchParams({
+    p: parts.project,
+    d: parts.dataset,
+    t: parts.name,
+    page: "table",
+  });
+  return `https://console.cloud.google.com/bigquery?${params}`;
+}
+
+function splitQualifiedTable(table: string): { project: string; dataset: string; name: string } {
+  const parts = table.split(".");
+  if (parts.length < 3) {
+    return { project: "", dataset: "", name: table };
+  }
+  return {
+    project: parts[0],
+    dataset: parts.slice(1, -1).join("."),
+    name: parts[parts.length - 1],
+  };
+}
+
+function ChangesTab() {
+  const listRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
+  const [timePreset, setTimePreset] = useState<TimePreset>("30d");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [changes, setChanges] = useState<PublishedChange[]>([]);
+  const [source, setSource] = useState<ReleaseNotesSource | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState(1);
+  const [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const timeWindow = useMemo(
+    () => resolveTimeWindow(timePreset, customRange),
+    [customRange, timePreset],
+  );
+  const selectedRange = calendarSelection(timePreset, customRange);
+  const moreKindActive = kindFilter !== "all" && MORE_KINDS.includes(kindFilter);
+  const atDefaults =
+    !searchQuery && kindFilter === "all" && timePreset === "30d" && !customRange?.from;
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedQuery(searchQuery.trim()), 250);
@@ -653,18 +941,19 @@ function ChangesTab({
   }, [searchQuery]);
 
   useEffect(() => {
-    setOffset(0);
-    setChanges([]);
-  }, [debouncedQuery, kindFilter]);
+    setPage(1);
+  }, [debouncedQuery, kindFilter, timeWindow.since, timeWindow.until]);
 
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({
       limit: String(CHANGE_PAGE_SIZE),
-      offset: String(offset),
+      offset: String((page - 1) * CHANGE_PAGE_SIZE),
     });
     if (debouncedQuery) params.set("q", debouncedQuery);
     if (kindFilter !== "all") params.set("kind", kindFilter);
+    if (timeWindow.since) params.set("since", timeWindow.since);
+    if (timeWindow.until) params.set("until", timeWindow.until);
     setLoading(true);
     setError(null);
     void fetch(`${API_URL}/api/providers/google/changes?${params}`, {
@@ -680,8 +969,14 @@ function ChangesTab({
         const mapped = rows
           .map((row: Parameters<typeof catalogChangeFromApi>[0]) => catalogChangeFromApi(row))
           .filter((change: PublishedChange | null): change is PublishedChange => change !== null);
-        setTotal(typeof body?.total === "number" ? body.total : mapped.length);
-        setChanges((prev) => (offset === 0 ? mapped : [...prev, ...mapped]));
+        const nextTotal = typeof body?.total === "number" ? body.total : mapped.length;
+        setTotal(nextTotal);
+        setSource({
+          table: typeof body?.source === "string" && body.source ? body.source : RELEASE_NOTES_TABLE,
+          fetchedAt: typeof body?.fetched_at === "string" ? body.fetched_at : "",
+        });
+        setChanges(mapped);
+        listRef.current?.scrollTo({ top: 0 });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -691,129 +986,443 @@ function ChangesTab({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [debouncedQuery, kindFilter, offset]);
+  }, [debouncedQuery, kindFilter, page, reload, timeWindow.since, timeWindow.until]);
+
+  const totalPages = Math.max(1, Math.ceil(total / CHANGE_PAGE_SIZE));
 
   const q = debouncedQuery.toLowerCase();
-  const filtered = useMemo(() => {
-    const remote = changes.filter((change) => matchesChangeFilter(change, q, kindFilter));
-    const extras = localChanges.filter((change) => matchesChangeFilter(change, q, kindFilter));
-    const seen = new Set(remote.map((change) => change.id));
-    return [...extras.filter((change) => !seen.has(change.id)), ...remote];
-  }, [changes, kindFilter, localChanges, q]);
+  const filtered = useMemo(
+    () => changes.filter((change) => matchesChangeFilter(change, q, kindFilter, timeWindow.since, timeWindow.until)),
+    [changes, kindFilter, q, timeWindow.since, timeWindow.until],
+  );
 
-  const serviceName = (change: PublishedChange) =>
-    change.product ||
-    services.find((s) => s.id === change.serviceId)?.name ||
-    services.find((s) => s.product === change.serviceId)?.name ||
-    change.serviceId;
+  const datedClusters = useMemo(
+    () => groupClustersByDate(clusterChanges(filtered)),
+    [filtered],
+  );
 
-  if (loading && filtered.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center bg-[var(--bg-secondary)]">
-        <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading release notes…
-        </div>
-      </div>
-    );
-  }
-
-  if (error && filtered.length === 0) {
-    return (
-      <TabEmpty
-        icon={FilePlus2}
-        title="Release notes unavailable"
-        body={error}
-        actionLabel="Publish change"
-        onAction={onPublish}
-        actionDisabled={services.length === 0}
-      />
-    );
-  }
+  const resetFilters = () => {
+    setSearchQuery("");
+    setDebouncedQuery("");
+    setKindFilter("all");
+    setTimePreset("30d");
+    setCustomRange(undefined);
+    setCalendarOpen(false);
+    setMoreOpen(false);
+  };
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-secondary)]">
-      <div className="px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-primary)]">
-        <div className="max-w-5xl mx-auto flex items-center gap-2">
+    <div className="h-full flex flex-col bg-[var(--bg-primary)]">
+      <div className="border-b border-[var(--border-color)] px-4 pt-4 pb-3 space-y-3">
+        <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)]" />
             <Input
-              placeholder="Search release notes…"
+              placeholder="Search GKE, BigQuery, deprecations…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 pl-9 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+              className="h-8 pl-9 pr-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 inline-flex items-center justify-center rounded-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                aria-label="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
-          <Select
-            value={kindFilter}
-            onValueChange={(value) => setKindFilter(value as ChangeKind | "all")}
+          <button
+            type="button"
+            title="Release notes source"
+            onClick={() => setSourceOpen(true)}
+            className="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10 text-xs font-medium transition-colors"
           >
-            <SelectTrigger className="h-8 w-[150px] text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
-              <Filter className="h-3 w-3 mr-1" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
-              <SelectItem value="all" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">
-                All types
-              </SelectItem>
-              {(Object.keys(CHANGE_KIND_LABELS) as ChangeKind[]).map((key) => (
-                <SelectItem
-                  key={key}
-                  value={key}
-                  className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
-                >
-                  {CHANGE_KIND_LABELS[key]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            onClick={onPublish}
-            disabled={services.length === 0}
-            className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-40"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Publish change
-          </Button>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
+            Connected
+          </button>
         </div>
-        <p className="max-w-5xl mx-auto mt-2 text-[10px] text-[var(--text-secondary)]">
-          {filtered.length.toLocaleString()}
-          {total > filtered.length ? ` of ${total.toLocaleString()}` : ""} notes
-          {loading ? " · loading…" : ""}
-          · last 365 days · untrusted provider input
-        </p>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+              When
+            </span>
+            <div className="inline-flex items-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-0.5">
+              {TIME_PRESETS.map((preset) => (
+                <FilterChip
+                  key={preset.id}
+                  active={timePreset === preset.id}
+                  onClick={() => {
+                    setTimePreset(preset.id);
+                    setCustomRange(undefined);
+                    setCalendarOpen(false);
+                  }}
+                >
+                  {preset.label}
+                </FilterChip>
+              ))}
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[11px] font-medium transition-colors",
+                      timePreset === "custom"
+                        ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]/70",
+                    )}
+                  >
+                    <CalendarDays className="h-3 w-3" />
+                    {timePreset === "custom" ? timeWindow.label : "Range"}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="z-[200] w-fit p-3 border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
+                >
+                  <div className="px-1 pb-2">
+                    <p className="text-xs font-medium text-[var(--text-primary)]">Published date</p>
+                    <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                      Pick a start and end day.
+                    </p>
+                  </div>
+                  <Calendar
+                    mode="range"
+                    selected={selectedRange}
+                    onSelect={(range) => {
+                      setCustomRange(range);
+                      if (range?.from) setTimePreset("custom");
+                    }}
+                    defaultMonth={selectedRange?.from}
+                    disabled={{
+                      after: new Date(),
+                      before: subDays(new Date(), SNAPSHOT_DAYS),
+                    }}
+                    className="bg-transparent p-0 w-fit [--cell-size:2.25rem]"
+                    classNames={{
+                      root: "w-fit",
+                      months: "relative flex w-fit flex-col",
+                      month: "flex w-fit flex-col gap-3",
+                      weekdays: "flex w-fit",
+                      weekday:
+                        "size-[--cell-size] text-[0.7rem] font-normal text-[var(--text-secondary)]",
+                      week: "mt-1 flex w-fit",
+                      day: "size-[--cell-size] p-0",
+                    }}
+                  />
+                  <div className="flex items-center justify-between px-1 pt-2">
+                    <p className="text-[11px] text-[var(--text-secondary)]">
+                      {timePreset === "custom" && customRange?.from
+                        ? timeWindow.label
+                        : "Last 365 days available"}
+                    </p>
+                    {timePreset === "custom" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTimePreset("30d");
+                          setCustomRange(undefined);
+                          setCalendarOpen(false);
+                        }}
+                        className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          <div className="hidden sm:block h-5 w-px bg-[var(--border-color)]" />
+
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+              Type
+            </span>
+            <div className="inline-flex flex-wrap items-center gap-1">
+              <FilterChip
+                tone="pill"
+                active={kindFilter === "all"}
+                onClick={() => setKindFilter("all")}
+              >
+                All
+              </FilterChip>
+              {FEATURED_KINDS.map((kind) => (
+                <FilterChip
+                  key={kind}
+                  tone="pill"
+                  active={kindFilter === kind}
+                  onClick={() => setKindFilter(kindFilter === kind ? "all" : kind)}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kind])} />
+                  <span className={cn(kindFilter === kind && KIND_TONE[kind])}>
+                    {kind === "breaking_change" ? "Breaking" : CHANGE_KIND_LABELS[kind]}
+                  </span>
+                </FilterChip>
+              ))}
+              <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-[11px] font-medium transition-colors",
+                      "bg-[var(--bg-secondary)] border-[var(--border-color)]",
+                      moreKindActive
+                        ? "text-[var(--text-primary)]"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]",
+                    )}
+                  >
+                    {moreKindActive ? (
+                      <>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kindFilter])} />
+                        {CHANGE_KIND_LABELS[kindFilter]}
+                      </>
+                    ) : (
+                      "More"
+                    )}
+                    <ChevronDown className="h-3 w-3 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="z-[200] w-52 p-1.5 border-[var(--border-color)] bg-[var(--bg-primary)]"
+                >
+                  {MORE_KINDS.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => {
+                        setKindFilter(kindFilter === kind ? "all" : kind);
+                        setMoreOpen(false);
+                      }}
+                      className={cn(
+                        "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-left transition-colors",
+                        kindFilter === kind
+                          ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]",
+                      )}
+                    >
+                      <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kind])} />
+                      {CHANGE_KIND_LABELS[kind]}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            {loading && filtered.length === 0
+              ? "Loading notes…"
+              : `${total.toLocaleString()} ${total === 1 ? "note" : "notes"}`}
+            {!loading && (
+              <>
+                <span className="mx-1.5 text-[var(--border-color)]">·</span>
+                {timeWindow.label}
+                {kindFilter !== "all" && (
+                  <>
+                    <span className="mx-1.5 text-[var(--border-color)]">·</span>
+                    {CHANGE_KIND_LABELS[kindFilter].toLowerCase()}
+                  </>
+                )}
+              </>
+            )}
+          </p>
+          {!atDefaults && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-6 py-6 space-y-3">
-          {filtered.length === 0 ? (
+
+      <div ref={listRef} className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-3xl mx-auto space-y-6">
+          {loading && datedClusters.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-xs text-[var(--text-secondary)]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading release notes…
+            </div>
+          ) : error && datedClusters.length === 0 ? (
+            <div className="text-center py-10">
+              <p className="text-xs text-[var(--text-secondary)] mb-3">{error}</p>
+              <Button
+                size="sm"
+                onClick={() => setReload((count) => count + 1)}
+                className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                Retry
+              </Button>
+            </div>
+          ) : datedClusters.length === 0 ? (
             <p className="text-xs text-[var(--text-secondary)] text-center py-10">
               No release notes match that filter.
             </p>
           ) : (
-            filtered.map((change, index) => (
-              <div
-                key={`${change.id}:${index}`}
-                className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-4"
-              >
-                <ChangeRow change={change} serviceName={serviceName(change)} />
-              </div>
+            datedClusters.map((group) => (
+              <section key={group.dateKey}>
+                <h3 className="sticky top-0 z-10 -mx-1 px-1 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--bg-primary)]/95 backdrop-blur-sm">
+                  {group.label}
+                </h3>
+                <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden">
+                  {group.clusters.map((cluster) => (
+                    <ChangeClusterRow key={cluster.id} cluster={cluster} />
+                  ))}
+                </div>
+              </section>
             ))
-          )}
-          {changes.length < total && (
-            <div className="flex justify-center pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setOffset(changes.length)}
-                disabled={loading}
-                className={cn("h-8 text-xs", outlineButtonClass)}
-              >
-                Show more ({(total - changes.length).toLocaleString()} left)
-              </Button>
-            </div>
           )}
         </div>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex-shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2">
+          <Pagination>
+            <PaginationContent className="gap-0.5">
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  className={cn(
+                    "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
+                    "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+                    page === 1 && "pointer-events-none opacity-50",
+                  )}
+                />
+              </PaginationItem>
+              {pageWindow(page, totalPages).map((item, index) =>
+                item === "ellipsis" ? (
+                  <PaginationItem key={`ellipsis-${index}`}>
+                    <PaginationEllipsis className="h-7 w-7 text-[var(--text-secondary)]" />
+                  </PaginationItem>
+                ) : (
+                  <PaginationItem key={item}>
+                    <PaginationLink
+                      onClick={() => setPage(item)}
+                      isActive={page === item}
+                      className={cn(
+                        "h-7 w-7 text-[11px] cursor-pointer border",
+                        page === item
+                          ? "bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                          : "bg-[var(--bg-primary)] border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+                      )}
+                    >
+                      {item}
+                    </PaginationLink>
+                  </PaginationItem>
+                ),
+              )}
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  className={cn(
+                    "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
+                    "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+                    page === totalPages && "pointer-events-none opacity-50",
+                  )}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+
+      <ReleaseNotesSourceDialog
+        open={sourceOpen}
+        onOpenChange={setSourceOpen}
+        source={source}
+      />
     </div>
+  );
+}
+
+function ReleaseNotesSourceDialog({
+  open,
+  onOpenChange,
+  source,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  source: ReleaseNotesSource | null;
+}) {
+  const table = source?.table || RELEASE_NOTES_TABLE;
+  const parts = splitQualifiedTable(table);
+  const sourceUrl = bigQueryTableUrl(table);
+  const fields = [
+    { label: "Project", value: parts.project, mono: true },
+    { label: "Dataset", value: parts.dataset, mono: true },
+    { label: "Table", value: parts.name, mono: true },
+    {
+      label: "Fetched",
+      value: source?.fetchedAt ? formatShortDate(source.fetchedAt) : "—",
+      mono: false,
+    },
+  ].filter((field) => field.value);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
+          <DialogHeader className="space-y-0 text-left">
+            <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+              Source
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[var(--text-secondary)] pt-2">
+              Imported from the destination release endpoint.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          {fields.map((field) => (
+            <div key={field.label} className="grid gap-2">
+              <Label className="text-xs text-[var(--text-secondary)]">{field.label}</Label>
+              <div
+                className={cn(
+                  "h-8 px-3 flex items-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)]",
+                  field.mono && "font-mono",
+                )}
+              >
+                {field.value}
+              </div>
+            </div>
+          ))}
+          <div className="grid gap-2">
+            <Label className="text-xs text-[var(--text-secondary)]">Endpoint</Label>
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="min-h-8 px-3 py-2 flex items-start gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)] hover:border-primary/40 hover:text-primary transition-colors font-mono break-all leading-snug"
+            >
+              <span className="flex-1 min-w-0">{sourceUrl}</span>
+              <ArrowUpRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-[var(--text-secondary)]" />
+            </a>
+          </div>
+        </div>
+
+        <DialogFooter className="shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-4">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+          >
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -955,7 +1564,23 @@ function ProfileTab({
               href={profile.statusUrl}
             />
           )}
-          <DetailRow icon={Mail} label="Contact" value={profile.contactEmail} href={`mailto:${profile.contactEmail}`} />
+          {profile.contactUrl ? (
+            <DetailRow
+              icon={Mail}
+              label="Contact"
+              value={profile.contactUrl.replace(/^https?:\/\//, "")}
+              href={profile.contactUrl}
+            />
+          ) : (
+            profile.contactEmail && (
+              <DetailRow
+                icon={Mail}
+                label="Contact"
+                value={profile.contactEmail}
+                href={`mailto:${profile.contactEmail}`}
+              />
+            )
+          )}
           {profile.hq && <DetailRow icon={MapPin} label="Headquarters" value={profile.hq} />}
         </div>
 
@@ -1426,244 +2051,85 @@ function PublishServiceDialog({
   );
 }
 
-function PublishChangeDialog({
-  open,
-  onOpenChange,
-  services,
-  onPublish,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  services: PublishedService[];
-  onPublish: (change: PublishedChange) => void;
-}) {
-  const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<ChangeKind>("deprecation");
-  const [effectiveAt, setEffectiveAt] = useState("2026-08-17");
-  const [retired, setRetired] = useState("");
-  const [replacement, setReplacement] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const reset = () => {
-    setServiceId(services[0]?.id ?? "");
-    setTitle("");
-    setKind("deprecation");
-    setEffectiveAt("2026-08-17");
-    setRetired("");
-    setReplacement("");
-    setSourceUrl("");
-    setError(null);
-  };
-
-  const handleSubmit = () => {
-    if (!serviceId) return setError("Publish a service first.");
-    if (!title.trim()) return setError("Enter a title.");
-    const ids = retired
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    onPublish({
-      id: `chg_${Date.now()}`,
-      serviceId,
-      title: title.trim(),
-      kind,
-      status: "published",
-      effectiveAt: new Date(`${effectiveAt}T00:00:00Z`).toISOString(),
-      retiredIdentifiers: ids,
-      recommendedReplacement: replacement.trim() || null,
-      sourceUrl: sourceUrl.trim() || "https://example.com/changelog",
-      publishedAt: new Date().toISOString(),
-    });
-    reset();
-    onOpenChange(false);
-  };
+function ChangeClusterRow({ cluster }: { cluster: ChangeCluster }) {
+  const [open, setOpen] = useState(false);
+  const variants = cluster.members
+    .map((member) => variantLabel(member.product || member.serviceId, cluster.product))
+    .filter((label, index, all) => label && all.indexOf(label) === index);
+  const count = cluster.members.length;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        onOpenChange(v);
-        if (v) {
-          setServiceId((current) =>
-            services.some((s) => s.id === current) ? current : (services[0]?.id ?? ""),
-          );
-        } else {
-          reset();
-        }
-      }}
-    >
-      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-            Publish a change
-          </DialogTitle>
-          <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            Attach a sourced event to one of this organization’s services.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3.5 py-1">
-          <Field label="Service">
-            <Select value={serviceId} onValueChange={setServiceId} disabled={services.length === 0}>
-              <SelectTrigger className={selectTriggerClass}>
-                <SelectValue placeholder="Select a service" />
-              </SelectTrigger>
-              <SelectContent className={selectContentClass}>
-                {services.map((service) => (
-                  <SelectItem key={service.id} value={service.id} className={selectItemClass}>
-                    {service.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Title">
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Imagen 4 identifiers retire"
-              className={fieldClass}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Kind">
-              <Select value={kind} onValueChange={(v) => setKind(v as ChangeKind)}>
-                <SelectTrigger className={selectTriggerClass}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className={selectContentClass}>
-                  {(["deprecation", "replacement", "new_identifier", "breaking_change"] as ChangeKind[]).map((key) => (
-                    <SelectItem key={key} value={key} className={selectItemClass}>
-                      {CHANGE_KIND_LABELS[key]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Effective date">
-              <Input
-                type="date"
-                value={effectiveAt}
-                onChange={(e) => setEffectiveAt(e.target.value)}
-                className={fieldClass}
-              />
-            </Field>
+    <div className="border-b border-[var(--border-color)] last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="w-full text-left p-3 hover:bg-[var(--bg-tertiary)] transition-colors"
+      >
+        <div className="flex items-start gap-3">
+          <Image
+            src={getGCPServiceIcon(cluster.product)}
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain mt-0.5 flex-shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-medium text-[var(--text-primary)] truncate">
+                {cluster.product}
+              </span>
+              <span className={cn("text-[10px] font-medium flex-shrink-0", KIND_TONE[cluster.kind])}>
+                {CHANGE_KIND_LABELS[cluster.kind]}
+              </span>
+              {count > 1 && (
+                <span className="text-[10px] text-[var(--text-secondary)] flex-shrink-0">
+                  {count}
+                </span>
+              )}
+            </div>
+            <p
+              className={cn(
+                "mt-1 text-xs text-[var(--text-secondary)] leading-relaxed",
+                !open && "line-clamp-2",
+              )}
+            >
+              {cluster.body}
+            </p>
           </div>
-          <Field label="Retired identifiers" hint="Optional. One per line.">
-            <Textarea
-              value={retired}
-              onChange={(e) => setRetired(e.target.value)}
-              placeholder="imagen-4.0-generate-001"
-              className={cn(textareaClass, "font-mono")}
-            />
-          </Field>
-          <Field label="Recommended replacement">
-            <Input
-              value={replacement}
-              onChange={(e) => setReplacement(e.target.value)}
-              placeholder="gemini-3.1-flash-image"
-              className={cn(fieldClass, "font-mono")}
-            />
-          </Field>
-          <Field label="Source URL">
-            <Input
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              placeholder="https://ai.google.dev/gemini-api/docs/deprecations"
-              className={fieldClass}
-            />
-          </Field>
-          {error && <p className="text-xs text-red-500">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className={cn("h-7 text-xs", outlineMutedButtonClass)}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            className="h-7 text-xs bg-primary hover:bg-primary-hover text-primary-foreground"
-          >
-            Publish
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ChangeRow({
-  change,
-  serviceName,
-}: {
-  change: PublishedChange;
-  serviceName?: string;
-}) {
-  const days = daysUntil(change.effectiveAt);
-  const urgent = days <= 14;
-
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-          <KindPill kind={change.kind} />
-          {serviceName && (
-            <span className="text-[10px] text-[var(--text-secondary)]">{serviceName}</span>
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-[var(--text-secondary)] mt-0.5 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-[var(--text-secondary)] mt-0.5 flex-shrink-0" />
           )}
         </div>
-        <p className="text-sm font-medium text-[var(--text-primary)] leading-snug">
-          {change.title}
-        </p>
-        {change.summary && change.summary !== change.title && (
-          <p className="mt-1.5 text-[11px] text-[var(--text-secondary)] leading-relaxed">
-            {change.summary}
-          </p>
-        )}
-        {change.retiredIdentifiers.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {change.retiredIdentifiers.map((id) => (
-              <p key={id} className="font-mono text-[11px] text-[var(--text-secondary)]">
-                {id}
-              </p>
-            ))}
-            {change.recommendedReplacement && (
-              <p className="font-mono text-[11px] text-emerald-500">
-                → {change.recommendedReplacement}
-              </p>
-            )}
-          </div>
-        )}
-        <a
-          href={change.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 mt-2 text-[10px] text-[var(--text-secondary)] hover:text-primary transition-colors"
-        >
-          <Link2 className="h-3 w-3" />
-          Source
-          <ArrowUpRight className="h-3 w-3" />
-        </a>
-      </div>
-      <div className="text-right flex-shrink-0">
-        <p className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
-          Published
-        </p>
-        <p
-          className={cn(
-            "text-sm font-semibold tabular-nums mt-0.5",
-            urgent ? "text-red-400" : "text-[var(--text-primary)]",
+      </button>
+      {open && (variants.length > 1 || cluster.sourceUrl) && (
+        <div className="px-3 pb-3 pl-11">
+          {variants.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {variants.map((label) => (
+                <span
+                  key={label}
+                  className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
           )}
-        >
-          {formatShortDate(change.effectiveAt)}
-        </p>
-        <p className={cn("text-[10px] tabular-nums", urgent ? "text-red-400" : "text-[var(--text-secondary)]")}>
-          {days < 0 ? `${Math.abs(days)}d ago` : days === 0 ? "today" : `in ${days}d`}
-        </p>
-      </div>
+          {cluster.sourceUrl && (
+            <a
+              href={cluster.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 mt-2 text-[10px] text-[var(--text-secondary)] hover:text-primary transition-colors"
+            >
+              Source
+              <ArrowUpRight className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1686,29 +2152,3 @@ function Field({
   );
 }
 
-function KindPill({ kind }: { kind: ChangeKind }) {
-  const styles: Record<ChangeKind, string> = {
-    deprecation: "text-red-400 bg-red-500/10 border-red-500/20",
-    replacement: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    new_identifier: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    breaking_change: "text-red-400 bg-red-500/10 border-red-500/20",
-    feature: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    fix: "text-sky-400 bg-sky-500/10 border-sky-500/20",
-    issue: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    security: "text-red-400 bg-red-500/10 border-red-500/20",
-    announcement: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
-    change: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
-    libraries: "text-sky-400 bg-sky-500/10 border-sky-500/20",
-    other: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-        styles[kind],
-      )}
-    >
-      {CHANGE_KIND_LABELS[kind]}
-    </span>
-  );
-}
