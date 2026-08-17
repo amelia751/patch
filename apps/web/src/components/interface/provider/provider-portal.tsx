@@ -51,16 +51,13 @@ import {
   ExternalLink,
   Eye,
   FilePlus2,
-  Filter,
   Globe,
   Info,
   Layers,
   Loader2,
   Mail,
   MapPin,
-  Plus,
   Search,
-  Shield,
   X,
 } from "lucide-react";
 import {
@@ -73,7 +70,6 @@ import {
   catalogServiceFromApi,
   formatShortDate,
   formatWatchers,
-  inferServiceMeta,
   initials,
   slugify,
   type ChangeKind,
@@ -111,6 +107,19 @@ const tabTriggerClass =
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const SERVICE_USAGE_HOST = "serviceusage.googleapis.com";
+
+type CatalogSource = {
+  source: string;
+  project: string;
+  fetchedAt: string;
+};
+
+function serviceUsageListUrl(project: string): string {
+  const id = project.trim() || "{project}";
+  return `https://${SERVICE_USAGE_HOST}/v1/projects/${id}/services`;
+}
+
 /** Outline actions — same dark hover as the header theme toggle. */
 const outlineButtonClass =
   "border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]";
@@ -124,7 +133,7 @@ export function ProviderPortal() {
   const [tab, setTab] = useState("services");
   const [showRegister, setShowRegister] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
-  const [publishServiceOpen, setPublishServiceOpen] = useState(false);
+  const [catalogSource, setCatalogSource] = useState<CatalogSource | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const openCatalog = async () => {
@@ -144,6 +153,14 @@ export function ProviderPortal() {
       }
       const rows = Array.isArray(body?.services) ? body.services : [];
       setServices(rows.map((row: Parameters<typeof catalogServiceFromApi>[0]) => catalogServiceFromApi(row)));
+      setCatalogSource({
+        source:
+          typeof body?.source === "string" && body.source
+            ? body.source
+            : SERVICE_USAGE_HOST,
+        project: typeof body?.project === "string" ? body.project : "",
+        fetchedAt: typeof body?.fetched_at === "string" ? body.fetched_at : "",
+      });
     } catch (error) {
       setCatalogError(
         error instanceof Error ? error.message : "Could not load the Google Cloud catalog",
@@ -163,6 +180,7 @@ export function ProviderPortal() {
   const leaveProvider = () => {
     setProfile(null);
     setServices([]);
+    setCatalogSource(null);
     setTab("services");
   };
 
@@ -240,10 +258,10 @@ export function ProviderPortal() {
         <TabsContent value="services" className="flex-1 m-0 p-0 overflow-hidden">
           <ServicesTab
             services={services}
+            source={catalogSource}
             loading={catalogLoading}
             error={catalogError}
             onRetry={() => void openCatalog()}
-            onPublish={() => setPublishServiceOpen(true)}
           />
         </TabsContent>
 
@@ -260,14 +278,6 @@ export function ProviderPortal() {
         </TabsContent>
       </Tabs>
 
-      <PublishServiceDialog
-        open={publishServiceOpen}
-        onOpenChange={setPublishServiceOpen}
-        onPublish={(service) => {
-          setServices((prev) => [service, ...prev]);
-          setTab("services");
-        }}
-      />
     </>
   );
 }
@@ -278,19 +288,66 @@ const SERVICE_STATUS_STYLE: Record<ServiceStatus, { color: string; bg: string }>
   deprecated: { color: "text-red-500", bg: "bg-red-500/10 border-red-500/30" },
 };
 
+const SERVICE_STATUS_DOT: Record<ServiceStatus, string> = {
+  live: "bg-[#10b981]",
+  preview: "bg-amber-500",
+  deprecated: "bg-red-500",
+};
+
+const SERVICE_GROUP_CHIPS: { id: ServiceGroup; label: string }[] = [
+  { id: "ai", label: "AI" },
+  { id: "compute", label: "Compute" },
+  { id: "database", label: "Databases" },
+  { id: "storage", label: "Storage" },
+  { id: "networking", label: "Networking" },
+  { id: "security", label: "Security" },
+  { id: "api", label: "APIs" },
+];
+
 function ServicesTab({
   services,
+  source,
   loading,
   error,
   onRetry,
-  onPublish,
 }: {
   services: PublishedService[];
+  source: CatalogSource | null;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
-  onPublish: () => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ServiceStatus | "all">("all");
+  const [groupFilter, setGroupFilter] = useState<ServiceGroup | "all">("all");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
+  const [sourceOpen, setSourceOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return services.filter((service) => {
+      const matchesSearch =
+        !q ||
+        service.name.toLowerCase().includes(q) ||
+        service.slug.toLowerCase().includes(q) ||
+        service.product.toLowerCase().includes(q) ||
+        service.identifiers.some((id) => id.toLowerCase().includes(q));
+      const matchesStatus = statusFilter === "all" || service.status === statusFilter;
+      const matchesGroup = groupFilter === "all" || service.group === groupFilter;
+      return matchesSearch && matchesStatus && matchesGroup;
+    });
+  }, [services, searchQuery, statusFilter, groupFilter]);
+
+  const grouped = useMemo(() => {
+    const next: Record<string, PublishedService[]> = {};
+    for (const service of filtered) {
+      if (!next[service.group]) next[service.group] = [];
+      next[service.group].push(service);
+    }
+    return next;
+  }, [filtered]);
+
   if (loading) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-[var(--bg-primary)]">
@@ -324,33 +381,6 @@ function ServicesTab({
       </div>
     );
   }
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ServiceStatus | "all">("all");
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
-
-  const filtered = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    return services.filter((service) => {
-      const matchesSearch =
-        !q ||
-        service.name.toLowerCase().includes(q) ||
-        service.slug.toLowerCase().includes(q) ||
-        service.product.toLowerCase().includes(q) ||
-        service.identifiers.some((id) => id.toLowerCase().includes(q));
-      const matchesStatus = statusFilter === "all" || service.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [services, searchQuery, statusFilter]);
-
-  const grouped = useMemo(() => {
-    const next: Record<string, PublishedService[]> = {};
-    for (const service of filtered) {
-      if (!next[service.group]) next[service.group] = [];
-      next[service.group].push(service);
-    }
-    return next;
-  }, [filtered]);
 
   const toggleGroup = (group: string) => {
     setCollapsedGroups((prev) => {
@@ -369,18 +399,6 @@ function ServicesTab({
       return next;
     });
   };
-
-  if (services.length === 0) {
-    return (
-      <TabEmpty
-        icon={Layers}
-        title="No services yet"
-        body="An organization can publish multiple services. Add the first API surface and the identifiers enterprises call."
-        actionLabel="Publish service"
-        onAction={onPublish}
-      />
-    );
-  }
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-primary)]">
@@ -410,13 +428,15 @@ function ServicesTab({
               <SelectItem value="deprecated" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Deprecated</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            onClick={onPublish}
-            className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+          <button
+            type="button"
+            title="Catalog source"
+            onClick={() => setSourceOpen(true)}
+            className="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/10 text-xs font-medium transition-colors"
           >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Publish service
-          </Button>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
+            Connected
+          </button>
         </div>
       </div>
 
@@ -603,6 +623,12 @@ function ServicesTab({
           )}
         </div>
       </div>
+
+      <CatalogSourceDialog
+        open={sourceOpen}
+        onOpenChange={setSourceOpen}
+        source={source}
+      />
     </div>
   );
 }
@@ -1346,6 +1372,85 @@ function ChangesTab() {
   );
 }
 
+function CatalogSourceDialog({
+  open,
+  onOpenChange,
+  source,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  source: CatalogSource | null;
+}) {
+  const host = source?.source || SERVICE_USAGE_HOST;
+  const project = source?.project || "";
+  const endpoint = serviceUsageListUrl(project);
+  const fields = [
+    { label: "Source", value: host, mono: true },
+    { label: "Project", value: project, mono: true },
+    {
+      label: "Fetched",
+      value: source?.fetchedAt ? formatShortDate(source.fetchedAt) : "—",
+      mono: false,
+    },
+  ].filter((field) => field.value);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
+          <DialogHeader className="space-y-0 text-left">
+            <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+              Source
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[var(--text-secondary)] pt-2">
+              Imported from the destination catalog endpoint.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          {fields.map((field) => (
+            <div key={field.label} className="grid gap-2">
+              <Label className="text-xs text-[var(--text-secondary)]">{field.label}</Label>
+              <div
+                className={cn(
+                  "h-8 px-3 flex items-center rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)]",
+                  field.mono && "font-mono",
+                )}
+              >
+                {field.value}
+              </div>
+            </div>
+          ))}
+          <div className="grid gap-2">
+            <Label className="text-xs text-[var(--text-secondary)]">Endpoint</Label>
+            <a
+              href={endpoint}
+              target="_blank"
+              rel="noreferrer"
+              className="min-h-8 px-3 py-2 flex items-start gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)] hover:border-primary/40 hover:text-primary transition-colors font-mono break-all leading-snug"
+            >
+              <span className="flex-1 min-w-0">{endpoint}</span>
+              <ArrowUpRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-[var(--text-secondary)]" />
+            </a>
+          </div>
+        </div>
+
+        <DialogFooter className="shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-4">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+          >
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ReleaseNotesSourceDialog({
   open,
   onOpenChange,
@@ -1584,14 +1689,6 @@ function ProfileTab({
           {profile.hq && <DetailRow icon={MapPin} label="Headquarters" value={profile.hq} />}
         </div>
 
-        <div className="flex items-start gap-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3">
-          <Shield className="h-3.5 w-3.5 text-[var(--text-secondary)] mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-            Provider material is untrusted input. Opening this catalog does not grant
-            access to customer repositories, secrets, or merge rights.
-          </p>
-        </div>
-
         <Button
           variant="outline"
           onClick={onLeave}
@@ -1642,48 +1739,6 @@ function DetailRow({
   }
 
   return <div className="flex items-center justify-between gap-4 px-4 py-3">{inner}</div>;
-}
-
-function TabEmpty({
-  icon: Icon,
-  title,
-  body,
-  actionLabel,
-  onAction,
-  actionDisabled,
-  actionHint,
-}: {
-  icon: typeof Layers;
-  title: string;
-  body: string;
-  actionLabel: string;
-  onAction: () => void;
-  actionDisabled?: boolean;
-  actionHint?: string;
-}) {
-  return (
-    <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
-      <div className="text-center max-w-md px-4">
-        <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
-          <Icon className="h-5 w-5 text-[var(--text-secondary)]" />
-        </div>
-        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">{title}</h2>
-        <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">{body}</p>
-        <Button
-          size="sm"
-          onClick={onAction}
-          disabled={actionDisabled}
-          className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-40"
-        >
-          <Plus className="h-3 w-3 mr-1" />
-          {actionLabel}
-        </Button>
-        {actionHint && (
-          <p className="text-[11px] text-[var(--text-secondary)] mt-3">{actionHint}</p>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function HowItWorksDialog({
@@ -1888,162 +1943,6 @@ function RegisterDialog({
             className="h-7 text-xs bg-primary hover:bg-primary-hover text-primary-foreground"
           >
             Register
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function PublishServiceDialog({
-  open,
-  onOpenChange,
-  onPublish,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onPublish: (service: PublishedService) => void;
-}) {
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [summary, setSummary] = useState("");
-  const [identifiers, setIdentifiers] = useState("");
-  const [docsUrl, setDocsUrl] = useState("");
-  const [status, setStatus] = useState<ServiceStatus>("live");
-  const [error, setError] = useState<string | null>(null);
-
-  const reset = () => {
-    setName("");
-    setSlug("");
-    setSlugTouched(false);
-    setSummary("");
-    setIdentifiers("");
-    setDocsUrl("");
-    setStatus("live");
-    setError(null);
-  };
-
-  const handleSubmit = () => {
-    if (!name.trim()) return setError("Enter a service name.");
-    const ids = identifiers
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (ids.length === 0) return setError("List at least one identifier.");
-    const meta = inferServiceMeta(name);
-    onPublish({
-      id: `svc_${slugify(slug || name)}_${Date.now()}`,
-      name: name.trim(),
-      slug: slugify(slug || name),
-      summary: summary.trim() || "Published service. Identifiers are available for inventory.",
-      status,
-      product: meta.product,
-      group: meta.group,
-      identifiers: ids,
-      docsUrl: docsUrl.trim() || "https://example.com/docs",
-      watchers: 0,
-      lastPublishedAt: new Date().toISOString(),
-    });
-    reset();
-    onOpenChange(false);
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        onOpenChange(v);
-        if (!v) reset();
-      }}
-    >
-      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-            Publish a service
-          </DialogTitle>
-          <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            Add another API surface under this organization. Hardcoded — nothing is sent.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3.5 py-1">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Name">
-              <Input
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (!slugTouched) setSlug(slugify(e.target.value));
-                }}
-                placeholder="Image Generate"
-                className={fieldClass}
-              />
-            </Field>
-            <Field label="Slug">
-              <Input
-                value={slug}
-                onChange={(e) => {
-                  setSlugTouched(true);
-                  setSlug(slugify(e.target.value));
-                }}
-                placeholder="image-generate"
-                className={cn(fieldClass, "font-mono")}
-              />
-            </Field>
-          </div>
-          <Field label="Status">
-            <Select value={status} onValueChange={(v) => setStatus(v as ServiceStatus)}>
-              <SelectTrigger className={selectTriggerClass}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className={selectContentClass}>
-                {(Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((key) => (
-                  <SelectItem key={key} value={key} className={selectItemClass}>
-                    {SERVICE_STATUS_LABELS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Summary">
-            <Textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              placeholder="What this service is, in one or two sentences."
-              className={textareaClass}
-            />
-          </Field>
-          <Field label="Identifiers" hint="One per line, or comma-separated.">
-            <Textarea
-              value={identifiers}
-              onChange={(e) => setIdentifiers(e.target.value)}
-              placeholder={"acme-image-3\nacme-image-3-fast"}
-              className={cn(textareaClass, "font-mono")}
-            />
-          </Field>
-          <Field label="Docs URL">
-            <Input
-              value={docsUrl}
-              onChange={(e) => setDocsUrl(e.target.value)}
-              placeholder="https://docs.acme.ai/image"
-              className={fieldClass}
-            />
-          </Field>
-          {error && <p className="text-xs text-red-500">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className={cn("h-7 text-xs", outlineMutedButtonClass)}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            className="h-7 text-xs bg-primary hover:bg-primary-hover text-primary-foreground"
-          >
-            Publish
           </Button>
         </DialogFooter>
       </DialogContent>
