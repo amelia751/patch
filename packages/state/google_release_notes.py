@@ -135,11 +135,21 @@ def uniquify_note_ids(notes: tuple[ReleaseNote, ...]) -> tuple[ReleaseNote, ...]
     return tuple(unique)
 
 
+_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def published_day(value: str) -> str:
+    day = (value or "").strip()[:10]
+    return day if _DAY.fullmatch(day) else ""
+
+
 def filter_notes(
     notes: tuple[ReleaseNote, ...],
     *,
     q: str = "",
     kind: str = "",
+    since: str = "",
+    until: str = "",
     limit: int = 75,
     offset: int = 0,
 ) -> tuple[tuple[ReleaseNote, ...], int]:
@@ -147,9 +157,16 @@ def filter_notes(
     wanted = kind.strip().lower()
     if wanted in {"", "all"}:
         wanted = ""
+    since_day = published_day(since)
+    until_day = published_day(until)
     matched: list[ReleaseNote] = []
     for note in notes:
         if wanted and note.kind != wanted:
+            continue
+        day = note.published_at[:10]
+        if since_day and day < since_day:
+            continue
+        if until_day and day > until_day:
             continue
         if query:
             haystack = " ".join(

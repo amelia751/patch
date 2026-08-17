@@ -56,6 +56,8 @@ async def get_google_catalog() -> JSONResponse:
 async def get_google_changes(
     q: str = Query(default=""),
     kind: str = Query(default=""),
+    since: str = Query(default=""),
+    until: str = Query(default=""),
     limit: int = Query(default=75, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> JSONResponse:
@@ -64,7 +66,9 @@ async def get_google_changes(
         snapshot = load_google_release_notes()
     except CatalogUnavailableError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=503)
-    page, total = filter_notes(snapshot.notes, q=q, kind=kind, limit=limit, offset=offset)
+    page, total = filter_notes(
+        snapshot.notes, q=q, kind=kind, since=since, until=until, limit=limit, offset=offset
+    )
     payload = notes_to_payload(snapshot)
     payload["changes"] = notes_to_changes(page)
     payload["total"] = total
@@ -72,4 +76,6 @@ async def get_google_changes(
     payload["offset"] = offset
     payload["q"] = q
     payload["kind"] = kind
+    payload["since"] = since
+    payload["until"] = until
     return JSONResponse(payload)

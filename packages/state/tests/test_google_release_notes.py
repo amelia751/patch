@@ -105,6 +105,26 @@ def test_uniquify_note_ids_disambiguates_collisions() -> None:
     assert [item.id for item in unique] == ["rn:same", "rn:same:2", "rn:other"]
 
 
+def test_filter_notes_respects_published_window() -> None:
+    def note(day: str) -> ReleaseNote:
+        return ReleaseNote(
+            id=f"rn:{day}",
+            product="BigQuery",
+            kind="feature",
+            release_note_type="FEATURE",
+            title="BigQuery",
+            summary="BigQuery",
+            published_at=f"{day}T00:00:00Z",
+            source_url="https://cloud.google.com/release-notes",
+        )
+
+    notes = (note("2026-08-01"), note("2026-08-10"), note("2026-08-20"))
+    page, total = filter_notes(notes, since="2026-08-05", until="2026-08-15")
+    assert total == 1
+    assert page[0].published_at.startswith("2026-08-10")
+    assert filter_notes(notes, since="not-a-day")[1] == 3
+
+
 def test_filter_notes_matches_kind_and_query() -> None:
     snapshot = load_google_release_notes()
     page, total = filter_notes(snapshot.notes, kind="deprecation", limit=20, offset=0)
@@ -155,3 +175,7 @@ def test_changes_route_filters_on_the_server() -> None:
     for row in searched.json()["changes"]:
         hay = f"{row.get('product', '')} {row.get('title', '')} {row.get('summary', '')}".lower()
         assert "bigquery" in hay
+    empty = TestClient(app).get("/api/providers/google/changes?since=2099-01-01&limit=10")
+    assert empty.status_code == 200
+    assert empty.json()["total"] == 0
+    assert empty.json()["since"] == "2099-01-01"
