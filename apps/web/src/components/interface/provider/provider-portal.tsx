@@ -294,16 +294,6 @@ const SERVICE_STATUS_DOT: Record<ServiceStatus, string> = {
   deprecated: "bg-red-500",
 };
 
-const SERVICE_GROUP_CHIPS: { id: ServiceGroup; label: string }[] = [
-  { id: "ai", label: "AI" },
-  { id: "compute", label: "Compute" },
-  { id: "database", label: "Databases" },
-  { id: "storage", label: "Storage" },
-  { id: "networking", label: "Networking" },
-  { id: "security", label: "Security" },
-  { id: "api", label: "APIs" },
-];
-
 function ServicesTab({
   services,
   source,
@@ -319,7 +309,6 @@ function ServicesTab({
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ServiceStatus | "all">("all");
-  const [groupFilter, setGroupFilter] = useState<ServiceGroup | "all">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -334,10 +323,9 @@ function ServicesTab({
         service.product.toLowerCase().includes(q) ||
         service.identifiers.some((id) => id.toLowerCase().includes(q));
       const matchesStatus = statusFilter === "all" || service.status === statusFilter;
-      const matchesGroup = groupFilter === "all" || service.group === groupFilter;
-      return matchesSearch && matchesStatus && matchesGroup;
+      return matchesSearch && matchesStatus;
     });
-  }, [services, searchQuery, statusFilter, groupFilter]);
+  }, [services, searchQuery, statusFilter]);
 
   const grouped = useMemo(() => {
     const next: Record<string, PublishedService[]> = {};
@@ -400,34 +388,35 @@ function ServicesTab({
     });
   };
 
+  const atDefaults = !searchQuery && statusFilter === "all";
+  const resetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+  };
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg-primary)]">
-      <div className="border-b border-[var(--border-color)] p-4">
+      <div className="border-b border-[var(--border-color)] px-4 pt-4 pb-3 space-y-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)]" />
             <Input
-              placeholder="Search services..."
+              placeholder="Search Vertex, GKE, Cloud Storage…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 pl-9 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+              className="h-8 pl-9 pr-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 inline-flex items-center justify-center rounded-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                aria-label="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as ServiceStatus | "all")}
-          >
-            <SelectTrigger className="h-8 w-[130px] text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
-              <Filter className="h-3 w-3 mr-1" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
-              <SelectItem value="all" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">All status</SelectItem>
-              <SelectItem value="live" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Live</SelectItem>
-              <SelectItem value="preview" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Preview</SelectItem>
-              <SelectItem value="deprecated" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">Deprecated</SelectItem>
-            </SelectContent>
-          </Select>
           <button
             type="button"
             title="Catalog source"
@@ -437,6 +426,55 @@ function ServicesTab({
             <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
             Connected
           </button>
+        </div>
+
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Status
+          </span>
+          <div className="inline-flex flex-wrap items-center gap-1">
+            <FilterChip
+              tone="pill"
+              active={statusFilter === "all"}
+              onClick={() => setStatusFilter("all")}
+            >
+              All
+            </FilterChip>
+            {(Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((status) => (
+              <FilterChip
+                key={status}
+                tone="pill"
+                active={statusFilter === status}
+                onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", SERVICE_STATUS_DOT[status])} />
+                <span className={cn(statusFilter === status && SERVICE_STATUS_STYLE[status].color)}>
+                  {SERVICE_STATUS_LABELS[status]}
+                </span>
+              </FilterChip>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            {`${filtered.length.toLocaleString()} ${filtered.length === 1 ? "service" : "services"}`}
+            {statusFilter !== "all" && (
+              <>
+                <span className="mx-1.5 text-[var(--border-color)]">·</span>
+                {SERVICE_STATUS_LABELS[statusFilter].toLowerCase()}
+              </>
+            )}
+          </p>
+          {!atDefaults && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
