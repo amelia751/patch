@@ -22,6 +22,13 @@ export const metadata: Metadata = {
   title: "PatchAPI — Dependabot for APIs",
   description:
     "When an external API changes, PatchAPI finds the affected code, verifies a migration, and opens a pull request.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
