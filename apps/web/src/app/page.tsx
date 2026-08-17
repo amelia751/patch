@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { CodebaseTab } from "@/components/interface/ops/codebase-tab";
 import { ConfigureTab } from "@/components/interface/ops/configure-tab";
 import { DeployTab } from "@/components/interface/ops/resources-tab";
+import { SubscriptionTab } from "@/components/interface/ops/subscription-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Cloud, Github, Info, Code, Rocket } from "lucide-react";
+import { Cloud, Github, Info, Code, Rocket, Store } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/lib/auth-context";
 import { useProject } from "@/lib/project-context";
@@ -753,6 +754,10 @@ function SystemPageContent() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="subscription" className="flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow">
+              <Store className="w-3 h-3 mr-2" />
+              Subscription
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -820,6 +825,13 @@ function SystemPageContent() {
             projectId={configureProject?.id}
             mockResources={!isAuthenticated ? (demo?.architecture?.deployed_resources || opsData.deployed_resources) : undefined}
             cloudProvider={cloudProvider ?? undefined}
+          />
+        </TabsContent>
+
+        <TabsContent value="subscription" className="flex-1 m-0 p-0 overflow-hidden">
+          <SubscriptionTab
+            hasProject={!!configureProject}
+            projectId={configureProject?.id}
           />
         </TabsContent>
       </Tabs>
