@@ -101,18 +101,27 @@ async def _bind_github_installation(
         return user
 
 
-def _github_redirect_uri(request: Request, fallback: str) -> str:
+def _oauth_callback_uri(request: Request, path: str, fallback: str) -> str:
     """Use the host the browser actually called so the state cookie round-trips.
 
-    `localhost` and `127.0.0.1` are different cookie sites. The GitHub App must
-    list both callback URLs (README); this picks the one that matches the request.
+    `localhost` and `127.0.0.1` are different cookie sites. The OAuth client
+    must list both callback URLs (README); this picks the one that matches
+    the request.
     """
-    incoming = str(request.base_url).rstrip("/") + "/api/auth/github/callback"
+    incoming = str(request.base_url).rstrip("/") + path
     return incoming or fallback
 
 
+def _github_redirect_uri(request: Request, fallback: str) -> str:
+    return _oauth_callback_uri(request, "/api/auth/github/callback", fallback)
+
+
+def _google_redirect_uri(request: Request, fallback: str) -> str:
+    return _oauth_callback_uri(request, "/api/auth/google/callback", fallback)
+
+
 @router.get("/google")
-async def google_start(response: Response) -> JSONResponse:
+async def google_start(request: Request, response: Response) -> JSONResponse:
     """Return the Google authorization URL the dashboard navigates to."""
     config = load_config()
     if not config.google_oauth_configured():
@@ -130,7 +139,10 @@ async def google_start(response: Response) -> JSONResponse:
             status_code=503,
         )
     state = secrets.token_urlsafe(24)
-    body = JSONResponse({"auth_url": google_authorization_url(config, state)})
+    bound = replace(
+        config, google_redirect_uri=_google_redirect_uri(request, config.google_redirect_uri)
+    )
+    body = JSONResponse({"auth_url": google_authorization_url(bound, state)})
     body.set_cookie(OAUTH_STATE_COOKIE, state, max_age=600, **cookie_kwargs())
     return body
 
@@ -144,7 +156,10 @@ async def google_callback(request: Request, code: str | None = None, state: str 
     if not code or not state or not expected_state or state != expected_state:
         return RedirectResponse(f"{frontend}/?auth=error&message=invalid_state")
     try:
-        profile = await google_exchange_code(config, code)
+        bound = replace(
+            config, google_redirect_uri=_google_redirect_uri(request, config.google_redirect_uri)
+        )
+        profile = await google_exchange_code(bound, code)
         user = await upsert_google_user(_pool(request), profile)
     except (AuthConfigurationError, AuthUnavailableError, StateUnavailableError, ValueError):
         return RedirectResponse(f"{frontend}/?auth=error&message=google_sign_in_failed")
