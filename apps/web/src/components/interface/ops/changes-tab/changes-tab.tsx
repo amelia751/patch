@@ -195,13 +195,19 @@ function usageLabel(change: ProjectChange): string {
   return "No usages in this project";
 }
 
-export function ChangesTab({
+export function ChangesInbox({
   hasProject = true,
   onBrowseSubscriptions,
+  progress,
+  onCommitted,
+  onOpenRun,
 }: {
   hasProject?: boolean;
   projectId?: string;
   onBrowseSubscriptions?: () => void;
+  progress: Record<string, RunProgress>;
+  onCommitted: (change: ProjectChange, action: ChangeActionId) => void;
+  onOpenRun: (changeId: string) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DetectionStatus | "all">("all");
@@ -209,7 +215,6 @@ export function ChangesTab({
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
   const [bannerOpen, setBannerOpen] = useState(true);
   const [statusOverride, setStatusOverride] = useState<Record<string, DetectionStatus>>({});
-  const [progress, setProgress] = useState<Record<string, RunProgress>>({});
   const [pending, setPending] = useState<{
     change: ProjectChange;
     action: ChangeActionId;
@@ -292,14 +297,15 @@ export function ChangesTab({
     progress[change.id] ?? "idle";
 
   const requestAction = (change: ProjectChange, action: ChangeActionId, run: RunProgress) => {
-    if (run !== "idle") return;
+    if (run !== "idle") {
+      onOpenRun(change.id);
+      return;
+    }
     setPending({ change, action });
   };
 
   const applyAction = (change: ProjectChange, action: ChangeActionId) => {
-    if (action === "start" || action === "review" || action === "prepare") {
-      setProgress((prev) => ({ ...prev, [change.id]: "running" }));
-    } else if (action === "dismiss") {
+    if (action === "dismiss") {
       setStatusOverride((prev) => ({ ...prev, [change.id]: "ignored" }));
     } else if (action === "reopen") {
       setStatusOverride((prev) => {
@@ -307,6 +313,8 @@ export function ChangesTab({
         delete next[change.id];
         return next;
       });
+    } else {
+      onCommitted(change, action);
     }
     setPending(null);
   };
@@ -604,7 +612,6 @@ export function ChangesTab({
                                       size="sm"
                                       variant={rowAction.tone === "primary" ? "default" : "outline"}
                                       className={actionClass(rowAction.tone)}
-                                      disabled={run !== "idle" && rowAction.id === "start"}
                                       onClick={(event) => {
                                         event.stopPropagation();
                                         requestAction(change, rowAction.id, run);
@@ -769,7 +776,6 @@ export function ChangesTab({
                                           actionClass(item.tone),
                                           item.id === "dismiss" && item.tone === "ghost" && "ml-auto",
                                         )}
-                                        disabled={run !== "idle" && (item.id === "start" || item.id === "review" || item.id === "prepare")}
                                         onClick={() => requestAction(change, item.id, run)}
                                       >
                                         {(item.id === "start" || item.id === "review") && run === "idle" && (

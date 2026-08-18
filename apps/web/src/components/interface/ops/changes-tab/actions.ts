@@ -16,7 +16,7 @@ export interface ChangeAction {
   id: ChangeActionId;
   label: string;
   tone: "primary" | "outline" | "ghost";
-  /** Shown on the collapsed row so the inbox is not read-only. */
+  /** Shown on the collapsed row so Releases is not read-only. */
   onRow?: boolean;
 }
 
@@ -26,10 +26,10 @@ export function actionsFor(
   status: DetectionStatus,
 ): ChangeAction[] {
   if (progress === "running") {
-    return [{ id: "start", label: "Run started", tone: "outline", onRow: true }];
+    return [{ id: "start", label: "Watch run", tone: "outline", onRow: true }];
   }
   if (progress === "pr_opened") {
-    return [{ id: "start", label: "View pull request", tone: "outline", onRow: true }];
+    return [{ id: "start", label: "Open run", tone: "outline", onRow: true }];
   }
 
   switch (status) {
@@ -106,7 +106,7 @@ export function actionDialog(change: ProjectChange, action: ChangeActionId): {
     case "reopen":
       return {
         title: `Reopen ${change.title}?`,
-        body: "The note returns to the inbox so you can start a remediation run later.",
+        body: "The note returns to Releases so you can start a remediation run later.",
         confirm: "Reopen",
       };
   }
