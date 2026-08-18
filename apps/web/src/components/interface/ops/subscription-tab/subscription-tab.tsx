@@ -262,7 +262,12 @@ function OfferCard({
   onUnsubscribe: () => void;
 }) {
   return (
-    <div className="group relative bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg py-3 pl-3 pr-3 text-left sm:py-4 sm:pl-4 sm:pr-4 flex flex-col">
+    <div className="group relative overflow-hidden bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg py-3 pl-3 pr-3 text-left sm:py-4 sm:pl-4 sm:pr-4 flex flex-col">
+      {offer.subscribed && (
+        <span className="absolute top-0 right-0 rounded-bl-md px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide bg-[#10b981] text-white dark:bg-[#10b981]/15 dark:text-[#10b981] dark:border-l dark:border-b dark:border-[#10b981]/30">
+          Subscribed
+        </span>
+      )}
       <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
         <div className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]">
           <Image
@@ -284,12 +289,6 @@ function OfferCard({
 
       {offer.subscribed ? (
         <>
-          <Badge
-            variant="outline"
-            className="w-fit text-[9px] mb-2 bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30"
-          >
-            subscribed
-          </Badge>
           {offer.watchingSince && (
             <p className="text-[10px] text-[var(--text-secondary)] mb-3">
               Watching since {offer.watchingSince}
