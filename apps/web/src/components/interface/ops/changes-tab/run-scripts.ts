@@ -28,10 +28,14 @@ export interface RunTodo {
 
 export interface MockRun {
   id: string;
+  code: string;
   changeId: string;
   title: string;
+  prompt: string;
   repo?: string;
   baseSha?: string;
+  fileHits?: number;
+  fileCount?: number;
   action: ChangeActionId;
   bucket: RunBucket;
   createdAt: number;
@@ -39,7 +43,6 @@ export interface MockRun {
   outcome?: string;
   prLabel?: string;
   traceId: string;
-  simulated: true;
 }
 
 function todo(
@@ -127,21 +130,38 @@ export function scriptFor(change: ProjectChange, action: ChangeActionId): RunTod
   ];
 }
 
-export function createRun(change: ProjectChange, action: ChangeActionId): MockRun {
+function promptFor(change: ProjectChange, action: ChangeActionId): string {
+  const repo = change.repo ?? "this project's imported repositories";
+  if (action === "prepare") {
+    return `Prepare ${change.title} early against ${repo}. Draft impact only. Do not open a pull request until the note takes effect.`;
+  }
+  if (action === "start" && change.status === "docs_only") {
+    return `Check ${change.title} anyway. Hits look documentation-only — confirm and stop if there is no runtime path.`;
+  }
+  if (action === "review") {
+    return `Continue ${change.title} on ${repo}. Do not auto-patch. Confirm the replacement, then open a pull request. Do not merge.`;
+  }
+  return `Start a remediation for ${change.title} against ${repo}. Analyze, patch in isolation, verify, and open a pull request. Do not merge.`;
+}
+
+export function createRun(change: ProjectChange, action: ChangeActionId, seq: number): MockRun {
   const todos = scriptFor(change, action);
   if (todos[0]) todos[0].state = "in_progress";
   return {
     id: `run-${change.id.slice(0, 18)}-${Date.now().toString(36)}`,
+    code: `RUN-${String(seq).padStart(3, "0")}`,
     changeId: change.id,
     title: change.title,
+    prompt: promptFor(change, action),
     repo: change.repo,
     baseSha: change.baseSha,
+    fileHits: change.fileHits,
+    fileCount: change.fileCount,
     action,
     bucket: "active",
     createdAt: Date.now(),
     todos,
     traceId: `trc-${Math.random().toString(16).slice(2, 10)}`,
-    simulated: true,
   };
 }
 

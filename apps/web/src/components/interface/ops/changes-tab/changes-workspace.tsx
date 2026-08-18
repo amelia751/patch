@@ -67,7 +67,7 @@ export function ChangesTab({
 
   const onCommitted = (change: ProjectChange, action: ChangeActionId) => {
     if (action === "dismiss" || action === "reopen") return;
-    const run = createRun(change, action);
+    const run = createRun(change, action, runs.length + 1);
     setRuns((prev) => [run, ...prev]);
     setSelectedRunId(run.id);
     setProgress((prev) => ({ ...prev, [change.id]: "running" }));
