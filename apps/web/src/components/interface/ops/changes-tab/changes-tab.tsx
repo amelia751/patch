@@ -2,6 +2,16 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,9 +36,17 @@ import {
   ExternalLink,
   FileCode2,
   Filter,
+  GitPullRequest,
   Search,
   X,
 } from "lucide-react";
+import {
+  actionDialog,
+  actionsFor,
+  type ChangeAction,
+  type ChangeActionId,
+  type RunProgress,
+} from "./actions";
 import {
   HARDCODED_PROJECT_CHANGES,
   type DetectionSeverity,
@@ -190,6 +208,12 @@ export function ChangesTab({
   const [severityFilter, setSeverityFilter] = useState<DetectionSeverity | "all">("all");
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
   const [bannerOpen, setBannerOpen] = useState(true);
+  const [statusOverride, setStatusOverride] = useState<Record<string, DetectionStatus>>({});
+  const [progress, setProgress] = useState<Record<string, RunProgress>>({});
+  const [pending, setPending] = useState<{
+    change: ProjectChange;
+    action: ChangeActionId;
+  } | null>(null);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
     () => new Set(HARDCODED_PROJECT_CHANGES.map((change) => change.provider)),
   );
@@ -205,7 +229,8 @@ export function ChangesTab({
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return HARDCODED_PROJECT_CHANGES.filter((change) => {
-      if (statusFilter !== "all" && change.status !== statusFilter) return false;
+      const status = statusOverride[change.id] ?? change.status;
+      if (statusFilter !== "all" && status !== statusFilter) return false;
       if (severityFilter !== "all" && change.severity !== severityFilter) return false;
       if (kindFilter !== "all" && change.kind !== kindFilter) return false;
       if (!q) return true;
@@ -215,7 +240,7 @@ export function ChangesTab({
         change.product,
         change.provider,
         change.kind,
-        change.status,
+        status,
         change.replacement ?? "",
         ...change.identifiers,
         ...change.files.map((file) => file.path),
@@ -224,7 +249,7 @@ export function ChangesTab({
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [kindFilter, searchQuery, severityFilter, statusFilter]);
+  }, [kindFilter, searchQuery, severityFilter, statusFilter, statusOverride]);
 
   const byProvider = useMemo(() => {
     const groups = new Map<string, ProjectChange[]>();
@@ -258,6 +283,42 @@ export function ChangesTab({
       else next.add(provider);
       return next;
     });
+  };
+
+  const displayStatus = (change: ProjectChange): DetectionStatus =>
+    statusOverride[change.id] ?? change.status;
+
+  const displayProgress = (change: ProjectChange): RunProgress =>
+    progress[change.id] ?? "idle";
+
+  const requestAction = (change: ProjectChange, action: ChangeActionId, run: RunProgress) => {
+    if (run !== "idle") return;
+    setPending({ change, action });
+  };
+
+  const applyAction = (change: ProjectChange, action: ChangeActionId) => {
+    if (action === "start" || action === "review" || action === "prepare") {
+      setProgress((prev) => ({ ...prev, [change.id]: "running" }));
+    } else if (action === "dismiss") {
+      setStatusOverride((prev) => ({ ...prev, [change.id]: "ignored" }));
+    } else if (action === "reopen") {
+      setStatusOverride((prev) => {
+        const next = { ...prev };
+        delete next[change.id];
+        return next;
+      });
+    }
+    setPending(null);
+  };
+
+  const actionClass = (tone: ChangeAction["tone"]) => {
+    if (tone === "primary") {
+      return "h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90";
+    }
+    if (tone === "ghost") {
+      return "h-7 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]";
+    }
+    return "h-7 text-xs border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]";
   };
 
   const toggleChange = (id: string) => {
@@ -399,12 +460,12 @@ export function ChangesTab({
           ) : (
             Array.from(byProvider.entries()).map(([provider, changes]) => {
               const isExpanded = expandedProviders.has(provider);
-              const groupAffected = changes.filter((c) => c.status === "affected").length;
-              const groupHuman = changes.filter((c) => c.status === "human_required").length;
-              const groupDocs = changes.filter((c) => c.status === "docs_only").length;
-              const groupScheduled = changes.filter((c) => c.status === "scheduled").length;
-              const groupWatching = changes.filter((c) => c.status === "watching").length;
-              const groupIgnored = changes.filter((c) => c.status === "ignored").length;
+              const groupAffected = changes.filter((c) => displayStatus(c) === "affected").length;
+              const groupHuman = changes.filter((c) => displayStatus(c) === "human_required").length;
+              const groupDocs = changes.filter((c) => displayStatus(c) === "docs_only").length;
+              const groupScheduled = changes.filter((c) => displayStatus(c) === "scheduled").length;
+              const groupWatching = changes.filter((c) => displayStatus(c) === "watching").length;
+              const groupIgnored = changes.filter((c) => displayStatus(c) === "ignored").length;
               const logo =
                 changes[0]?.providerSlug === "google"
                   ? "/google-cloud.svg"
@@ -474,7 +535,11 @@ export function ChangesTab({
                     <div className="border-t border-[var(--border-color)]">
                       {changes.map((change) => {
                         const open = expandedChanges.has(change.id);
-                        const status = statusConfig[change.status];
+                        const resolvedStatus = displayStatus(change);
+                        const run = displayProgress(change);
+                        const available = actionsFor(change, run, resolvedStatus);
+                        const rowAction = available.find((item) => item.onRow);
+                        const status = statusConfig[resolvedStatus];
                         const severity = severityConfig[change.severity];
                         const when = timingLabel(change);
 
@@ -528,12 +593,29 @@ export function ChangesTab({
                                       )}
                                       <span className="flex items-center gap-1">
                                         <FileCode2 className="h-3 w-3" />
-                                        {usageLabel(change)}
+                                        {usageLabel({ ...change, status: resolvedStatus })}
                                       </span>
                                     </div>
                                   </div>
                                 </div>
-                                <div className="flex items-center ml-2 shrink-0">
+                                <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                                  {rowAction && (
+                                    <Button
+                                      size="sm"
+                                      variant={rowAction.tone === "primary" ? "default" : "outline"}
+                                      className={actionClass(rowAction.tone)}
+                                      disabled={run !== "idle" && rowAction.id === "start"}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        requestAction(change, rowAction.id, run);
+                                      }}
+                                    >
+                                      {rowAction.id === "start" && run === "idle" && (
+                                        <GitPullRequest className="h-3 w-3 mr-1" />
+                                      )}
+                                      {rowAction.label}
+                                    </Button>
+                                  )}
                                   {open ? (
                                     <ChevronDown className="h-4 w-4 text-[var(--text-secondary)]" />
                                   ) : (
@@ -675,6 +757,29 @@ export function ChangesTab({
                                     </p>
                                   )}
                                 </div>
+
+                                {available.length > 0 && (
+                                  <div className="flex items-center gap-2 pt-1">
+                                    {available.map((item) => (
+                                      <Button
+                                        key={item.id}
+                                        size="sm"
+                                        variant={item.tone === "primary" ? "default" : item.tone === "ghost" ? "ghost" : "outline"}
+                                        className={cn(
+                                          actionClass(item.tone),
+                                          item.id === "dismiss" && item.tone === "ghost" && "ml-auto",
+                                        )}
+                                        disabled={run !== "idle" && (item.id === "start" || item.id === "review" || item.id === "prepare")}
+                                        onClick={() => requestAction(change, item.id, run)}
+                                      >
+                                        {(item.id === "start" || item.id === "review") && run === "idle" && (
+                                          <GitPullRequest className="h-3 w-3 mr-1" />
+                                        )}
+                                        {item.label}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -688,6 +793,36 @@ export function ChangesTab({
           )}
         </div>
       </div>
+
+      <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+        <AlertDialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+          {pending && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-[var(--text-primary)]">
+                  {actionDialog(pending.change, pending.action).title}
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-[var(--text-secondary)] leading-relaxed">
+                  {actionDialog(pending.change, pending.action).body}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className={
+                    actionDialog(pending.change, pending.action).destructive
+                      ? "bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
+                      : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                  }
+                  onClick={() => applyAction(pending.change, pending.action)}
+                >
+                  {actionDialog(pending.change, pending.action).confirm}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
