@@ -83,7 +83,7 @@ export function SubscriptionTab({
   const available = offers.filter((offer) => !offer.subscribed);
 
   const visible = useMemo(() => {
-    const pool = section === "subscribed" ? subscribed : available;
+    const pool = section === "subscribed" ? subscribed : offers;
     const q = query.trim().toLowerCase();
     if (!q) return pool;
     return pool.filter(
@@ -93,7 +93,7 @@ export function SubscriptionTab({
         offer.category.toLowerCase().includes(q) ||
         offer.description.toLowerCase().includes(q),
     );
-  }, [available, query, section, subscribed]);
+  }, [offers, query, section, subscribed]);
 
   const toggle = (slug: string, next: boolean) => {
     if (!projectId) return;
@@ -107,7 +107,7 @@ export function SubscriptionTab({
     return <NoProjectEmptyState />;
   }
 
-  const poolEmpty = section === "subscribed" ? subscribed.length === 0 : available.length === 0;
+  const poolEmpty = section === "subscribed" ? subscribed.length === 0 : offers.length === 0;
 
   return (
     <div className="h-full flex min-w-0 overflow-hidden bg-[var(--bg-primary)]">
@@ -176,7 +176,7 @@ export function SubscriptionTab({
               <p className="mt-1 max-w-xl text-xs text-[var(--text-secondary)] leading-relaxed">
                 {section === "subscribed"
                   ? "Providers this project watches for deprecations and replacements."
-                  : "Google Cloud is the provider available to subscribe to."}
+                  : "Providers you can watch for deprecations and replacements."}
               </p>
             </div>
 

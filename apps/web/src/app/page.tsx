@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { CodebaseTab } from "@/components/interface/ops/codebase-tab";
 import { ConfigureTab } from "@/components/interface/ops/configure-tab";
-import { DeployTab } from "@/components/interface/ops/resources-tab";
+import { ChangesTab, HARDCODED_AFFECTED_COUNT } from "@/components/interface/ops/changes-tab";
 import { SubscriptionTab } from "@/components/interface/ops/subscription-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Cloud, Github, Info, Code, Rocket, Store } from "lucide-react";
+import { Bell, Cloud, Github, Info, Code, Store } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/lib/auth-context";
 import { useProject } from "@/lib/project-context";
@@ -121,11 +121,13 @@ function SystemPageContent() {
 
   const setMainWorkspaceTab = useCallback((tab: string) => {
     if (tab === "pipeline" || tab === "knowledge") tab = "code";
+    if (tab === "resources") tab = "changes";
     setActiveTab(tab);
   }, []);
 
   useEffect(() => {
     if (activeTab === "pipeline" || activeTab === "knowledge") setActiveTab("code");
+    if (activeTab === "resources") setActiveTab("changes");
   }, [activeTab]);
 
   // Project status
@@ -631,9 +633,7 @@ function SystemPageContent() {
   const missingPoliciesCount = connectionData?.required_policies?.filter((p: any) => !p.validated).length || 0;
   const configBadgeCount = missingPoliciesCount + pendingSecretsCount;
 
-  const pendingApprovalsCount = opsData.approval_workflow?.pending_approvals?.length || 0;
-  const pendingMigrationsCount = opsData.pending_changes?.migrations?.filter((m: { status: string }) => m.status === "pending").length || 0;
-  const resourcesBadgeCount = pendingApprovalsCount + pendingMigrationsCount + (opsData.pending_changes?.infrastructure?.length || 0);
+  const changesBadgeCount = HARDCODED_AFFECTED_COUNT;
 
   if (!isAuthenticated) {
     return null;
@@ -726,7 +726,7 @@ function SystemPageContent() {
     );
   }
 
-  // ─── Main workspace: Code, Configure, Resources (CI/CD and Knowledge hidden) ──
+  // ─── Main workspace: Code, Configure, Changes, Subscription ──
   return (
     <>
       <Tabs value={activeTab} onValueChange={setMainWorkspaceTab} className="h-full flex flex-col">
@@ -745,12 +745,12 @@ function SystemPageContent() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="resources" className="flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow relative">
-              <Rocket className="w-3 h-3 mr-2" />
-              Resources
-              {resourcesBadgeCount > 0 && (
+            <TabsTrigger value="changes" className="flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow relative">
+              <Bell className="w-3 h-3 mr-2" />
+              Changes
+              {changesBadgeCount > 0 && (
                 <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold px-1">
-                  {resourcesBadgeCount}
+                  {changesBadgeCount}
                 </span>
               )}
             </TabsTrigger>
@@ -817,14 +817,11 @@ function SystemPageContent() {
           />
         </TabsContent>
 
-        <TabsContent value="resources" className="flex-1 m-0 p-0 overflow-hidden">
-          <DeployTab
-            pendingChanges={opsData.pending_changes}
-            approvalWorkflow={opsData.approval_workflow}
+        <TabsContent value="changes" className="flex-1 m-0 p-0 overflow-hidden">
+          <ChangesTab
             hasProject={!!configureProject}
             projectId={configureProject?.id}
-            mockResources={!isAuthenticated ? (demo?.architecture?.deployed_resources || opsData.deployed_resources) : undefined}
-            cloudProvider={cloudProvider ?? undefined}
+            onBrowseSubscriptions={() => setMainWorkspaceTab("subscription")}
           />
         </TabsContent>
 

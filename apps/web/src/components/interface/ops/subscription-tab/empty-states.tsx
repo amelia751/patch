@@ -66,10 +66,10 @@ export function MarketplaceEmptyState() {
           <Store className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No marketplace services
+          No providers yet
         </h2>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          Google Cloud is already subscribed. Unsubscribe to see it here again.
+          The catalog has nothing to subscribe to right now.
         </p>
       </div>
     </div>
