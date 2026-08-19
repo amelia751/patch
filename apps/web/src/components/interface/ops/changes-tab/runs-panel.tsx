@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  FolderGit2,
   GitBranch,
   Github,
   GitPullRequest,
@@ -362,50 +363,7 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
         </div>
       )}
 
-      <div className="flex items-stretch w-full border-b border-[var(--border-color)]">
-        {(["base", "sandbox", "proposed"] as TreeId[]).map((id) => {
-          const open = treeAvailable(run.machine, id);
-          const selected = tree === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              disabled={!open}
-              onClick={() => setPicked(id)}
-              className={cn(
-                "flex-1 min-w-0 px-4 pt-2.5 pb-2 text-left border-b-2 -mb-px transition-colors",
-                selected
-                  ? "border-[var(--text-primary)] text-[var(--text-primary)]"
-                  : "border-transparent text-[var(--text-secondary)]",
-                open ? "hover:text-[var(--text-primary)]" : "opacity-40 cursor-not-allowed",
-              )}
-            >
-              <p className="text-[11px] font-medium">{TREE_COPY[id].label}</p>
-              <div className="mt-1">
-                {id === "base" && (
-                  <BranchChip name="main" sha={shortSha(run.baseSha)} muted={!selected} />
-                )}
-                {id === "sandbox" &&
-                  (open ? (
-                    <p className="text-[10px] font-mono text-[var(--text-secondary)] truncate">
-                      worktree · {shortSha(run.baseSha)}
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-[var(--text-secondary)]">not allocated</p>
-                  ))}
-                {id === "proposed" &&
-                  (open && run.prBranch && run.machine !== "FAILED" ? (
-                    <BranchChip name={run.prBranch} active={selected} />
-                  ) : (
-                    <p className="text-[10px] text-[var(--text-secondary)]">
-                      {run.machine === "FAILED" ? "not opened" : "not verified"}
-                    </p>
-                  ))}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <TreeRail run={run} tree={tree} onPick={setPicked} />
 
       <p className="px-5 pt-3 text-[11px] text-[var(--text-secondary)] leading-relaxed">
         {TREE_COPY[tree].hint}
@@ -723,16 +681,116 @@ function PullRequestCard({ run }: { run: MockRun }) {
   );
 }
 
+function TreeRail({
+  run,
+  tree,
+  onPick,
+}: {
+  run: MockRun;
+  tree: TreeId;
+  onPick: (id: TreeId) => void;
+}) {
+  const steps: {
+    id: TreeId;
+    icon: typeof GitBranch;
+    chip: { icon: typeof GitBranch; name: string; sha?: string } | { pending: string };
+  }[] = [
+    {
+      id: "base",
+      icon: GitBranch,
+      chip: { icon: GitBranch, name: "main", sha: shortSha(run.baseSha) },
+    },
+    {
+      id: "sandbox",
+      icon: FolderGit2,
+      chip: treeAvailable(run.machine, "sandbox")
+        ? { icon: FolderGit2, name: "worktree", sha: shortSha(run.baseSha) }
+        : { pending: "not allocated" },
+    },
+    {
+      id: "proposed",
+      icon: GitPullRequest,
+      chip:
+        treeAvailable(run.machine, "proposed") && run.prBranch && run.machine !== "FAILED"
+          ? { icon: GitBranch, name: run.prBranch }
+          : { pending: run.machine === "FAILED" ? "not opened" : "not verified" },
+    },
+  ];
+
+  return (
+    <div className="px-4 py-3 border-b border-[var(--border-color)]">
+      <div className="flex items-stretch gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-1">
+        {steps.map((step, index) => {
+          const open = treeAvailable(run.machine, step.id);
+          const selected = tree === step.id;
+          return (
+            <div key={step.id} className="flex min-w-0 flex-1 items-stretch">
+              {index > 0 && (
+                <div className="flex items-center px-0.5">
+                  <ArrowRight
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      open ? "text-[var(--text-secondary)]" : "text-[var(--border-color)]",
+                    )}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={!open}
+                onClick={() => onPick(step.id)}
+                className={cn(
+                  "min-w-0 flex-1 rounded-md px-2.5 py-2 text-left transition-colors",
+                  selected
+                    ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)] shadow-sm ring-1 ring-primary/25"
+                    : "text-[var(--text-secondary)]",
+                  open && !selected && "hover:bg-[var(--bg-tertiary)]/60 hover:text-[var(--text-primary)]",
+                  !open && "cursor-not-allowed opacity-45",
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <step.icon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wider [font-family:var(--font-space-grotesk)]">
+                    {TREE_COPY[step.id].label}
+                  </span>
+                </div>
+                <div className="mt-1.5">
+                  {"pending" in step.chip ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
+                      <Lock className="h-3 w-3 shrink-0 opacity-70" />
+                      {step.chip.pending}
+                    </span>
+                  ) : (
+                    <BranchChip
+                      icon={step.chip.icon}
+                      name={step.chip.name}
+                      sha={step.chip.sha}
+                      active={selected}
+                      muted={!selected}
+                    />
+                  )}
+                </div>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BranchChip({
   name,
   sha,
   active,
   muted,
+  icon: Icon = GitBranch,
 }: {
   name: string;
   sha?: string;
   active?: boolean;
   muted?: boolean;
+  icon?: typeof GitBranch;
 }) {
   return (
     <span
@@ -740,11 +798,11 @@ function BranchChip({
         "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border max-w-full",
         active
           ? "bg-primary/10 border-primary/30 text-primary"
-          : "bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-secondary)]",
-        muted && !active && "opacity-70",
+          : "bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-secondary)]",
+        muted && !active && "opacity-80",
       )}
     >
-      <GitBranch className="h-3 w-3 shrink-0 opacity-70" />
+      <Icon className="h-3 w-3 shrink-0 opacity-70" />
       <span className="font-mono text-[11px] truncate">{name}</span>
       {sha && (
         <span className="font-mono text-[10px] opacity-70 shrink-0">{sha}</span>
