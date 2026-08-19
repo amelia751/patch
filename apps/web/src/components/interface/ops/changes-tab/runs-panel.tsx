@@ -491,8 +491,18 @@ function DiffLineRow({ line }: { line: DiffLine }) {
   );
 }
 
+const VERB_TOOL: Record<string, string> = {
+  Read: "Read",
+  Apply: "Bash",
+  Run: "Bash",
+  Normalize: "Normalize",
+  Evaluate: "Evaluate",
+  Verify: "Verify",
+};
+
 function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
   return lines.map((line) => {
+    const toolType = line.toolType ?? (line.verb ? VERB_TOOL[line.verb] : undefined);
     if (line.kind === "thought") {
       return { kind: "thinking", text: line.text };
     }
@@ -500,7 +510,7 @@ function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
       return {
         kind: "action",
         text: line.text,
-        toolType: line.toolType,
+        toolType,
         toolUseId: line.toolUseId,
         filePath: line.filePath,
       };
@@ -509,7 +519,7 @@ function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
       return {
         kind: "result",
         text: line.text,
-        toolType: line.toolType,
+        toolType,
         toolUseId: line.toolUseId,
       };
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   BadgeCheck,
   Bot,
@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { uiTheme } from "@/lib/ui-theme";
 import type { ActiveToolInfo } from "@/hooks/useThreadStream";
+import { TerminalBlock } from "@/components/chat/code-block/terminal-block";
 import { FormattedMessage } from "./formatted-message";
 import type { WorklogEntry } from "./thread-types";
 
@@ -53,6 +54,58 @@ const TOOL_CHROME: Record<
 };
 
 const DEFAULT_CHROME = { icon: Wrench, color: "text-[var(--text-secondary)]", label: "" };
+
+const CALL_RE =
+  /^(Read|Write|Edit|Bash|Normalize|Evaluate|Verify|Search|Find|Grep|Glob|Web Search|Fetch)\(([\s\S]+)\)$/;
+
+function parseCall(text: string): { name?: string; detail: string } {
+  const trimmed = text.trim();
+  const match = trimmed.match(CALL_RE);
+  if (match) {
+    let detail = match[2].trim();
+    if (
+      (detail.startsWith("`") && detail.endsWith("`")) ||
+      (detail.startsWith('"') && detail.endsWith('"'))
+    ) {
+      detail = detail.slice(1, -1);
+    }
+    return { name: match[1], detail };
+  }
+  const readFile = trimmed.match(/^read_file\s+(.+)$/);
+  if (readFile) return { name: "Read", detail: readFile[1] };
+  if (trimmed === "apply_patch" || trimmed.startsWith("apply_patch ")) {
+    return { name: "Bash", detail: trimmed };
+  }
+  if (/^(pnpm|npm|npx|yarn|uv|pytest|cargo|go)\b/.test(trimmed)) {
+    return { name: "Bash", detail: trimmed };
+  }
+  const last = trimmed.split(/\s+/).pop() ?? "";
+  if (trimmed.includes("/") && /\.\w{1,8}$/.test(last)) {
+    return { name: "Read", detail: trimmed };
+  }
+  return { detail: trimmed };
+}
+
+function namedToolType(name?: string): string | undefined {
+  if (!name) return undefined;
+  if (name === "Search") return "Grep";
+  if (name === "Find") return "Glob";
+  if (name === "Web Search") return "WebSearch";
+  if (name === "Fetch") return "WebFetch";
+  return name;
+}
+
+export function inferToolType(entry: Pick<WorklogEntry, "toolType" | "text">): string | undefined {
+  if (entry.toolType) return entry.toolType;
+  return namedToolType(parseCall(entry.text).name);
+}
+
+function isShellTool(toolType?: string, text?: string): boolean {
+  if (toolType === "Bash" || toolType === "BashTool") return true;
+  if (!text) return false;
+  const parsed = parseCall(text);
+  return parsed.name === "Bash";
+}
 
 function getToolChrome(toolType?: string) {
   if (!toolType) return null;
@@ -153,18 +206,22 @@ export function ThinkingBlock({ content, durationMs }: { content: string; durati
         ? `${Math.round(durationMs / 60000)}m`
         : `${Math.round(durationMs / 1000)}s`
       : null;
+  const preview = content.split("\n")[0]?.trim() ?? "";
 
   return (
     <div>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+        className="flex items-center gap-1.5 max-w-full text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
       >
-        <span>Thought{durationStr ? ` for ${durationStr}` : ""}</span>
+        <span className="shrink-0">Thought{durationStr ? ` for ${durationStr}` : ""}</span>
         <ChevronRight
-          className={cn("h-2.5 w-2.5 transition-transform", expanded && "rotate-90")}
+          className={cn("h-2.5 w-2.5 shrink-0 transition-transform", expanded && "rotate-90")}
         />
+        {!expanded && preview && (
+          <span className="min-w-0 truncate opacity-70">{preview}</span>
+        )}
       </button>
       {expanded && (
         <div className="mt-1 pl-4 text-[11px] text-[var(--text-tertiary)] leading-relaxed opacity-60">
@@ -173,6 +230,65 @@ export function ThinkingBlock({ content, durationMs }: { content: string; durati
       )}
     </div>
   );
+}
+
+function ToolCallRow({ entry }: { entry: WorklogEntry }) {
+  const toolType = inferToolType(entry);
+  const chrome = getToolChrome(toolType);
+  const Icon = chrome?.icon || Wrench;
+  const parsed = parseCall(entry.text);
+  const label = chrome?.label || parsed.name || "Tool";
+  const detail = parsed.detail || entry.filePath || "";
+  const isFileAction = Boolean(entry.filePath || parsed.name === "Read" || parsed.name === "Edit" || parsed.name === "Write");
+
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 min-w-0",
+        isFileAction && entry.filePath && "cursor-pointer hover:bg-[var(--bg-secondary)] rounded-md -mx-1 px-1 py-0.5 transition-colors",
+      )}
+      onClick={
+        entry.filePath
+          ? () =>
+              window.dispatchEvent(
+                new CustomEvent("codebaseOpenFile", {
+                  detail: { path: entry.filePath, scrollToLine: 1 },
+                }),
+              )
+          : undefined
+      }
+    >
+      <Icon className={cn("mt-1 h-3.5 w-3.5 shrink-0", chrome?.color || "text-[var(--text-secondary)]")} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn("text-[13px] font-medium shrink-0", chrome?.color || "text-[var(--text-primary)]")}>
+            {label}
+          </span>
+          {detail && (
+            <code className="min-w-0 truncate px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[12px] font-mono text-[var(--text-primary)]">
+              {detail}
+            </code>
+          )}
+        </div>
+        {entry.result && (
+          <div className="mt-1 flex items-start gap-2 text-[12px] text-[var(--text-tertiary)]">
+            <span className="mt-0.5 select-none leading-none">⎿</span>
+            <span className="leading-relaxed">{entry.result}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function shellFence(entries: WorklogEntry[]): string {
+  const lines: string[] = [];
+  for (const entry of entries) {
+    const command = parseCall(entry.text).detail;
+    lines.push(`$ ${command}`);
+    if (entry.result) lines.push(entry.result);
+  }
+  return lines.join("\n");
 }
 
 export function WorklogView({
@@ -184,87 +300,67 @@ export function WorklogView({
 }) {
   if (entries.length === 0) return null;
 
-  return (
-    <div className="space-y-2">
-      {entries.map((entry, index) => {
-        const key = `${idPrefix}-${index}`;
-        if (entry.kind === "thinking") {
-          return <ThinkingBlock key={key} content={entry.text} durationMs={entry.durationMs} />;
-        }
-        if (entry.kind === "collapsed_group") {
-          return <CollapsedGroup key={key} entry={entry} />;
-        }
-        if (entry.kind === "action") {
-          const chrome = getToolChrome(entry.toolType);
-          const Icon = chrome?.icon;
-          const isFileAction = !!entry.filePath;
-          const handleFileClick = isFileAction
-            ? () => {
-                window.dispatchEvent(
-                  new CustomEvent("codebaseOpenFile", {
-                    detail: { path: entry.filePath, scrollToLine: 1 },
-                  }),
-                );
-              }
-            : undefined;
-          return (
-            <div
-              key={key}
-              className={cn(
-                "flex items-start gap-2",
-                isFileAction && "cursor-pointer hover:bg-[var(--bg-secondary)] rounded -mx-1 px-1 transition-colors",
-              )}
-              onClick={handleFileClick}
-            >
-              {Icon ? (
-                <Icon className={cn("mt-[10px] h-3 w-3 flex-shrink-0", chrome.color)} />
-              ) : (
-                <span className="mt-[12px] h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
-              )}
-              <div className="min-w-0 flex-1 text-[13px] text-[var(--text-primary)] [&>div>div:first-child]:mt-1">
-                <FormattedMessage content={entry.text} />
-                {entry.result && (
-                  <span className="ml-2 text-[12px] text-[var(--text-tertiary)]">{entry.result}</span>
-                )}
-              </div>
-            </div>
-          );
-        }
-        if (entry.kind === "result") {
-          return (
-            <div key={key} className="flex items-start gap-2 pl-4">
-              <span className="mt-[7px] text-[var(--text-tertiary)] text-[12px] leading-none select-none flex-shrink-0">
-                ⎿
-              </span>
-              <div className="min-w-0 flex-1 text-[13px] text-[var(--text-secondary)] [&>div>div:first-child]:mt-1">
-                <FormattedMessage content={entry.text} />
-              </div>
-            </div>
-          );
-        }
-        if (entry.kind === "response") {
-          return (
-            <div key={key}>
-              <FormattedMessage content={entry.text} />
-            </div>
-          );
-        }
-        if (entry.kind === "block") {
-          return (
-            <div key={key} className="pl-4">
-              <FormattedMessage content={entry.text} />
-            </div>
-          );
-        }
-        return (
-          <div key={key} className="flex items-start gap-2">
-            <span className="mt-[12px] h-1.5 w-1.5 rounded-full bg-[var(--text-primary)] flex-shrink-0" />
-            <div className="min-w-0 flex-1 text-[13px] text-[var(--text-primary)] [&>div>div:first-child]:mt-1">
-              <FormattedMessage content={entry.text} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  const nodes: ReactNode[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    const key = `${idPrefix}-${index}`;
+
+    if (entry.kind === "thinking") {
+      nodes.push(<ThinkingBlock key={key} content={entry.text} durationMs={entry.durationMs} />);
+      continue;
+    }
+    if (entry.kind === "collapsed_group") {
+      nodes.push(<CollapsedGroup key={key} entry={entry} />);
+      continue;
+    }
+    if (entry.kind === "action" && isShellTool(inferToolType(entry), entry.text)) {
+      const group = [entry];
+      while (index + 1 < entries.length) {
+        const next = entries[index + 1];
+        if (next.kind !== "action" || !isShellTool(inferToolType(next), next.text)) break;
+        index += 1;
+        group.push(next);
+      }
+      nodes.push(
+        <TerminalBlock
+          key={key}
+          code={shellFence(group)}
+          onCopy={(code) => navigator.clipboard.writeText(code)}
+        />,
+      );
+      continue;
+    }
+    if (entry.kind === "action") {
+      nodes.push(<ToolCallRow key={key} entry={entry} />);
+      continue;
+    }
+    if (entry.kind === "result") {
+      nodes.push(
+        <div key={key} className="flex items-start gap-2 pl-5">
+          <span className="mt-[5px] text-[var(--text-tertiary)] text-[12px] leading-none select-none shrink-0">
+            ⎿
+          </span>
+          <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            {entry.text}
+          </p>
+        </div>,
+      );
+      continue;
+    }
+    if (entry.kind === "response" || entry.kind === "block") {
+      nodes.push(
+        <div key={key}>
+          <FormattedMessage content={entry.text} />
+        </div>,
+      );
+      continue;
+    }
+    nodes.push(
+      <p key={key} className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
+        {entry.text}
+      </p>,
+    );
+  }
+
+  return <div className="space-y-2.5">{nodes}</div>;
 }

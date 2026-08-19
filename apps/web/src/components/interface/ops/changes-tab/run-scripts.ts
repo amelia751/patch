@@ -322,6 +322,7 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   add("PATCHING", "thought", "Inspect the installed SDK in the worktree before rewriting.");
   add("PATCHING", "action", `Read(\`${sample}\`)`, { verb: "Read", toolType: "Read", filePath: sample });
   add("PATCHING", "action", `Edit(\`${sample}\`)`, { verb: "Apply", toolType: "Edit", filePath: sample });
+  add("PATCHING", "action", "Bash(`apply_patch`)", { verb: "Apply", toolType: "Bash" });
   add("PATCHING", "result", "Forbidden paths untouched. CHANGELOG.md is not in the diff.");
   add("PATCHING", "action", "Bash(`pnpm --dir cli test -- generate.test.ts`)", {
     verb: "Run",
