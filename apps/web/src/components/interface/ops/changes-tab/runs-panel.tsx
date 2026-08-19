@@ -523,6 +523,9 @@ function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
         toolUseId: line.toolUseId,
       };
     }
+    if (line.kind === "block") {
+      return { kind: "block", text: line.text };
+    }
     return { kind: "narration", text: line.text };
   });
 }

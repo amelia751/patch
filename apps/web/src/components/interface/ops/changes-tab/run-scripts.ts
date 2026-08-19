@@ -61,7 +61,7 @@ export interface VerifyCheck {
   passed: boolean;
 }
 
-export type LogKind = "thought" | "action" | "result" | "narration";
+export type LogKind = "thought" | "action" | "result" | "narration" | "block";
 
 export interface AgentLogLine {
   id: string;
@@ -251,6 +251,73 @@ function commandsFor(change: ProjectChange): SandboxCommand[] {
   ];
 }
 
+function terminalFence(dir: string, commands: { cmd: string; out: string }[]): string {
+  const lines = ["```terminal", `# ${dir}`];
+  for (const item of commands) {
+    lines.push(`$ ${item.cmd}`);
+    if (item.out) {
+      for (const line of item.out.replace(/\r\n/g, "\n").split("\n")) {
+        lines.push(line);
+      }
+    }
+  }
+  lines.push("```");
+  return lines.join("\n");
+}
+
+function applyLog(sample: string): string {
+  return [
+    `applied 1 hunk to ${sample}`,
+    "forbidden paths untouched",
+    "CHANGELOG.md is not in the diff",
+  ].join("\n");
+}
+
+function diagnosticTestLog(): string {
+  return [
+    "> cli@ test /cli",
+    "> vitest run generate.test.ts",
+    "",
+    " ✓ generate.test.ts (3)",
+    "   ✓ maps identifiers as the manifest specifies",
+    "   ✓ drops seed and numberOfImages on gemini-native",
+    "   ✓ keeps docs-only hits out of the patch",
+    "",
+    " Test Files  1 passed (1)",
+    "      Tests  3 passed (3)",
+    "   Duration  412ms",
+    "",
+    "Agent loop — diagnostic, not evidence.",
+  ].join("\n");
+}
+
+function buildLog(): string {
+  return [
+    "> cli@ build /cli",
+    "> tsc -p tsconfig.json",
+    "",
+    "Done in 1.84s",
+    "Orchestrator clean run from the diff. Not the agent’s own build.",
+  ].join("\n");
+}
+
+function verifyTestLog(): string {
+  return [
+    "> cli@ test /cli",
+    "> vitest run",
+    "",
+    " ✓ generate.test.ts (3)",
+    " ✓ model-catalog.test.ts (5)",
+    " ✓ cli.test.ts (4)",
+    "",
+    " Test Files  3 passed (3)",
+    "      Tests  12 passed (12)",
+    "   Duration  1.21s",
+    "",
+    "Orchestrator clean run. This is what verification sees.",
+  ].join("\n");
+}
+
 function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   const repo = change.repo ?? "imported repositories";
   const sha = change.baseSha?.slice(0, 12) ?? "unpinned";
@@ -322,19 +389,26 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   add("PATCHING", "thought", "Inspect the installed SDK in the worktree before rewriting.");
   add("PATCHING", "action", `Read(\`${sample}\`)`, { verb: "Read", toolType: "Read", filePath: sample });
   add("PATCHING", "action", `Edit(\`${sample}\`)`, { verb: "Apply", toolType: "Edit", filePath: sample });
-  add("PATCHING", "action", "Bash(`apply_patch`)", { verb: "Apply", toolType: "Bash" });
-  add("PATCHING", "result", "Forbidden paths untouched. CHANGELOG.md is not in the diff.");
-  add("PATCHING", "action", "Bash(`pnpm --dir cli test -- generate.test.ts`)", {
-    verb: "Run",
-    toolType: "Bash",
-  });
-  add("PATCHING", "result", "Agent loop — diagnostic, not evidence.");
+  add(
+    "PATCHING",
+    "block",
+    terminalFence(`sandbox @ ${sha}`, [
+      { cmd: "apply_patch", out: applyLog(sample) },
+      { cmd: "pnpm --dir cli test -- generate.test.ts", out: diagnosticTestLog() },
+    ]),
+  );
 
-  add("BUILDING", "action", "Bash(`pnpm --dir cli build`)", { verb: "Run", toolType: "Bash" });
-  add("BUILDING", "result", "Orchestrator clean run from the diff. Not the agent’s own build.");
+  add(
+    "BUILDING",
+    "block",
+    terminalFence(`sandbox @ ${sha}`, [{ cmd: "pnpm --dir cli build", out: buildLog() }]),
+  );
 
-  add("TESTING", "action", "Bash(`pnpm --dir cli test`)", { verb: "Run", toolType: "Bash" });
-  add("TESTING", "result", "Orchestrator clean run. This is what verification sees.");
+  add(
+    "TESTING",
+    "block",
+    terminalFence(`sandbox @ ${sha}`, [{ cmd: "pnpm --dir cli test", out: verifyTestLog() }]),
+  );
 
   add("VERIFYING", "thought", "Grade the diff and the clean logs. Do not read the patch author’s plan.");
   add("VERIFYING", "action", "Verify(`proposed tree`)", { verb: "Verify", toolType: "Verify" });

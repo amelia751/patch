@@ -32,7 +32,19 @@ export function pairActionResults(entries: WorklogEntry[]): WorklogEntry[] {
       pairedResultIndices.add(i);
     }
   }
-  return paired.filter((_, i) => !pairedResultIndices.has(i));
+  const afterIds = paired.filter((_, i) => !pairedResultIndices.has(i));
+  const sequential: WorklogEntry[] = [];
+  for (let i = 0; i < afterIds.length; i++) {
+    const current = afterIds[i];
+    const next = afterIds[i + 1];
+    if (current.kind === "action" && !current.result && next?.kind === "result") {
+      sequential.push({ ...current, result: next.text });
+      i += 1;
+      continue;
+    }
+    sequential.push(current);
+  }
+  return sequential;
 }
 
 export function collapseWorklogEntries(entries: WorklogEntry[]): WorklogEntry[] {

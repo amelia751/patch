@@ -284,9 +284,12 @@ function ToolCallRow({ entry }: { entry: WorklogEntry }) {
 function shellFence(entries: WorklogEntry[]): string {
   const lines: string[] = [];
   for (const entry of entries) {
-    const command = parseCall(entry.text).detail;
-    lines.push(`$ ${command}`);
-    if (entry.result) lines.push(entry.result);
+    lines.push(`$ ${parseCall(entry.text).detail}`);
+    if (entry.result) {
+      for (const line of entry.result.replace(/\r\n/g, "\n").split("\n")) {
+        lines.push(line);
+      }
+    }
   }
   return lines.join("\n");
 }
@@ -314,12 +317,21 @@ export function WorklogView({
       continue;
     }
     if (entry.kind === "action" && isShellTool(inferToolType(entry), entry.text)) {
-      const group = [entry];
+      const group = [{ ...entry }];
       while (index + 1 < entries.length) {
         const next = entries[index + 1];
-        if (next.kind !== "action" || !isShellTool(inferToolType(next), next.text)) break;
-        index += 1;
-        group.push(next);
+        const last = group[group.length - 1];
+        if (next.kind === "result" && last && !last.result) {
+          last.result = next.text;
+          index += 1;
+          continue;
+        }
+        if (next.kind === "action" && isShellTool(inferToolType(next), next.text)) {
+          index += 1;
+          group.push({ ...next });
+          continue;
+        }
+        break;
       }
       nodes.push(
         <TerminalBlock
