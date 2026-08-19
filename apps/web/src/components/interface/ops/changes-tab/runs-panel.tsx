@@ -720,37 +720,27 @@ function TreeRail({
   return (
     <div className="px-4 py-3 border-b border-[var(--border-color)]">
       <div className="flex items-stretch gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-1">
-        {steps.map((step, index) => {
+        {steps.map((step) => {
           const open = treeAvailable(run.machine, step.id);
           const selected = tree === step.id;
           return (
-            <div key={step.id} className="flex min-w-0 flex-1 items-stretch">
-              {index > 0 && (
-                <div className="flex items-center px-0.5">
-                  <ArrowRight
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      open ? "text-[var(--text-secondary)]" : "text-[var(--border-color)]",
-                    )}
-                  />
-                </div>
+            <button
+              key={step.id}
+              type="button"
+              disabled={!open}
+              onClick={() => onPick(step.id)}
+              className={cn(
+                "min-w-0 flex-1 rounded-md px-2.5 py-2 text-left transition-colors",
+                selected
+                  ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)] shadow-sm ring-1 ring-primary/25"
+                  : "text-[var(--text-secondary)]",
+                open && !selected && "hover:bg-[var(--bg-tertiary)]/60 hover:text-[var(--text-primary)]",
+                !open && "cursor-not-allowed opacity-45",
               )}
-              <button
-                type="button"
-                disabled={!open}
-                onClick={() => onPick(step.id)}
-                className={cn(
-                  "min-w-0 flex-1 rounded-md px-2.5 py-2 text-left transition-colors",
-                  selected
-                    ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)] shadow-sm ring-1 ring-primary/25"
-                    : "text-[var(--text-secondary)]",
-                  open && !selected && "hover:bg-[var(--bg-tertiary)]/60 hover:text-[var(--text-primary)]",
-                  !open && "cursor-not-allowed opacity-45",
-                )}
-              >
+            >
                 <div className="flex items-center gap-1.5">
                   <step.icon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="text-[10px] font-medium uppercase tracking-wider [font-family:var(--font-space-grotesk)]">
+                  <span className="text-[11px] font-medium">
                     {TREE_COPY[step.id].label}
                   </span>
                 </div>
@@ -770,8 +760,7 @@ function TreeRail({
                     />
                   )}
                 </div>
-              </button>
-            </div>
+            </button>
           );
         })}
       </div>
