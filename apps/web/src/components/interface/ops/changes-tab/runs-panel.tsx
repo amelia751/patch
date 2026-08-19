@@ -329,7 +329,6 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
     <div className="flex-1 min-w-0 flex flex-col">
       <div className="px-5 pt-3 pb-2.5 border-b border-[var(--border-color)]">
         <div className="flex items-center gap-1.5 min-w-0">
-          <FactChip mono>{run.code}</FactChip>
           <FactChip icon={run.repo ? <Github className="h-3 w-3 shrink-0 opacity-70" /> : <Radio className="h-3 w-3 shrink-0 opacity-70" />}>
             {run.repo ? <RepoName repo={run.repo} /> : repo}
           </FactChip>
@@ -338,6 +337,9 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
               {shortSha(run.baseSha)}
             </FactChip>
           )}
+          <span className="ml-auto shrink-0">
+            <FactChip mono>{run.code}</FactChip>
+          </span>
         </div>
         <StateRail machine={run.machine} />
       </div>
