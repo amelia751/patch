@@ -71,14 +71,6 @@ function statusBar(bucket: RunBucket): string {
   return "bg-[var(--text-secondary)]";
 }
 
-function statusPill(bucket: RunBucket): string {
-  if (bucket === "active") return "border-sky-400/30 bg-sky-400/10 text-sky-400";
-  if (bucket === "needs_attention") return "border-amber-500/30 bg-amber-500/10 text-amber-500";
-  if (bucket === "ready_for_review") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-500";
-  if (bucket === "blocked") return "border-red-500/30 bg-red-500/10 text-red-500";
-  return "border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)]";
-}
-
 function shortSha(sha?: string): string {
   return sha ? sha.slice(0, 7) : "unpinned";
 }
@@ -335,28 +327,9 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      <div className="px-5 pt-4 pb-3 border-b border-[var(--border-color)]">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-[10px] font-medium uppercase tracking-wide",
-                statusPill(run.bucket),
-              )}
-            >
-              <span className={cn("h-1.5 w-1.5 rounded-full", statusDot(run.bucket))} />
-              {MACHINE_LABEL[run.machine]}
-            </span>
-            <h2 className="mt-2.5 text-[17px] font-semibold tracking-tight leading-snug text-[var(--text-primary)]">
-              {run.title}
-            </h2>
-          </div>
-          <span className="shrink-0 mt-0.5 font-mono text-[10px] text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-tertiary)]">
-            {run.code}
-          </span>
-        </div>
-
-        <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+      <div className="px-5 pt-3 pb-2.5 border-b border-[var(--border-color)]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <FactChip mono>{run.code}</FactChip>
           <FactChip icon={run.repo ? <Github className="h-3 w-3 shrink-0 opacity-70" /> : <Radio className="h-3 w-3 shrink-0 opacity-70" />}>
             {run.repo ? <RepoName repo={run.repo} /> : repo}
           </FactChip>
@@ -473,7 +446,7 @@ function StateRail({ machine }: { machine: MachineState }) {
   const halted = machine === "FAILED" || machine === "BLOCKED";
 
   return (
-    <ol className="mt-3 flex items-center gap-0 min-w-0">
+    <ol className="mt-2.5 flex items-center gap-0 min-w-0">
       {RAIL.map((step, index) => {
         const done = index < current || (stoppedEarly && step.at.includes(machine));
         const here = step.at.includes(machine);
