@@ -365,22 +365,6 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
               {shortSha(run.baseSha)}
             </FactChip>
           )}
-          <FactChip>
-            <span className="flex items-center gap-1.5">
-              <span>Attempt</span>
-              <span className="flex items-center gap-0.5">
-                {Array.from({ length: run.attemptBudget }, (_, i) => (
-                  <span
-                    key={i}
-                    className={cn(
-                      "h-1.5 w-1.5 rounded-full",
-                      i < run.attempt ? "bg-[var(--text-primary)]" : "bg-[var(--border-color)]",
-                    )}
-                  />
-                ))}
-              </span>
-            </span>
-          </FactChip>
         </div>
         <StateRail machine={run.machine} />
       </div>
