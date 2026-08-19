@@ -14,6 +14,9 @@ import type { ChangeKind } from "@/components/interface/provider/data";
 
 export type DetectionStatus = "needs_you" | "watching" | "dismissed";
 
+/** Pinned Egaki fork SHA. Shared by every `amelia751/egaki` fixture row. */
+export const EGAKI_PINNED_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1";
+
 export type FileHitKind = "runtime" | "documentation" | "changelog";
 
 export interface FileHit {
@@ -74,7 +77,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     replacement: "gemini-3.1-flash-image",
     migration: "semantic",
     repo: "amelia751/egaki",
-    baseSha: "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+    baseSha: EGAKI_PINNED_SHA,
     fileHits: 47,
     fileCount: 14,
     files: [
@@ -144,6 +147,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     replacement: "gemini-3.1-flash-image",
     migration: "mechanical",
     repo: "amelia751/egaki",
+    baseSha: EGAKI_PINNED_SHA,
     fileHits: 4,
     fileCount: 2,
     files: [
@@ -207,6 +211,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     status: "dismissed",
     identifiers: ["fal-ai/imagen4/preview"],
     identifierCounts: { "fal-ai/imagen4/preview": 1 },
+    repo: "amelia751/egaki",
+    baseSha: EGAKI_PINNED_SHA,
     fileHits: 1,
     fileCount: 1,
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 1, kind: "runtime" }],
@@ -256,6 +262,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     },
     migration: "semantic",
     repo: "amelia751/egaki",
+    baseSha: EGAKI_PINNED_SHA,
     fileHits: 5,
     fileCount: 1,
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 5, kind: "runtime" }],
@@ -274,6 +281,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     status: "watching",
     identifiers: ["imagen-4.0-generate-001"],
     identifierCounts: { "imagen-4.0-generate-001": 7 },
+    repo: "amelia751/egaki",
+    baseSha: EGAKI_PINNED_SHA,
     fileHits: 7,
     fileCount: 1,
     files: [{ path: "cli/CHANGELOG.md", hits: 7, kind: "changelog" }],
@@ -384,6 +393,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     fileCount: 1,
     repo: "amelia751/egaki",
     repos: ["amelia751/egaki", "example-org/localization-site"],
+    baseSha: EGAKI_PINNED_SHA,
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 3, kind: "runtime" }],
     sourceUrls: [
       "https://ai.google.dev/gemini-api/docs/models/imagen",

@@ -14,6 +14,7 @@ import {
   GitPullRequest,
   Lock,
   Radio,
+  X,
 } from "lucide-react";
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
 import {
@@ -37,7 +38,8 @@ function timeAgo(ts: number): string {
   const seconds = Math.max(1, Math.round((Date.now() - ts) / 1000));
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
-  return `${Math.round(seconds / 3600)}h ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
 }
 
 function statusDot(bucket: RunBucket): string {
@@ -217,6 +219,30 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
           </Button>
         </div>
       )}
+      {(run.machine === "FAILED" || run.machine === "BLOCKED") && (
+        <div className="px-5 py-3 border-b border-red-500/30 bg-red-500/5">
+          <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
+            {run.pauseReason ??
+              (run.machine === "FAILED"
+                ? "Verification disagreed. Fail closed. No pull request."
+                : "Policy blocked this path. No sandbox and no pull request.")}
+          </p>
+        </div>
+      )}
+      {run.machine === "UNAFFECTED" && (
+        <div className="px-5 py-3 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
+          <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
+            Report-only. No runtime path, so no worktree and no pull request.
+          </p>
+        </div>
+      )}
+      {run.machine === "HELD" && (
+        <div className="px-5 py-3 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
+          <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
+            Draft held. No pull request until the note takes effect.
+          </p>
+        </div>
+      )}
 
       <div className="flex items-stretch w-full border-b border-[var(--border-color)]">
         {(["base", "sandbox", "proposed"] as TreeId[]).map((id) => {
@@ -250,10 +276,12 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
                     <p className="text-[10px] text-[var(--text-secondary)]">not allocated</p>
                   ))}
                 {id === "proposed" &&
-                  (open && run.prBranch ? (
+                  (open && run.prBranch && run.machine !== "FAILED" ? (
                     <BranchChip name={run.prBranch} active={selected} />
                   ) : (
-                    <p className="text-[10px] text-[var(--text-secondary)]">not verified</p>
+                    <p className="text-[10px] text-[var(--text-secondary)]">
+                      {run.machine === "FAILED" ? "not opened" : "not verified"}
+                    </p>
                   ))}
               </div>
             </button>
@@ -278,6 +306,7 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
 function StateRail({ machine }: { machine: MachineState }) {
   const current = railIndex(machine);
   const stoppedEarly = machine === "UNAFFECTED" || machine === "HELD";
+  const halted = machine === "FAILED" || machine === "BLOCKED";
 
   return (
     <ol className="mt-3 flex items-center gap-0 min-w-0">
@@ -292,7 +321,8 @@ function StateRail({ machine }: { machine: MachineState }) {
                 className={cn(
                   "flex h-3.5 w-3.5 items-center justify-center rounded-full border shrink-0",
                   here && machine === "HUMAN_REQUIRED" && "border-amber-500/50 bg-amber-500/15",
-                  here && machine !== "HUMAN_REQUIRED" && "border-sky-400/50 bg-sky-400/15",
+                  here && halted && "border-red-500/50 bg-red-500/15",
+                  here && machine !== "HUMAN_REQUIRED" && !halted && "border-sky-400/50 bg-sky-400/15",
                   done && !here && "border-emerald-500/40 bg-emerald-500/10",
                   future && "border-[var(--border-color)]",
                 )}
@@ -304,7 +334,8 @@ function StateRail({ machine }: { machine: MachineState }) {
                     className={cn(
                       "h-1 w-1 rounded-full",
                       here && machine === "HUMAN_REQUIRED" && "bg-amber-500",
-                      here && machine !== "HUMAN_REQUIRED" && "bg-sky-400",
+                      here && halted && "bg-red-500",
+                      here && machine !== "HUMAN_REQUIRED" && !halted && "bg-sky-400",
                       future && "bg-[var(--border-color)]",
                     )}
                   />
@@ -397,6 +428,7 @@ function SandboxTree({ run }: { run: MockRun }) {
 
 function ProposedTree({ run }: { run: MockRun }) {
   const verified = run.machine === "PR_CREATED" || run.machine === "VERIFYING";
+  const failed = run.machine === "FAILED";
 
   return (
     <div className="space-y-4">
@@ -406,15 +438,19 @@ function ProposedTree({ run }: { run: MockRun }) {
         </h3>
         <div className="mt-1.5 border border-[var(--border-color)] rounded-md px-3 py-2.5">
           <p className="text-[12px] text-[var(--text-primary)]">
-            {verified
-              ? "Verifier is not the patch author and was not given the patch plan."
-              : "Nothing has graded this run."}
+            {failed
+              ? "Verifier disagreed with the sandbox. Fail closed. No pull request."
+              : verified
+                ? "Verifier is not the patch author and was not given the patch plan."
+                : "Nothing has graded this run."}
           </p>
           <ul className="mt-2 space-y-1">
             {run.checks.map((check) => (
               <li key={check.name} className="flex items-start gap-2 text-[11px]">
-                {check.passed && verified ? (
+                {check.passed && (verified || failed) ? (
                   <Check className="h-3 w-3 mt-0.5 text-emerald-500 shrink-0" />
+                ) : failed && !check.passed ? (
+                  <X className="h-3 w-3 mt-0.5 text-red-500 shrink-0" />
                 ) : (
                   <Lock className="h-3 w-3 mt-0.5 text-[var(--text-secondary)] shrink-0" />
                 )}

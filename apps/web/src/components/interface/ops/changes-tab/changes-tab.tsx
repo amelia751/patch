@@ -268,17 +268,28 @@ function ActionConfirmDialog({
   repo,
   onRepoChange,
   onConfirm,
+  progress,
 }: {
   change: ProjectChange;
   action: ChangeActionId;
   repo: string | null;
   onRepoChange: (repo: string) => void;
   onConfirm: () => void;
+  progress: Record<string, RunProgress>;
 }) {
   const copy = actionDialog(change, action);
   const repos = affectedRepos(change);
   const pickRepo = action !== "dismiss" && action !== "reopen" && repos.length > 1;
   const selected = repo ?? repos[0] ?? null;
+  const selectedProgress = selected
+    ? progress[runKey({ id: change.id, repo: selected })] ?? "idle"
+    : "idle";
+  const confirmLabel =
+    selectedProgress === "running"
+      ? "Watch run"
+      : selectedProgress !== "idle"
+        ? "Open run"
+        : copy.confirm;
 
   return (
     <>
@@ -327,21 +338,29 @@ function ActionConfirmDialog({
             onValueChange={onRepoChange}
             className="gap-0 overflow-hidden rounded-lg border border-[var(--border-color)]"
           >
-            {repos.map((item) => (
-              <label
-                key={item}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 border-b border-[var(--border-color)] px-3 py-2.5 last:border-b-0",
-                  item === selected
-                    ? "bg-[var(--bg-tertiary)]"
-                    : "hover:bg-[var(--bg-secondary)]",
-                )}
-              >
-                <RadioGroupItem value={item} />
-                <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
-                <RepoLabel repo={item} />
-              </label>
-            ))}
+            {repos.map((item) => {
+              const itemProgress = progress[runKey({ id: change.id, repo: item })] ?? "idle";
+              return (
+                <label
+                  key={item}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 border-b border-[var(--border-color)] px-3 py-2.5 last:border-b-0",
+                    item === selected
+                      ? "bg-[var(--bg-tertiary)]"
+                      : "hover:bg-[var(--bg-secondary)]",
+                  )}
+                >
+                  <RadioGroupItem value={item} />
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
+                  <RepoLabel repo={item} />
+                  {itemProgress !== "idle" && (
+                    <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
+                      {itemProgress === "running" ? "In progress" : "Already run"}
+                    </span>
+                  )}
+                </label>
+              );
+            })}
           </RadioGroup>
         </div>
       )}
@@ -356,7 +375,7 @@ function ActionConfirmDialog({
           }
           onClick={onConfirm}
         >
-          {copy.confirm}
+          {confirmLabel}
         </AlertDialogAction>
       </AlertDialogFooter>
     </>
@@ -479,8 +498,12 @@ export function ChangesInbox({
 
   const displayProgress = (change: ProjectChange): RunProgress => {
     const repos = affectedRepos(change);
-    if (repos.length > 1) return "idle";
-    return progress[runKey(change)] ?? "idle";
+    if (repos.length <= 1) return progress[runKey(change)] ?? "idle";
+    const states = repos.map((repo) => progress[runKey({ id: change.id, repo })] ?? "idle");
+    if (states.every((state) => state !== "idle")) {
+      return states.some((state) => state === "running") ? "running" : "pr_opened";
+    }
+    return "idle";
   };
 
   const requestAction = (change: ProjectChange, action: ChangeActionId, run: RunProgress) => {
@@ -1068,6 +1091,7 @@ export function ChangesInbox({
               repo={pendingRepo}
               onRepoChange={setPendingRepo}
               onConfirm={() => applyAction(pending.change, pending.action)}
+              progress={progress}
             />
           )}
         </AlertDialogContent>

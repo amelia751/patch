@@ -11,11 +11,22 @@ import {
   advanceRun,
   createRun,
   continueRun,
+  findRunFor,
   inboxProgressFor,
+  seedRuns,
   type MockRun,
 } from "./run-scripts";
 
 type Section = "releases" | "runs";
+
+function initialWorkspace(): { runs: MockRun[]; progress: Record<string, RunProgress> } {
+  const runs = seedRuns();
+  const progress: Record<string, RunProgress> = {};
+  for (const run of runs) {
+    progress[runKey({ id: run.changeId, repo: run.repo })] = inboxProgressFor(run.bucket);
+  }
+  return { runs, progress };
+}
 
 export function ChangesTab({
   hasProject = true,
@@ -27,9 +38,10 @@ export function ChangesTab({
   onBrowseSubscriptions?: () => void;
 }) {
   const [section, setSection] = useState<Section>("releases");
-  const [runs, setRuns] = useState<MockRun[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<Record<string, RunProgress>>({});
+  const [boot] = useState(initialWorkspace);
+  const [runs, setRuns] = useState<MockRun[]>(boot.runs);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(boot.runs[0]?.id ?? null);
+  const [progress, setProgress] = useState<Record<string, RunProgress>>(boot.progress);
 
   const attention = useMemo(
     () => runs.filter((run) => bucketNeedsYou(run.bucket)).length,
@@ -66,6 +78,12 @@ export function ChangesTab({
 
   const onCommitted = (change: ProjectChange, action: ChangeActionId) => {
     if (action === "dismiss" || action === "reopen") return;
+    const existing = findRunFor(runs, change);
+    if (existing) {
+      setSelectedRunId(existing.id);
+      setSection("runs");
+      return;
+    }
     const run = createRun(change, action, runs.length + 1);
     setRuns((prev) => [run, ...prev]);
     setSelectedRunId(run.id);

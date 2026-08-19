@@ -7,8 +7,14 @@
  * proposed branch. The publisher stops at the pull request.
  */
 
-import type { ChangeActionId } from "./actions";
-import { isDocsOnly, type FileHit, type ProjectChange } from "./data";
+import type { ChangeActionId, RunProgress } from "./actions";
+import {
+  HARDCODED_PROJECT_CHANGES,
+  isDocsOnly,
+  runKey,
+  type FileHit,
+  type ProjectChange,
+} from "./data";
 
 export type RunBucket =
   | "active"
@@ -123,9 +129,9 @@ export const MACHINE_LABEL: Record<MachineState, string> = {
 export const RAIL: { at: MachineState[]; label: string }[] = [
   { at: ["NORMALIZED"], label: "Normalize" },
   { at: ["IMPACT_SCANNING", "UNAFFECTED"], label: "Impact" },
-  { at: ["POLICY_EVALUATION", "HUMAN_REQUIRED", "HELD"], label: "Policy" },
+  { at: ["POLICY_EVALUATION", "HUMAN_REQUIRED", "HELD", "BLOCKED"], label: "Policy" },
   { at: ["PATCHING", "BUILDING", "TESTING"], label: "Sandbox" },
-  { at: ["VERIFYING"], label: "Verify" },
+  { at: ["VERIFYING", "FAILED"], label: "Verify" },
   { at: ["PR_CREATED"], label: "PR" },
 ];
 
@@ -451,6 +457,8 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
 
   add("UNAFFECTED", "narration", "Report-only. No runtime path, so no worktree and no pull request.");
   add("HELD", "narration", "Draft held. No pull request until the note takes effect.");
+  add("FAILED", "narration", "Verification disagreed. Fail closed. No pull request.");
+  add("BLOCKED", "narration", "Policy blocked this path. No sandbox and no pull request.");
 
   return lines;
 }
@@ -461,22 +469,60 @@ function branchName(changeId: string): string {
   return `patchapi/${withoutDay}`;
 }
 
-function checksFor(change: ProjectChange): VerifyCheck[] {
+function checksFor(change: ProjectChange, failed = false): VerifyCheck[] {
   return [
-    { name: "Identifiers mapped as the manifest specifies", passed: Boolean(change.replacement) },
-    { name: "CHANGELOG.md and other history files untouched", passed: true },
+    { name: "Identifiers mapped as the manifest specifies", passed: Boolean(change.replacement) && !failed },
+    { name: "CHANGELOG.md and other history files untouched", passed: !failed },
     { name: "Forbidden paths untouched", passed: true },
-    { name: "Clean build and tests from the diff alone", passed: true },
+    { name: "Clean build and tests from the diff alone", passed: !failed },
     { name: "Verifier did not see the patch author’s plan", passed: true },
   ];
 }
 
-export function createRun(change: ProjectChange, action: ChangeActionId, seq: number): MockRun {
+function pathThrough(change: ProjectChange, action: ChangeActionId, at?: MachineState): MachineState[] {
   const path = pathFor(change, action);
-  const machine = path[0] ?? "NORMALIZED";
+  if (!at || path.includes(at)) return path;
+  if (at === "FAILED") {
+    return path.filter((state) => state !== "PR_CREATED" && state !== "HELD" && state !== "UNAFFECTED").concat("FAILED");
+  }
+  if (at === "BLOCKED") {
+    return ["NORMALIZED", "IMPACT_SCANNING", "POLICY_EVALUATION", "BLOCKED"];
+  }
+  return path;
+}
+
+function revealedThrough(log: AgentLogLine[], path: MachineState[], machine: MachineState): number {
+  const stop = path.indexOf(machine);
+  if (stop === -1) return log.length;
+  let revealed = 0;
+  for (let i = 0; i < log.length; i += 1) {
+    const at = path.indexOf(log[i].at);
+    if (at !== -1 && at <= stop) revealed = i + 1;
+  }
+  return Math.max(revealed, 1);
+}
+
+export interface CreateRunOpts {
+  at?: MachineState;
+  createdAt?: number;
+  attempt?: number;
+  id?: string;
+  pauseReason?: string;
+}
+
+export function createRun(
+  change: ProjectChange,
+  action: ChangeActionId,
+  seq: number,
+  opts?: CreateRunOpts,
+): MockRun {
+  const path = pathThrough(change, action, opts?.at);
+  const machine = opts?.at ?? path[0] ?? "NORMALIZED";
   const log = logsFor(change, path);
+  const createdAt = opts?.createdAt ?? Date.now();
+  const settled = Boolean(opts?.at);
   return {
-    id: `run-${change.id.slice(0, 18)}-${Date.now().toString(36)}`,
+    id: opts?.id ?? `run-${change.id.slice(0, 18)}-${Date.now().toString(36)}`,
     code: `RUN-${String(seq).padStart(3, "0")}`,
     changeId: change.id,
     title: change.title,
@@ -491,19 +537,80 @@ export function createRun(change: ProjectChange, action: ChangeActionId, seq: nu
     machine,
     path,
     bucket: bucketOf(machine),
-    createdAt: Date.now(),
-    attempt: 1,
+    createdAt,
+    attempt: opts?.attempt ?? 1,
     attemptBudget: 3,
-    pauseReason: pauseFor(change, action),
+    pauseReason: opts?.pauseReason ?? pauseFor(change, action),
     commands: commandsFor(change),
     diffs: diffsFor(change),
-    checks: checksFor(change),
+    checks: checksFor(change, machine === "FAILED"),
     log,
-    revealed: Math.min(1, log.length),
-    lineStartedAt: Date.now(),
+    revealed: settled ? revealedThrough(log, path, machine) : Math.min(1, log.length),
+    lineStartedAt: createdAt,
     prBranch: branchName(change.id),
-    traceId: `trc-${Math.random().toString(16).slice(2, 10)}`,
+    traceId: `trc-${change.id.slice(0, 8)}`,
   };
+}
+
+function changeById(id: string): ProjectChange | undefined {
+  return HARDCODED_PROJECT_CHANGES.find((change) => change.id === id);
+}
+
+/**
+ * Prior runs already on the workspace. These are UI fixtures — they do not
+ * claim a real sandbox, test, or pull-request outcome.
+ */
+export function seedRuns(): MockRun[] {
+  const ago = (ms: number) => Date.now() - ms;
+  const runs: MockRun[] = [];
+  let seq = 0;
+  const add = (
+    id: string,
+    action: ChangeActionId,
+    at: MachineState,
+    createdAt: number,
+    extra?: Pick<CreateRunOpts, "attempt" | "pauseReason"> & { repo?: string },
+  ) => {
+    const change = changeById(id);
+    if (!change) return;
+    seq += 1;
+    runs.push(
+      createRun(
+        extra?.repo ? { ...change, repo: extra.repo } : change,
+        action,
+        seq,
+        {
+          at,
+          createdAt,
+          attempt: extra?.attempt,
+          pauseReason: extra?.pauseReason,
+          id: `run-seed-${id}-${extra?.repo ?? change.repo ?? "unscoped"}`,
+        },
+      ),
+    );
+  };
+
+  add("chg_flash_image_preview", "start", "PR_CREATED", ago(4 * 60 * 1000));
+  add("imagen4-retirement-2026-08-17", "start", "HUMAN_REQUIRED", ago(2 * 60 * 60 * 1000));
+  add("ui-issue-long-title", "start", "HUMAN_REQUIRED", ago(50 * 60 * 1000), {
+    repo: "amelia751/egaki",
+  });
+  add("ui-changelog-immutable", "start", "UNAFFECTED", ago(6 * 60 * 60 * 1000));
+  add("ui-scheduled-window", "prepare", "HELD", ago(18 * 60 * 60 * 1000));
+  add("ui-vertex-prefix-leftover", "start", "FAILED", ago(26 * 60 * 60 * 1000), {
+    attempt: 2,
+    pauseReason: "No replacement is named. The verifier refused to invent one.",
+  });
+  add("adv-fal-ai-not-covered", "start", "BLOCKED", ago(3 * 24 * 60 * 60 * 1000), {
+    pauseReason: "fal-ai/imagen4/preview is not this retirement. Editing it is an unnecessary change.",
+  });
+
+  return runs.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function findRunFor(runs: MockRun[], change: ProjectChange): MockRun | undefined {
+  const key = runKey(change);
+  return runs.find((run) => runKey({ id: run.changeId, repo: run.repo }) === key);
 }
 
 export function advanceRun(run: MockRun): MockRun {
@@ -529,9 +636,10 @@ export function visibleLog(run: MockRun): AgentLogLine[] {
   return run.log.slice(0, run.revealed);
 }
 
-export function inboxProgressFor(bucket: RunBucket): "idle" | "running" | "pr_opened" {
+export function inboxProgressFor(bucket: RunBucket): RunProgress {
   if (bucket === "ready_for_review") return "pr_opened";
   if (bucket === "active" || bucket === "needs_attention" || bucket === "waiting") return "running";
+  if (bucket === "idle" || bucket === "blocked") return "pr_opened";
   return "idle";
 }
 
@@ -543,10 +651,11 @@ export function treeAvailable(machine: MachineState, tree: TreeId): boolean {
       machine === "BUILDING" ||
       machine === "TESTING" ||
       machine === "VERIFYING" ||
+      machine === "FAILED" ||
       machine === "PR_CREATED"
     );
   }
-  return machine === "VERIFYING" || machine === "PR_CREATED";
+  return machine === "VERIFYING" || machine === "PR_CREATED" || machine === "FAILED";
 }
 
 export function treeForMachine(machine: MachineState): TreeId {
