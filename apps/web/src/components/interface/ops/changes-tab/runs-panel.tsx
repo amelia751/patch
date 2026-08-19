@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -320,26 +320,9 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
   }, [run.id, run.machine]);
 
   const tree = picked ?? current;
-  const repo = run.repo ?? "imported repositories";
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      <div className="px-5 pt-3 pb-2.5 border-b border-[var(--border-color)]">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <FactChip icon={run.repo ? <Github className="h-3 w-3 shrink-0 opacity-70" /> : <Radio className="h-3 w-3 shrink-0 opacity-70" />}>
-            {run.repo ? <RepoName repo={run.repo} /> : repo}
-          </FactChip>
-          {run.baseSha && (
-            <FactChip icon={<GitBranch className="h-3 w-3 shrink-0 opacity-70" />} mono>
-              {shortSha(run.baseSha)}
-            </FactChip>
-          )}
-          <span className="ml-auto shrink-0">
-            <FactChip mono>{run.code}</FactChip>
-          </span>
-        </div>
-      </div>
-
       {run.machine === "HUMAN_REQUIRED" && (
         <div className="px-5 py-3 border-b border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
@@ -737,39 +720,6 @@ function PullRequestCard({ run }: { run: MockRun }) {
         )}
       </div>
     </div>
-  );
-}
-
-function RepoName({ repo }: { repo: string }) {
-  const slash = repo.lastIndexOf("/");
-  if (slash <= 0) return <span className="truncate">{repo}</span>;
-  return (
-    <span className="truncate">
-      <span className="opacity-70">{repo.slice(0, slash)}/</span>
-      {repo.slice(slash + 1)}
-    </span>
-  );
-}
-
-function FactChip({
-  icon,
-  children,
-  mono,
-}: {
-  icon?: ReactNode;
-  children: ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 h-6 px-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[11px] text-[var(--text-secondary)] max-w-full",
-        mono && "font-mono",
-      )}
-    >
-      {icon}
-      <span className="truncate">{children}</span>
-    </span>
   );
 }
 
