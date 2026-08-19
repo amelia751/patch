@@ -12,12 +12,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { getGCPServiceIcon } from "@/lib/gcp-icons";
 import { CheckCircle2, Rss, Search, Store, Unplug } from "lucide-react";
+import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 import {
   fetchProjectProviders,
   subscribeProjectProvider,
@@ -111,54 +110,24 @@ export function SubscriptionTab({
 
   return (
     <div className="h-full flex min-w-0 overflow-hidden bg-[var(--bg-primary)]">
-      <div className="w-56 flex-shrink-0 border-r border-[var(--border-color)] p-3 space-y-1">
-        <button
-          type="button"
+      <SectionRail>
+        <SectionRailButton
+          active={section === "subscribed"}
+          icon={Rss}
+          label="Subscribed"
+          count={subscribed.length > 0 ? subscribed.length : undefined}
+          countTone="green"
           onClick={() => setSection("subscribed")}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
-            section === "subscribed"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Rss className="h-4 w-4" />
-            <span className="font-medium">Subscribed</span>
-          </div>
-          {subscribed.length > 0 && (
-            <Badge
-              variant="outline"
-              className="text-[9px] h-5 bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30"
-            >
-              {subscribed.length}
-            </Badge>
-          )}
-        </button>
-        <button
-          type="button"
+        />
+        <SectionRailButton
+          active={section === "marketplace"}
+          icon={Store}
+          label="Marketplace"
+          count={available.length > 0 ? available.length : undefined}
+          countTone="muted"
           onClick={() => setSection("marketplace")}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
-            section === "marketplace"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Store className="h-4 w-4" />
-            <span className="font-medium">Marketplace</span>
-          </div>
-          {available.length > 0 && (
-            <Badge
-              variant="outline"
-              className="text-[9px] h-5 text-[var(--text-secondary)] border-[var(--border-color)]"
-            >
-              {available.length}
-            </Badge>
-          )}
-        </button>
-      </div>
+        />
+      </SectionRail>
 
       <div className="flex-1 min-w-0 overflow-y-auto">
         {poolEmpty && !query.trim() ? (

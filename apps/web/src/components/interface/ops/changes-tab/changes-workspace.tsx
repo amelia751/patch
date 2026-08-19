@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { Bell, Radio } from "lucide-react";
+import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 import type { ChangeActionId, RunProgress } from "./actions";
 import { ChangesInbox } from "./changes-tab";
 import type { ProjectChange } from "./data";
@@ -90,46 +89,21 @@ export function ChangesTab({
 
   return (
     <div className="h-full flex min-w-0 overflow-hidden bg-[var(--bg-primary)]">
-      <div className="w-56 flex-shrink-0 border-r border-[var(--border-color)] p-3 space-y-1">
-        <button
-          type="button"
+      <SectionRail>
+        <SectionRailButton
+          active={section === "releases"}
+          icon={Bell}
+          label="Releases"
           onClick={() => setSection("releases")}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
-            section === "releases"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            <span className="font-medium">Releases</span>
-          </div>
-        </button>
-        <button
-          type="button"
+        />
+        <SectionRailButton
+          active={section === "runs"}
+          icon={Radio}
+          label="Runs"
+          count={activeCount > 0 ? (attention > 0 ? attention : activeCount) : undefined}
           onClick={() => setSection("runs")}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
-            section === "runs"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Radio className="h-4 w-4" />
-            <span className="font-medium">Runs</span>
-          </div>
-          {activeCount > 0 && (
-            <Badge
-              variant="outline"
-              className="text-[9px] h-5 bg-amber-500/10 text-amber-500 border-amber-500/30"
-            >
-              {attention > 0 ? attention : activeCount}
-            </Badge>
-          )}
-        </button>
-      </div>
+        />
+      </SectionRail>
 
       <div className="flex-1 min-w-0 overflow-hidden">
         {section === "releases" ? (

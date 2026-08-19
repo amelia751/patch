@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Cloud, Key } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 // import { AuthTab } from "./auth-tab";
 import { AWSConnectEmptyState } from "./aws-connect-empty-state";
 import { AWSConnectionTab } from "./aws-connection-tab";
@@ -147,63 +146,22 @@ export function ConfigureTab({
 
   return (
     <div className="h-full flex min-w-0 overflow-hidden bg-[var(--bg-primary)]">
-      {/* Sidebar */}
-      <div className="w-56 flex-shrink-0 border-r border-[var(--border-color)] p-3 space-y-1">
-        <button
+      <SectionRail>
+        <SectionRailButton
+          active={activeSection === "connection"}
+          icon={Cloud}
+          label="Connection"
+          count={missingPoliciesCount > 0 ? missingPoliciesCount : undefined}
           onClick={() => setActiveSection("connection")}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
-            activeSection === "connection"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Cloud className="h-4 w-4" />
-            <span className="font-medium">Connection</span>
-          </div>
-          {missingPoliciesCount > 0 && (
-            <Badge variant="outline" className="text-[9px] h-5 bg-amber-500/10 text-amber-500 border-amber-500/30">
-              {missingPoliciesCount}
-            </Badge>
-          )}
-        </button>
-
-        <button
+        />
+        <SectionRailButton
+          active={activeSection === "secrets"}
+          icon={Key}
+          label="Secrets"
+          count={pendingSecretsCount > 0 ? pendingSecretsCount : undefined}
           onClick={() => setActiveSection("secrets")}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors",
-            activeSection === "secrets"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Key className="h-4 w-4" />
-            <span className="font-medium">Secrets</span>
-          </div>
-          {pendingSecretsCount > 0 && (
-            <Badge variant="outline" className="text-[9px] h-5 bg-amber-500/10 text-amber-500 border-amber-500/30">
-              {pendingSecretsCount}
-            </Badge>
-          )}
-        </button>
-
-        {/* Auth tab hidden for now
-        <button
-          onClick={() => setActiveSection("auth")}
-          className={cn(
-            "w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-colors text-left",
-            activeSection === "auth"
-              ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
-          )}
-        >
-          <UserRoundKey className="h-4 w-4 shrink-0" />
-          <span className="font-medium">Auth</span>
-        </button>
-        */}
-      </div>
+        />
+      </SectionRail>
 
       {/* Main Content */}
       <div className="flex-1 min-w-0 overflow-hidden">
