@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ActivitySpinner, WorklogView } from "@/components/console/worklog-view";
+import { collapseWorklogEntries, pairActionResults } from "@/components/console/thread-worklog";
+import type { WorklogEntry } from "@/components/console/thread-types";
 import {
   Check,
   GitBranch,
   GitPullRequest,
-  Loader2,
   Lock,
   Radio,
 } from "lucide-react";
@@ -489,8 +491,35 @@ function DiffLineRow({ line }: { line: DiffLine }) {
   );
 }
 
+function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
+  return lines.map((line) => {
+    if (line.kind === "thought") {
+      return { kind: "thinking", text: line.text };
+    }
+    if (line.kind === "action") {
+      return {
+        kind: "action",
+        text: line.text,
+        toolType: line.toolType,
+        toolUseId: line.toolUseId,
+        filePath: line.filePath,
+      };
+    }
+    if (line.kind === "result") {
+      return {
+        kind: "result",
+        text: line.text,
+        toolType: line.toolType,
+        toolUseId: line.toolUseId,
+      };
+    }
+    return { kind: "narration", text: line.text };
+  });
+}
+
 function AgentLog({ run }: { run: MockRun }) {
   const lines = visibleLog(run);
+  const entries = collapseWorklogEntries(pairActionResults(toWorklog(lines)));
   const endRef = useRef<HTMLDivElement>(null);
   const live = run.bucket === "active";
   const last = lines[lines.length - 1];
@@ -504,65 +533,25 @@ function AgentLog({ run }: { run: MockRun }) {
       <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
         Log
       </h3>
-      <div className="mt-1.5 space-y-1.5">
-        {lines.map((line) => (
-          <LogLine key={line.id} line={line} />
-        ))}
-        {live && last && <LiveCursor line={last} startedAt={run.lineStartedAt} />}
+      <div className="mt-2">
+        <WorklogView entries={entries} idPrefix={run.id} />
+        {live && last && (
+          <ActivitySpinner
+            activeTool={{
+              verb:
+                last.kind === "thought"
+                  ? "Thinking"
+                  : last.kind === "action"
+                    ? (last.verb ?? "Running")
+                    : "Working",
+              detail: last.kind === "action" ? last.text : undefined,
+              startedAt: run.lineStartedAt,
+            }}
+          />
+        )}
         <div ref={endRef} />
       </div>
     </section>
-  );
-}
-
-function LogLine({ line }: { line: AgentLogLine }) {
-  if (line.kind === "thought") {
-    return (
-      <p className="text-[11px] italic text-[var(--text-secondary)] leading-relaxed">
-        Thought
-        <span className="not-italic ml-1.5 opacity-80">{line.text}</span>
-      </p>
-    );
-  }
-  if (line.kind === "action") {
-    return (
-      <div className="flex items-baseline gap-2 min-w-0">
-        <span className="text-[11px] text-[var(--text-primary)] shrink-0">{line.verb ?? "Do"}</span>
-        <span className="text-[11px] font-mono text-[var(--text-secondary)] truncate">{line.text}</span>
-      </div>
-    );
-  }
-  if (line.kind === "result") {
-    return (
-      <p className="text-[11px] text-[var(--text-secondary)] pl-3 leading-relaxed">
-        <span className="mr-1.5 text-[var(--text-tertiary)]">⎿</span>
-        {line.text}
-      </p>
-    );
-  }
-  return <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">{line.text}</p>;
-}
-
-function LiveCursor({ line, startedAt }: { line: AgentLogLine; startedAt: number }) {
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    tick();
-    const id = window.setInterval(tick, 400);
-    return () => window.clearInterval(id);
-  }, [startedAt]);
-
-  const verb = line.kind === "thought" ? "Thinking" : line.kind === "action" ? (line.verb ?? "Running") : "Working";
-
-  return (
-    <div className="flex items-center gap-2 py-0.5">
-      <Loader2 className="h-3 w-3 text-sky-400 animate-spin shrink-0" />
-      <span className="text-[11px] text-[var(--text-secondary)]">{verb}</span>
-      {elapsed > 0 && (
-        <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">{elapsed}s</span>
-      )}
-    </div>
   );
 }
 

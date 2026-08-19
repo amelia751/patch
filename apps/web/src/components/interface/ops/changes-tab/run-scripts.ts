@@ -69,6 +69,9 @@ export interface AgentLogLine {
   kind: LogKind;
   verb?: string;
   text: string;
+  toolType?: string;
+  toolUseId?: string;
+  filePath?: string;
 }
 
 export interface MockRun {
@@ -256,22 +259,47 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   const fromId = change.identifiers[0] ?? "identifier";
   const lines: AgentLogLine[] = [];
   let n = 0;
-  const add = (at: MachineState, kind: LogKind, text: string, verb?: string) => {
+  let lastUseId = "";
+  const add = (
+    at: MachineState,
+    kind: LogKind,
+    text: string,
+    extras?: Pick<AgentLogLine, "verb" | "toolType" | "toolUseId" | "filePath">,
+  ) => {
     if (!path.includes(at)) return;
     n += 1;
-    lines.push({ id: `${at}-${n}`, at, kind, text, verb });
+    const id = `${at}-${n}`;
+    if (kind === "action") lastUseId = extras?.toolUseId ?? id;
+    lines.push({
+      id,
+      at,
+      kind,
+      text,
+      verb: extras?.verb,
+      toolType: extras?.toolType,
+      toolUseId: extras?.toolUseId ?? (kind === "result" ? lastUseId : kind === "action" ? id : undefined),
+      filePath: extras?.filePath,
+    });
   };
 
   add("NORMALIZED", "thought", "Provider text is untrusted. Screen it before anything joins inventory.");
-  add("NORMALIZED", "action", change.title, "Normalize");
-  add("NORMALIZED", "result", "ChangeManifest accepted. Identifiers kept as claims.");
+  add("NORMALIZED", "action", "Normalize(`ChangeManifest`)", { verb: "Normalize", toolType: "Normalize" });
+  add("NORMALIZED", "result", "Identifiers kept as claims.");
 
-  add("IMPACT_SCANNING", "thought", `Join ${fromId} against ${repo} @ ${sha}, not HEAD.`);
+  add("IMPACT_SCANNING", "thought", `Join \`${fromId}\` against ${repo} @ ${sha}, not HEAD.`);
   for (const file of runtime.slice(0, 3)) {
-    add("IMPACT_SCANNING", "action", file.path, "Read");
+    add("IMPACT_SCANNING", "action", `Read(\`${file.path}\`)`, {
+      verb: "Read",
+      toolType: "Read",
+      filePath: file.path,
+    });
   }
   if (runtime.length === 0 && change.files.length > 0) {
-    add("IMPACT_SCANNING", "action", change.files[0].path, "Read");
+    add("IMPACT_SCANNING", "action", `Read(\`${change.files[0].path}\`)`, {
+      verb: "Read",
+      toolType: "Read",
+      filePath: change.files[0].path,
+    });
   }
   add(
     "IMPACT_SCANNING",
@@ -282,7 +310,7 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   );
 
   add("POLICY_EVALUATION", "narration", "Auto-merge stays false. Forbidden paths stay forbidden.");
-  add("POLICY_EVALUATION", "action", "Deterministic policy on the impact report", "Evaluate");
+  add("POLICY_EVALUATION", "action", "Evaluate(`impact report`)", { verb: "Evaluate", toolType: "Evaluate" });
   add(
     "POLICY_EVALUATION",
     "result",
@@ -292,20 +320,23 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   );
 
   add("PATCHING", "thought", "Inspect the installed SDK in the worktree before rewriting.");
-  add("PATCHING", "action", `read_file ${sample}`, "Read");
-  add("PATCHING", "action", "apply_patch", "Apply");
+  add("PATCHING", "action", `Read(\`${sample}\`)`, { verb: "Read", toolType: "Read", filePath: sample });
+  add("PATCHING", "action", `Edit(\`${sample}\`)`, { verb: "Apply", toolType: "Edit", filePath: sample });
   add("PATCHING", "result", "Forbidden paths untouched. CHANGELOG.md is not in the diff.");
-  add("PATCHING", "action", "pnpm --dir cli test -- generate.test.ts", "Run");
+  add("PATCHING", "action", "Bash(`pnpm --dir cli test -- generate.test.ts`)", {
+    verb: "Run",
+    toolType: "Bash",
+  });
   add("PATCHING", "result", "Agent loop — diagnostic, not evidence.");
 
-  add("BUILDING", "action", "pnpm --dir cli build", "Run");
+  add("BUILDING", "action", "Bash(`pnpm --dir cli build`)", { verb: "Run", toolType: "Bash" });
   add("BUILDING", "result", "Orchestrator clean run from the diff. Not the agent’s own build.");
 
-  add("TESTING", "action", "pnpm --dir cli test", "Run");
+  add("TESTING", "action", "Bash(`pnpm --dir cli test`)", { verb: "Run", toolType: "Bash" });
   add("TESTING", "result", "Orchestrator clean run. This is what verification sees.");
 
   add("VERIFYING", "thought", "Grade the diff and the clean logs. Do not read the patch author’s plan.");
-  add("VERIFYING", "action", "Independent verification", "Verify");
+  add("VERIFYING", "action", "Verify(`proposed tree`)", { verb: "Verify", toolType: "Verify" });
   add("VERIFYING", "result", "Verifier ≠ patch author. Proposed tree may be opened.");
 
   add("PR_CREATED", "narration", "Pull request opened. PatchAPI stopped.");
