@@ -23,6 +23,7 @@ import {
   treeAvailable,
   treeForMachine,
   visibleLog,
+  cursorStdout,
   type AgentLogLine,
   type DiffFile,
   type DiffLine,
@@ -518,9 +519,35 @@ function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
   });
 }
 
+function rewriteTerminalFence(text: string, file?: string): string {
+  const fence = text.trim().match(/^```(?:terminal|bash|sh)\n([\s\S]*?)\n```$/);
+  if (!fence) return text;
+  const body = fence[1];
+  const command = body.split("\n").find((line) => line.startsWith("$ "))?.slice(2);
+  if (!command) return text;
+  const out = cursorStdout(command, file);
+  if (!out) return text;
+  const dir = body.split("\n").find((line) => line.startsWith("# ")) ?? "# /tmp/patchapi-sandbox";
+  return ["```terminal", dir, `$ ${command}`, ...out.split("\n"), "```"].join("\n");
+}
+
+function withCursorStdout(entries: WorklogEntry[], file?: string): WorklogEntry[] {
+  return entries.map((entry) => {
+    if (entry.kind === "block") {
+      return { ...entry, text: rewriteTerminalFence(entry.text, file) };
+    }
+    if (entry.kind !== "action") return entry;
+    const out = cursorStdout(entry.text, file);
+    return out ? { ...entry, result: out } : entry;
+  });
+}
+
 function AgentLog({ run }: { run: MockRun }) {
   const lines = visibleLog(run);
-  const entries = collapseWorklogEntries(pairActionResults(toWorklog(lines)));
+  const sample = run.files.find((file) => file.kind === "runtime")?.path ?? run.files[0]?.path;
+  const entries = collapseWorklogEntries(
+    withCursorStdout(pairActionResults(toWorklog(lines)), sample),
+  );
   const endRef = useRef<HTMLDivElement>(null);
   const live = run.bucket === "active";
   const last = lines[lines.length - 1];

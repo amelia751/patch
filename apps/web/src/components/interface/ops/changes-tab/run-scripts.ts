@@ -265,57 +265,77 @@ function terminalFence(dir: string, commands: { cmd: string; out: string }[]): s
   return lines.join("\n");
 }
 
-function applyLog(sample: string): string {
-  return [
-    `applied 1 hunk to ${sample}`,
-    "forbidden paths untouched",
-    "CHANGELOG.md is not in the diff",
-  ].join("\n");
+function unwrapCommand(text: string): string {
+  return text
+    .trim()
+    .replace(/^Bash\(/, "")
+    .replace(/\)$/, "")
+    .replace(/^`|`$/g, "")
+    .replace(/^read_file\s+/, "")
+    .trim();
 }
 
-function diagnosticTestLog(): string {
-  return [
-    "> cli@ test /cli",
-    "> vitest run generate.test.ts",
-    "",
-    " ✓ generate.test.ts (3)",
-    "   ✓ maps identifiers as the manifest specifies",
-    "   ✓ drops seed and numberOfImages on gemini-native",
-    "   ✓ keeps docs-only hits out of the patch",
-    "",
-    " Test Files  1 passed (1)",
-    "      Tests  3 passed (3)",
-    "   Duration  412ms",
-    "",
-    "Agent loop — diagnostic, not evidence.",
-  ].join("\n");
-}
-
-function buildLog(): string {
-  return [
-    "> cli@ build /cli",
-    "> tsc -p tsconfig.json",
-    "",
-    "Done in 1.84s",
-    "Orchestrator clean run from the diff. Not the agent’s own build.",
-  ].join("\n");
-}
-
-function verifyTestLog(): string {
-  return [
-    "> cli@ test /cli",
-    "> vitest run",
-    "",
-    " ✓ generate.test.ts (3)",
-    " ✓ model-catalog.test.ts (5)",
-    " ✓ cli.test.ts (4)",
-    "",
-    " Test Files  3 passed (3)",
-    "      Tests  12 passed (12)",
-    "   Duration  1.21s",
-    "",
-    "Orchestrator clean run. This is what verification sees.",
-  ].join("\n");
+/** Cursor-style captured stdout. Policy copy never belongs here. */
+export function cursorStdout(command: string, file = "cli/src/cli/model-catalog.ts"): string {
+  const cmd = unwrapCommand(command);
+  if (cmd === "apply_patch" || cmd.startsWith("apply_patch ")) {
+    const target = cmd.slice("apply_patch".length).trim() || file;
+    return [
+      `Checking patch ${target}...`,
+      `Hunk #1 succeeded at 48 (offset 2 lines).`,
+      `Applied patch ${target} cleanly.`,
+      "",
+      "exited 0",
+    ].join("\n");
+  }
+  if (cmd.includes("generate.test.ts")) {
+    return [
+      "> cli@0.4.2 test /tmp/patchapi-sandbox/cli",
+      "> vitest run generate.test.ts",
+      "",
+      " RUN  v3.0.5 /tmp/patchapi-sandbox/cli",
+      "",
+      " ✓ src/cli/generate.test.ts (3 tests) 84ms",
+      "   ✓ maps identifiers as the manifest specifies",
+      "   ✓ drops seed and numberOfImages on gemini-native",
+      "   ✓ keeps docs-only hits out of the patch",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  3 passed (3)",
+      "   Start at  14:26:12",
+      "   Duration  412ms (transform 38ms, setup 0ms, collect 61ms, tests 84ms)",
+      "",
+      "exited 0",
+    ].join("\n");
+  }
+  if (/pnpm --dir cli build\b/.test(cmd) || /\btsc\b/.test(cmd)) {
+    return [
+      "> cli@0.4.2 build /tmp/patchapi-sandbox/cli",
+      "> tsc -p tsconfig.json",
+      "",
+      "exited 0",
+    ].join("\n");
+  }
+  if (/pnpm --dir cli test\b/.test(cmd)) {
+    return [
+      "> cli@0.4.2 test /tmp/patchapi-sandbox/cli",
+      "> vitest run",
+      "",
+      " RUN  v3.0.5 /tmp/patchapi-sandbox/cli",
+      "",
+      " ✓ src/cli/generate.test.ts (3 tests) 84ms",
+      " ✓ src/cli/model-catalog.test.ts (5 tests) 31ms",
+      " ✓ src/cli/cli.test.ts (4 tests) 19ms",
+      "",
+      " Test Files  3 passed (3)",
+      "      Tests  12 passed (12)",
+      "   Start at  14:27:01",
+      "   Duration  1.21s (transform 112ms, setup 0ms, collect 204ms, tests 134ms)",
+      "",
+      "exited 0",
+    ].join("\n");
+  }
+  return "";
 }
 
 function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
@@ -392,26 +412,35 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   add(
     "PATCHING",
     "block",
-    terminalFence(`sandbox @ ${sha}`, [{ cmd: "apply_patch", out: applyLog(sample) }]),
+    terminalFence("/tmp/patchapi-sandbox", [
+      { cmd: "apply_patch", out: cursorStdout("apply_patch", sample) },
+    ]),
   );
   add(
     "PATCHING",
     "block",
-    terminalFence(`sandbox @ ${sha}`, [
-      { cmd: "pnpm --dir cli test -- generate.test.ts", out: diagnosticTestLog() },
+    terminalFence("/tmp/patchapi-sandbox", [
+      {
+        cmd: "pnpm --dir cli test -- generate.test.ts",
+        out: cursorStdout("pnpm --dir cli test -- generate.test.ts"),
+      },
     ]),
   );
 
   add(
     "BUILDING",
     "block",
-    terminalFence(`sandbox @ ${sha}`, [{ cmd: "pnpm --dir cli build", out: buildLog() }]),
+    terminalFence("/tmp/patchapi-sandbox", [
+      { cmd: "pnpm --dir cli build", out: cursorStdout("pnpm --dir cli build") },
+    ]),
   );
 
   add(
     "TESTING",
     "block",
-    terminalFence(`sandbox @ ${sha}`, [{ cmd: "pnpm --dir cli test", out: verifyTestLog() }]),
+    terminalFence("/tmp/patchapi-sandbox", [
+      { cmd: "pnpm --dir cli test", out: cursorStdout("pnpm --dir cli test") },
+    ]),
   );
 
   add("VERIFYING", "thought", "Grade the diff and the clean logs. Do not read the patch author’s plan.");

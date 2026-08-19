@@ -13,7 +13,7 @@ interface TerminalBlockProps {
 }
 
 /** Max output lines shown per command before capping */
-const OUTPUT_CAP = 4;
+const OUTPUT_CAP = 16;
 
 interface ParsedCommand {
   command: string;
@@ -49,7 +49,7 @@ export function TerminalBlock({ code, onCopy, className }: TerminalBlockProps) {
       if (current) commands.push(current);
       current = { command: line.substring(2), output: [] };
     } else if (current) {
-      if (line !== "") current.output.push(line);
+      current.output.push(line);
     }
   }
   if (current) commands.push(current);
@@ -180,7 +180,12 @@ function CommandEntry({
           {(isExpanded ? cmd.output : cmd.output.slice(0, OUTPUT_CAP)).map((line, idx) => (
             <div
               key={idx}
-              className="text-[var(--text-secondary)] text-[11px] whitespace-pre-wrap break-all leading-[1.5]"
+              className={cn(
+                "text-[11px] whitespace-pre-wrap break-all leading-[1.5]",
+                /^exited \d+/.test(line)
+                  ? "text-[var(--text-secondary)]/50"
+                  : "text-[var(--text-secondary)]",
+              )}
               style={{ fontFamily: MONO_FONT }}
             >
               {line || " "}
