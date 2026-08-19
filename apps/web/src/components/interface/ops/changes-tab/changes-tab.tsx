@@ -653,6 +653,7 @@ export function ChangesInbox({
                         const run = displayProgress(change);
                         const available = actionsFor(change, run, resolvedStatus);
                         const rowAction = available.find((item) => item.onRow);
+                        const moreActions = available.filter((item) => !item.onRow);
                         const status = statusConfig[resolvedStatus];
                         const when = timingLabel(change);
 
@@ -835,9 +836,9 @@ export function ChangesInbox({
                                   )}
                                 </div>
 
-                                {available.length > 0 && (
+                                {moreActions.length > 0 && (
                                   <div className="flex items-center gap-2 pt-1">
-                                    {available.map((item) => (
+                                    {moreActions.map((item) => (
                                       <Button
                                         key={item.id}
                                         size="sm"
@@ -848,9 +849,6 @@ export function ChangesInbox({
                                         )}
                                         onClick={() => requestAction(change, item.id, run)}
                                       >
-                                        {(item.id === "start" || item.id === "review") && run === "idle" && (
-                                          <GitPullRequest className="h-3 w-3 mr-1" />
-                                        )}
                                         {item.label}
                                       </Button>
                                     ))}
