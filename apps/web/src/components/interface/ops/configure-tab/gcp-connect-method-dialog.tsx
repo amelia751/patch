@@ -37,6 +37,9 @@ export type GcpConnectEnvironmentOption = { value: string; label: string };
 
 export type GcpAuthMethod = "oauth" | "wif" | "service_account";
 
+/** WIF setup is implemented but hidden until the AWS federation path is ready. */
+const SHOW_WIF_OPTION = false;
+
 interface GCPConnectMethodDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -97,7 +100,7 @@ export function GCPConnectMethodDialog({
   environmentHelpText,
   onConnectSuccess,
 }: GCPConnectMethodDialogProps) {
-  const [authMethod, setAuthMethod] = useState<GcpAuthMethod>("wif");
+  const [authMethod, setAuthMethod] = useState<GcpAuthMethod>("service_account");
   const [selectedRegion, setSelectedRegion] = useState("us-central1");
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -148,7 +151,7 @@ export function GCPConnectMethodDialog({
     setWifProviderResource("");
     setWifServiceAccountEmail("");
     setIsConnecting(false);
-    setAuthMethod("wif");
+    setAuthMethod("service_account");
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -351,7 +354,7 @@ export function GCPConnectMethodDialog({
 
   // --- primary action per method ---
   const handlePrimaryAction = () => {
-    if (authMethod === "wif") handleWifConnect();
+    if (SHOW_WIF_OPTION && authMethod === "wif") handleWifConnect();
     else handleServiceAccountConnect();
   };
 
@@ -436,14 +439,14 @@ export function GCPConnectMethodDialog({
             </DialogTitle>
           </div>
           <DialogDescription className="text-xs text-[var(--text-secondary)]">
-            Choose how PatchAPI authenticates to your GCP project. All methods
-            store credentials securely and scope access to agent-created
-            resources.
+            {SHOW_WIF_OPTION
+              ? "Choose how PatchAPI authenticates to your GCP project. All methods store credentials securely and scope access to agent-created resources."
+              : "Authenticate with a dedicated service account. Credentials are stored securely and scoped to agent-created resources."}
           </DialogDescription>
         </DialogHeader>
 
         <Tabs
-          value={authMethod}
+          value={SHOW_WIF_OPTION ? authMethod : "service_account"}
           onValueChange={(v) => {
             setAuthMethod(v as GcpAuthMethod);
             setConnectionError(null);
@@ -451,17 +454,20 @@ export function GCPConnectMethodDialog({
           }}
           className="pt-2"
         >
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] p-1 text-[var(--text-secondary)]">
-            <TabsTrigger value="wif" className={tabTriggerClass}>
-              Workload Identity
-            </TabsTrigger>
-            <TabsTrigger value="service_account" className={tabTriggerClass}>
-              Service account
-            </TabsTrigger>
-          </TabsList>
+          {SHOW_WIF_OPTION ? (
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] p-1 text-[var(--text-secondary)]">
+              <TabsTrigger value="wif" className={tabTriggerClass}>
+                Workload Identity
+              </TabsTrigger>
+              <TabsTrigger value="service_account" className={tabTriggerClass}>
+                Service account
+              </TabsTrigger>
+            </TabsList>
+          ) : null}
 
           <div className="space-y-4 mt-3">
           {/* ---------- WIF ---------- */}
+          {SHOW_WIF_OPTION ? (
           <TabsContent value="wif" className="mt-0 space-y-4 focus-visible:outline-none">
               <div className="p-2.5 bg-primary/10 border border-primary/20 rounded-lg">
                 <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
@@ -895,6 +901,7 @@ export function GCPConnectMethodDialog({
                 </div>
               </div>
           </TabsContent>
+          ) : null}
 
           {/* ---------- SA JSON ---------- */}
           <TabsContent value="service_account" className="mt-0 space-y-4 focus-visible:outline-none">
@@ -914,19 +921,25 @@ export function GCPConnectMethodDialog({
                   >
                     block key creation
                   </a>
-                  . If blocked, use{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMethod("wif");
-                      setConnectionError(null);
-                      setConnectionErrorStep(null);
-                    }}
-                    className="text-primary hover:underline font-medium"
-                  >
-                    WIF
-                  </button>
                   .
+                  {SHOW_WIF_OPTION ? (
+                    <>
+                      {" "}
+                      If blocked, use{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMethod("wif");
+                          setConnectionError(null);
+                          setConnectionErrorStep(null);
+                        }}
+                        className="text-primary hover:underline font-medium"
+                      >
+                        WIF
+                      </button>
+                      .
+                    </>
+                  ) : null}
                 </p>
               </div>
 
