@@ -1,0 +1,29 @@
+---
+description: Commit each finished change immediately without waiting to be asked
+alwaysApply: true
+---
+
+# Commit when done
+
+When a discrete piece of work is finished, commit it. Do not wait for
+"commit" or "commit and push".
+
+## When
+
+- A feature, fix, or UI change is working and you would otherwise stop
+- You finished the user's request (or a self-contained slice of it)
+- One concern is complete even if more work remains
+
+## How
+
+- Follow `.cursor/rules/git-commit-messages.mdc`
+- One concern per commit
+- Stage only the files for that concern
+- Do not commit secrets, `.env`, or unrelated dirty files
+- Push after the commit when `origin` already tracks this branch
+
+## Do not
+
+- Commit broken or speculative WIP just to "save progress"
+- Bundle unrelated edits into one commit
+- Ask whether to commit after finishing the work
