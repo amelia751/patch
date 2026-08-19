@@ -730,7 +730,7 @@ function TreeRail({
               disabled={!open}
               onClick={() => onPick(step.id)}
               className={cn(
-                "min-w-0 flex-1 rounded-md px-2.5 py-2 text-left transition-colors",
+                "min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-left transition-colors",
                 selected
                   ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)] shadow-sm ring-1 ring-primary/25"
                   : "text-[var(--text-secondary)]",
@@ -738,15 +738,13 @@ function TreeRail({
                 !open && "cursor-not-allowed opacity-45",
               )}
             >
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
                   <step.icon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="text-[11px] font-medium">
+                  <span className="text-[11px] font-medium shrink-0">
                     {TREE_COPY[step.id].label}
                   </span>
-                </div>
-                <div className="mt-1.5">
                   {"pending" in step.chip ? (
-                    <span className="inline-flex items-center rounded-md border border-dashed border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
+                    <span className="min-w-0 truncate rounded-md border border-dashed border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
                       {step.chip.pending}
                     </span>
                   ) : (
@@ -783,7 +781,7 @@ function BranchChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border max-w-full",
+        "inline-flex min-w-0 items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border",
         active
           ? "bg-primary/10 border-primary/30 text-primary"
           : "bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-secondary)]",
