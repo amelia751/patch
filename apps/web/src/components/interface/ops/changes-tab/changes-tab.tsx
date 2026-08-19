@@ -705,34 +705,12 @@ export function ChangesInbox({
                                 <div className="grid grid-cols-2 gap-4">
                                   <div>
                                     <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
-                                      Effective
-                                    </label>
-                                    <p className="text-xs text-[var(--text-primary)] mt-1">
-                                      {change.effectiveAt
-                                        ? `${formatDay(change.effectiveAt)}${
-                                            isPastDay(change.effectiveAt) ? " · already in effect" : " · not yet"
-                                          }`
-                                        : "No effective date"}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
                                       Replacement
                                     </label>
                                     <p className="text-xs text-[var(--text-primary)] font-mono mt-1">
                                       {change.replacement ?? "None — fail closed"}
                                     </p>
                                   </div>
-                                  {change.repo && (
-                                    <div>
-                                      <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
-                                        Repository
-                                      </label>
-                                      <p className="text-xs text-[var(--text-primary)] mt-1">
-                                        {change.repo}
-                                      </p>
-                                    </div>
-                                  )}
                                   {change.announcedAt && (
                                     <div>
                                       <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
@@ -740,16 +718,6 @@ export function ChangesInbox({
                                       </label>
                                       <p className="text-xs text-[var(--text-primary)] mt-1">
                                         {formatDay(change.announcedAt)}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {change.migration && (
-                                    <div>
-                                      <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
-                                        Migration
-                                      </label>
-                                      <p className="text-xs text-[var(--text-primary)] mt-1 capitalize">
-                                        {change.migration}
                                       </p>
                                     </div>
                                   )}
