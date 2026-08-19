@@ -55,13 +55,17 @@ export function actionsFor(
   }
 }
 
-export function actionDialog(change: ProjectChange, action: ChangeActionId): {
+export function actionDialog(
+  change: ProjectChange,
+  action: ChangeActionId,
+  repo?: string,
+): {
   title: string;
   body: string;
   confirm: string;
   destructive?: boolean;
 } {
-  const repo = change.repo ?? "this project's imported repositories";
+  const target = repo ?? change.repo ?? "this project's imported repositories";
 
   switch (action) {
     case "start":
@@ -73,13 +77,13 @@ export function actionDialog(change: ProjectChange, action: ChangeActionId): {
             : isDocsOnly(change)
               ? "These hits are documentation only. Starting a run is unusual. "
               : "") +
-          `PatchAPI will analyze ${repo}, generate a patch in isolation, verify it, and open a pull request. It will not merge.`,
+          `PatchAPI will analyze ${target}, generate a patch in isolation, verify it, and open a pull request. It will not merge.`,
         confirm: isDocsOnly(change) ? "Start anyway" : "Start remediation",
       };
     case "review":
       return {
         title: `Continue ${change.title}?`,
-        body: `A human has to confirm the replacement. The run still stops at a pull request against ${repo}.`,
+        body: `A human has to confirm the replacement. The run still stops at a pull request against ${target}.`,
         confirm: "Continue",
       };
     case "prepare":

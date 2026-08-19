@@ -25,6 +25,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -46,7 +47,6 @@ import {
   ExternalLink,
   FileCode2,
   Filter,
-  GitBranch,
   GitPullRequest,
   Search,
   X,
@@ -62,9 +62,7 @@ import {
   HARDCODED_PROJECT_CHANGES,
   isDocsOnly,
   isNotYetEffective,
-  UNSCOPED_REPO,
-  repoOf,
-  repoTitle,
+  affectedRepos,
   runKey,
   type DetectionStatus,
   type FileHitKind,
@@ -117,7 +115,7 @@ const fileKindLabel: Record<FileHitKind, string> = {
   changelog: "changelog",
 };
 
-const REPO_PAGE_SIZE = 8;
+const PROVIDER_PAGE_SIZE = 8;
 
 function pageWindow(current: number, total: number): (number | "ellipsis")[] {
   if (total <= 7) {
@@ -262,7 +260,7 @@ export function ChangesInbox({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DetectionStatus | "all">("all");
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
-  const [repoPage, setRepoPage] = useState<Record<string, number>>({});
+  const [providerPage, setProviderPage] = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
   const [bannerOpen, setBannerOpen] = useState(true);
   const [statusOverride, setStatusOverride] = useState<Record<string, DetectionStatus>>({});
@@ -270,14 +268,15 @@ export function ChangesInbox({
     change: ProjectChange;
     action: ChangeActionId;
   } | null>(null);
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(
-    () => new Set(HARDCODED_PROJECT_CHANGES.map((change) => repoOf(change))),
+  const [pendingRepo, setPendingRepo] = useState<string | null>(null);
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
+    () => new Set(HARDCODED_PROJECT_CHANGES.map((change) => change.provider)),
   );
   const [expandedChanges, setExpandedChanges] = useState<Set<string>>(
     () =>
       new Set(
         HARDCODED_PROJECT_CHANGES.filter((change) => change.status === "needs_you" && change.source === "fixture").map(
-          (c) => runKey(c),
+          (c) => c.id,
         ),
       ),
   );
@@ -285,7 +284,7 @@ export function ChangesInbox({
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return HARDCODED_PROJECT_CHANGES.filter((change) => {
-      const status = statusOverride[runKey(change)] ?? change.status;
+      const status = statusOverride[change.id] ?? change.status;
       if (statusFilter !== "all" && status !== statusFilter) return false;
       if (kindFilter !== "all" && change.kind !== kindFilter) return false;
       if (!q) return true;
@@ -295,6 +294,7 @@ export function ChangesInbox({
         change.product,
         change.provider,
         change.repo ?? "",
+        ...(change.repos ?? []),
         change.kind,
         status,
         change.replacement ?? "",
@@ -308,22 +308,17 @@ export function ChangesInbox({
   }, [kindFilter, searchQuery, statusFilter, statusOverride]);
 
   useEffect(() => {
-    setRepoPage({});
+    setProviderPage({});
   }, [kindFilter, searchQuery, statusFilter]);
 
-  const byRepo = useMemo(() => {
+  const byProvider = useMemo(() => {
     const groups = new Map<string, ProjectChange[]>();
     for (const change of filtered) {
-      const key = repoOf(change);
-      const list = groups.get(key) ?? [];
+      const list = groups.get(change.provider) ?? [];
       list.push(change);
-      groups.set(key, list);
+      groups.set(change.provider, list);
     }
-    return [...groups.entries()].sort(([a], [b]) => {
-      if (a === UNSCOPED_REPO) return 1;
-      if (b === UNSCOPED_REPO) return -1;
-      return a.localeCompare(b);
-    });
+    return groups;
   }, [filtered]);
 
   const counts = useMemo(() => {
@@ -342,48 +337,53 @@ export function ChangesInbox({
     setSearchQuery("");
     setStatusFilter("all");
     setKindFilter("all");
-    setRepoPage({});
+    setProviderPage({});
     setMoreOpen(false);
   };
 
-  const setPageFor = (repo: string, page: number) => {
-    setRepoPage((prev) => ({ ...prev, [repo]: page }));
+  const setPageFor = (provider: string, page: number) => {
+    setProviderPage((prev) => ({ ...prev, [provider]: page }));
   };
 
-  const toggleRepo = (repo: string) => {
-    setExpandedRepos((prev) => {
+  const toggleProvider = (provider: string) => {
+    setExpandedProviders((prev) => {
       const next = new Set(prev);
-      if (next.has(repo)) next.delete(repo);
-      else next.add(repo);
+      if (next.has(provider)) next.delete(provider);
+      else next.add(provider);
       return next;
     });
   };
 
   const displayStatus = (change: ProjectChange): DetectionStatus =>
-    statusOverride[runKey(change)] ?? change.status;
+    statusOverride[change.id] ?? change.status;
 
-  const displayProgress = (change: ProjectChange): RunProgress =>
-    progress[runKey(change)] ?? "idle";
+  const displayProgress = (change: ProjectChange): RunProgress => {
+    const repos = affectedRepos(change);
+    if (repos.length > 1) return "idle";
+    return progress[runKey(change)] ?? "idle";
+  };
 
   const requestAction = (change: ProjectChange, action: ChangeActionId, run: RunProgress) => {
     if (run !== "idle") {
       onOpenRun(change);
       return;
     }
+    const repos = affectedRepos(change);
+    setPendingRepo(repos[0] ?? change.repo ?? null);
     setPending({ change, action });
   };
 
   const applyAction = (change: ProjectChange, action: ChangeActionId) => {
     if (action === "dismiss") {
-      setStatusOverride((prev) => ({ ...prev, [runKey(change)]: "dismissed" }));
+      setStatusOverride((prev) => ({ ...prev, [change.id]: "dismissed" }));
     } else if (action === "reopen") {
       setStatusOverride((prev) => {
         const next = { ...prev };
-        delete next[runKey(change)];
+        delete next[change.id];
         return next;
       });
     } else {
-      onCommitted(change, action);
+      onCommitted({ ...change, repo: pendingRepo ?? change.repo }, action);
     }
     setPending(null);
   };
@@ -592,30 +592,42 @@ export function ChangesInbox({
               <NoDetectionsEmptyState onBrowseSubscriptions={onBrowseSubscriptions} />
             )
           ) : (
-            byRepo.map(([repo, changes]) => {
-              const isExpanded = expandedRepos.has(repo);
-              const totalPages = Math.max(1, Math.ceil(changes.length / REPO_PAGE_SIZE));
-              const page = Math.min(repoPage[repo] ?? 1, totalPages);
-              const paged = changes.slice((page - 1) * REPO_PAGE_SIZE, page * REPO_PAGE_SIZE);
+            Array.from(byProvider.entries()).map(([provider, changes]) => {
+              const isExpanded = expandedProviders.has(provider);
+              const totalPages = Math.max(1, Math.ceil(changes.length / PROVIDER_PAGE_SIZE));
+              const page = Math.min(providerPage[provider] ?? 1, totalPages);
+              const paged = changes.slice((page - 1) * PROVIDER_PAGE_SIZE, page * PROVIDER_PAGE_SIZE);
               const groupNeedsYou = changes.filter((c) => displayStatus(c) === "needs_you").length;
               const groupWatching = changes.filter((c) => displayStatus(c) === "watching").length;
               const groupDismissed = changes.filter((c) => displayStatus(c) === "dismissed").length;
+              const logo =
+                changes[0]?.providerSlug === "google"
+                  ? "/google-cloud.svg"
+                  : getGCPServiceIcon(changes[0]?.product ?? provider);
 
               return (
                 <div
-                  key={repo}
+                  key={provider}
                   className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden"
                 >
                   <div
                     className="p-3 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors flex items-center justify-between"
-                    onClick={() => toggleRepo(repo)}
+                    onClick={() => toggleProvider(provider)}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <GitBranch className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-semibold text-[var(--text-primary)] font-mono truncate">
-                            {repoTitle(repo)}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0">
+                        <Image
+                          src={logo}
+                          alt={provider}
+                          width={20}
+                          height={20}
+                          className="h-5 w-5 object-contain"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-[var(--text-primary)]">
+                            {provider}
                           </span>
                           <Badge
                             variant="outline"
@@ -647,8 +659,7 @@ export function ChangesInbox({
                   {isExpanded && (
                     <div className="border-t border-[var(--border-color)]">
                       {paged.map((change) => {
-                        const key = runKey(change);
-                        const open = expandedChanges.has(key);
+                        const open = expandedChanges.has(change.id);
                         const resolvedStatus = displayStatus(change);
                         const run = displayProgress(change);
                         const available = actionsFor(change, run, resolvedStatus);
@@ -658,10 +669,10 @@ export function ChangesInbox({
                         const when = timingLabel(change);
 
                         return (
-                          <div key={key} className="border-b border-[var(--border-color)] last:border-b-0">
+                          <div key={change.id} className="border-b border-[var(--border-color)] last:border-b-0">
                             <div
                               className="p-3 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors"
-                              onClick={() => toggleChange(key)}
+                              onClick={() => toggleChange(change.id)}
                             >
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -742,6 +753,16 @@ export function ChangesInbox({
                                 </p>
 
                                 <div className="grid grid-cols-2 gap-4">
+                                  {affectedRepos(change).length > 0 && (
+                                    <div>
+                                      <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
+                                        Repository
+                                      </label>
+                                      <p className="text-xs font-mono text-[var(--text-primary)] mt-1">
+                                        {affectedRepos(change).join(" · ")}
+                                      </p>
+                                    </div>
+                                  )}
                                   <div>
                                     <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
                                       Replacement
@@ -865,7 +886,7 @@ export function ChangesInbox({
                             <PaginationContent className="gap-0.5">
                               <PaginationItem>
                                 <PaginationPrevious
-                                  onClick={() => setPageFor(repo, Math.max(1, page - 1))}
+                                  onClick={() => setPageFor(provider, Math.max(1, page - 1))}
                                   className={cn(
                                     "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
                                     "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
@@ -881,7 +902,7 @@ export function ChangesInbox({
                                 ) : (
                                   <PaginationItem key={item}>
                                     <PaginationLink
-                                      onClick={() => setPageFor(repo, item)}
+                                      onClick={() => setPageFor(provider, item)}
                                       isActive={page === item}
                                       className={cn(
                                         "h-7 w-7 text-[11px] cursor-pointer border",
@@ -897,7 +918,7 @@ export function ChangesInbox({
                               )}
                               <PaginationItem>
                                 <PaginationNext
-                                  onClick={() => setPageFor(repo, Math.min(totalPages, page + 1))}
+                                  onClick={() => setPageFor(provider, Math.min(totalPages, page + 1))}
                                   className={cn(
                                     "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
                                     "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
@@ -924,23 +945,45 @@ export function ChangesInbox({
             <>
               <AlertDialogHeader>
                 <AlertDialogTitle className="text-[var(--text-primary)]">
-                  {actionDialog(pending.change, pending.action).title}
+                  {actionDialog(pending.change, pending.action, pendingRepo ?? undefined).title}
                 </AlertDialogTitle>
                 <AlertDialogDescription className="text-[var(--text-secondary)] leading-relaxed">
-                  {actionDialog(pending.change, pending.action).body}
+                  {actionDialog(pending.change, pending.action, pendingRepo ?? undefined).body}
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              {pending.action !== "dismiss" && pending.action !== "reopen" && affectedRepos(pending.change).length > 1 && (
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)] mb-2">
+                    Repository
+                  </p>
+                  <RadioGroup
+                    value={pendingRepo ?? affectedRepos(pending.change)[0]}
+                    onValueChange={setPendingRepo}
+                    className="gap-2"
+                  >
+                    {affectedRepos(pending.change).map((repo) => (
+                      <label
+                        key={repo}
+                        className="flex items-center gap-2 rounded-md border border-[var(--border-color)] px-2.5 py-2 cursor-pointer"
+                      >
+                        <RadioGroupItem value={repo} />
+                        <span className="text-xs font-mono text-[var(--text-primary)]">{repo}</span>
+                      </label>
+                    ))}
+                  </RadioGroup>
+                </div>
+              )}
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   className={
-                    actionDialog(pending.change, pending.action).destructive
+                    actionDialog(pending.change, pending.action, pendingRepo ?? undefined).destructive
                       ? "bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
                       : "bg-primary hover:bg-primary/90 text-primary-foreground"
                   }
                   onClick={() => applyAction(pending.change, pending.action)}
                 >
-                  {actionDialog(pending.change, pending.action).confirm}
+                  {actionDialog(pending.change, pending.action, pendingRepo ?? undefined).confirm}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </>

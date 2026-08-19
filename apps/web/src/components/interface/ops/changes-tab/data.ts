@@ -1,9 +1,8 @@
 /**
  * Hardcoded project-change detections until subscribe backfill is live.
  *
- * Each row is a note × repository join. A project can import many repos;
- * the same provider note can appear once per repo with that repo's
- * inventory and status. A run is always one repo at one pinned SHA.
+ * A row is a provider note. `repo` / `repos` list which imports are
+ * affected. A run is always one of those repos at one pinned SHA.
  *
  * Rows tagged `source: "fixture"` copy identifiers, dates, and URLs from
  * pinned demo files. Rows tagged `source: "ui"` are layout fixtures so the
@@ -39,6 +38,8 @@ export interface ProjectChange {
   replacement?: string;
   migration?: "semantic" | "mechanical";
   repo?: string;
+  /** When a note hits more than one import. `repo` is the primary. */
+  repos?: string[];
   baseSha?: string;
   fileHits: number;
   fileCount: number;
@@ -381,6 +382,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     identifiers: ["seed", "numberOfImages", "aspectRatio"],
     fileHits: 3,
     fileCount: 1,
+    repo: "amelia751/egaki",
+    repos: ["amelia751/egaki", "example-org/localization-site"],
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 3, kind: "runtime" }],
     sourceUrls: [
       "https://ai.google.dev/gemini-api/docs/models/imagen",
@@ -420,6 +423,12 @@ export const HARDCODED_AFFECTED_COUNT = HARDCODED_PROJECT_CHANGES.filter(
 ).length;
 
 export const UNSCOPED_REPO = "unscoped";
+
+export function affectedRepos(change: { repo?: string; repos?: string[] }): string[] {
+  if (change.repos && change.repos.length > 0) return change.repos;
+  if (change.repo) return [change.repo];
+  return [];
+}
 
 export function repoOf(change: { repo?: string }): string {
   return change.repo ?? UNSCOPED_REPO;
