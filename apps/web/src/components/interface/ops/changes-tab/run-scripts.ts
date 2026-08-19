@@ -4,7 +4,7 @@
  */
 
 import type { ChangeActionId } from "./actions";
-import type { ProjectChange } from "./data";
+import { isDocsOnly, type ProjectChange } from "./data";
 
 export type RunBucket =
   | "active"
@@ -68,7 +68,7 @@ export function scriptFor(change: ProjectChange, action: ChangeActionId): RunTod
     ];
   }
 
-  if (action === "start" && change.status === "docs_only") {
+  if (action === "start" && isDocsOnly(change)) {
     return [
       todo("n", "Normalize the note", "Same ChangeManifest path as a runtime finding.", "Change Intelligence"),
       todo("m", "Classify inventory", "Hits are documentation and changelog only. No executable path.", "Impact"),
@@ -76,7 +76,7 @@ export function scriptFor(change: ProjectChange, action: ChangeActionId): RunTod
     ];
   }
 
-  if (action === "review" || change.status === "human_required") {
+  if (action === "review" || !change.replacement) {
     return [
       todo("n", "Normalize the note", `${change.title} → ChangeManifest. Identifiers kept as claims.`, "Change Intelligence"),
       todo("m", "Match inventory", `Find ${change.identifiers[0] ?? "identifiers"} in ${repo}.`, "Impact"),
@@ -135,7 +135,7 @@ function promptFor(change: ProjectChange, action: ChangeActionId): string {
   if (action === "prepare") {
     return `Prepare ${change.title} early against ${repo}. Draft impact only. Do not open a pull request until the note takes effect.`;
   }
-  if (action === "start" && change.status === "docs_only") {
+  if (action === "start" && isDocsOnly(change)) {
     return `Check ${change.title} anyway. Hits look documentation-only — confirm and stop if there is no runtime path.`;
   }
   if (action === "review") {

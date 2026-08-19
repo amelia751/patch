@@ -1,12 +1,11 @@
 /**
- * What a human can do from a change row.
+ * What a human can do from a release row.
  *
- * There is no "Approve fix" at this stage: no patch exists yet, and PatchAPI
- * never merges. The primary commitment is to start a remediation run that
- * stops at an evidence-backed pull request.
+ * Releases have three statuses. Human-required is a run pause, not a
+ * release state. Scheduled and docs-only are row facts, not statuses.
  */
 
-import type { DetectionStatus, ProjectChange } from "./data";
+import { isDocsOnly, isNotYetEffective, type DetectionStatus, type ProjectChange } from "./data";
 
 export type ChangeActionId = "start" | "review" | "prepare" | "dismiss" | "reopen";
 
@@ -16,7 +15,6 @@ export interface ChangeAction {
   id: ChangeActionId;
   label: string;
   tone: "primary" | "outline" | "ghost";
-  /** Shown on the collapsed row so Releases is not read-only. */
   onRow?: boolean;
 }
 
@@ -33,27 +31,27 @@ export function actionsFor(
   }
 
   switch (status) {
-    case "affected":
+    case "needs_you":
       return [
         { id: "start", label: "Start remediation", tone: "primary", onRow: true },
         { id: "dismiss", label: "Dismiss", tone: "ghost" },
       ];
-    case "human_required":
-      return [
-        { id: "review", label: "Review and continue", tone: "primary", onRow: true },
-        { id: "dismiss", label: "Dismiss", tone: "ghost" },
-      ];
-    case "docs_only":
-      return [
-        { id: "dismiss", label: "Keep as report-only", tone: "outline", onRow: true },
-        { id: "start", label: "Start anyway", tone: "ghost" },
-      ];
-    case "scheduled":
-      return [{ id: "prepare", label: "Prepare early", tone: "outline", onRow: true }];
-    case "ignored":
-      return [{ id: "reopen", label: "Reopen", tone: "outline" }];
     case "watching":
-      return [];
+      if (isNotYetEffective(change)) {
+        return [
+          { id: "prepare", label: "Prepare early", tone: "outline", onRow: true },
+          { id: "dismiss", label: "Dismiss", tone: "ghost" },
+        ];
+      }
+      if (isDocsOnly(change)) {
+        return [
+          { id: "dismiss", label: "Dismiss", tone: "ghost" },
+          { id: "start", label: "Start anyway", tone: "ghost" },
+        ];
+      }
+      return [{ id: "dismiss", label: "Dismiss", tone: "ghost" }];
+    case "dismissed":
+      return [{ id: "reopen", label: "Reopen", tone: "outline" }];
   }
 }
 
@@ -64,9 +62,6 @@ export function actionDialog(change: ProjectChange, action: ChangeActionId): {
   destructive?: boolean;
 } {
   const repo = change.repo ?? "this project's imported repositories";
-  const replacement = change.replacement
-    ? ` Replacement named in the note: ${change.replacement}.`
-    : " No replacement is named, so the run must fail closed rather than guess.";
 
   switch (action) {
     case "start":
@@ -75,31 +70,28 @@ export function actionDialog(change: ProjectChange, action: ChangeActionId): {
         body:
           (change.migration === "semantic"
             ? "This is a semantic migration, not a model-id rewrite. "
-            : change.status === "docs_only"
+            : isDocsOnly(change)
               ? "These hits are documentation only. Starting a run is unusual. "
               : "") +
           `PatchAPI will analyze ${repo}, generate a patch in isolation, verify it, and open a pull request. It will not merge.`,
-        confirm: change.status === "docs_only" ? "Start anyway" : "Start remediation",
+        confirm: isDocsOnly(change) ? "Start anyway" : "Start remediation",
       };
     case "review":
       return {
         title: `Continue ${change.title}?`,
-        body:
-          "Policy will not auto-patch this change. A human has to confirm the replacement and any option mapping." +
-          replacement +
-          ` The run still stops at a pull request against ${repo}.`,
+        body: `A human has to confirm the replacement. The run still stops at a pull request against ${repo}.`,
         confirm: "Continue",
       };
     case "prepare":
       return {
         title: `Prepare ${change.title} early?`,
-        body: `The note is not in effect yet. An early run still only opens a pull request against ${repo}. It does not merge or deploy.`,
+        body: `The note is not in effect yet. This drafts impact only. It does not open a pull request.`,
         confirm: "Prepare early",
       };
     case "dismiss":
       return {
         title: `Dismiss ${change.title}?`,
-        body: "This project will stop treating the note as something to remediate. You can reopen it from Ignored. Historical inventory is untouched.",
+        body: "This project will stop treating the note as something to remediate. You can reopen it from Dismissed.",
         confirm: "Dismiss",
         destructive: true,
       };

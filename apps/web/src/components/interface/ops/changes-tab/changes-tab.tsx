@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import {
   AlertDialog,
@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -49,7 +50,8 @@ import {
 } from "./actions";
 import {
   HARDCODED_PROJECT_CHANGES,
-  type DetectionSeverity,
+  isDocsOnly,
+  isNotYetEffective,
   type DetectionStatus,
   type FileHitKind,
   type ProjectChange,
@@ -60,29 +62,11 @@ const statusConfig: Record<
   DetectionStatus,
   { label: string; color: string; bgColor: string; dot: string }
 > = {
-  affected: {
-    label: "Affected",
+  needs_you: {
+    label: "Needs you",
     color: "text-red-500",
     bgColor: "bg-red-500/10 border-red-500/30",
     dot: "bg-red-500",
-  },
-  human_required: {
-    label: "Human required",
-    color: "text-amber-500",
-    bgColor: "bg-amber-500/10 border-amber-500/30",
-    dot: "bg-amber-500",
-  },
-  scheduled: {
-    label: "Scheduled",
-    color: "text-sky-400",
-    bgColor: "bg-sky-400/10 border-sky-400/30",
-    dot: "bg-sky-400",
-  },
-  docs_only: {
-    label: "Docs only",
-    color: "text-violet-400",
-    bgColor: "bg-violet-400/10 border-violet-400/30",
-    dot: "bg-violet-400",
   },
   watching: {
     label: "Watching",
@@ -90,30 +74,11 @@ const statusConfig: Record<
     bgColor: "bg-[var(--bg-tertiary)] border-[var(--border-color)]",
     dot: "bg-[var(--text-secondary)]",
   },
-  ignored: {
-    label: "Ignored",
+  dismissed: {
+    label: "Dismissed",
     color: "text-[var(--text-secondary)]",
     bgColor: "bg-[var(--bg-tertiary)] border-[var(--border-color)]",
     dot: "bg-[var(--bg-tertiary)]",
-  },
-};
-
-const severityConfig: Record<DetectionSeverity, { label: string; className: string }> = {
-  critical: {
-    label: "Critical",
-    className: "bg-red-500/10 text-red-500 border-red-500/30",
-  },
-  high: {
-    label: "High",
-    className: "bg-amber-500/10 text-amber-500 border-amber-500/30",
-  },
-  medium: {
-    label: "Medium",
-    className: "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--border-color)]",
-  },
-  low: {
-    label: "Low",
-    className: "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--border-color)]",
   },
 };
 
@@ -140,7 +105,62 @@ const fileKindLabel: Record<FileHitKind, string> = {
 
 const KIND_OPTIONS = Object.keys(CHANGE_KIND_LABELS) as ChangeKind[];
 const STATUS_OPTIONS = Object.keys(statusConfig) as DetectionStatus[];
-const SEVERITY_OPTIONS = Object.keys(severityConfig) as DetectionSeverity[];
+
+const FEATURED_KINDS: ChangeKind[] = [
+  "deprecation",
+  "breaking_change",
+  "feature",
+  "security",
+  "fix",
+];
+const MORE_KINDS = KIND_OPTIONS.filter((kind) => !FEATURED_KINDS.includes(kind));
+
+const KIND_DOT: Record<ChangeKind, string> = {
+  deprecation: "bg-red-400",
+  replacement: "bg-amber-400",
+  new_identifier: "bg-emerald-500",
+  breaking_change: "bg-red-400",
+  feature: "bg-emerald-500",
+  fix: "bg-sky-400",
+  issue: "bg-amber-400",
+  security: "bg-red-400",
+  announcement: "bg-[var(--text-secondary)]",
+  change: "bg-[var(--text-secondary)]",
+  libraries: "bg-sky-400",
+  other: "bg-[var(--text-secondary)]",
+};
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+  tone = "pill",
+}: {
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  tone?: "track" | "pill";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[11px] font-medium transition-colors",
+        tone === "track" &&
+          (active
+            ? "bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm"
+            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]/70"),
+        tone === "pill" &&
+          (active
+            ? "border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+            : "border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"),
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 function formatDay(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, {
@@ -170,7 +190,7 @@ function sourceLabel(url: string): string {
 function timingLabel(change: ProjectChange): string | null {
   if (!change.effectiveAt) return null;
   const day = formatDay(change.effectiveAt);
-  if (change.status === "scheduled" || !isPastDay(change.effectiveAt)) {
+  if (isNotYetEffective(change) || !isPastDay(change.effectiveAt)) {
     return `Takes effect ${day}`;
   }
   if (change.kind === "deprecation" || change.kind === "breaking_change") {
@@ -180,14 +200,14 @@ function timingLabel(change: ProjectChange): string | null {
 }
 
 function usageLabel(change: ProjectChange): string {
-  if (change.status === "docs_only") {
+  if (isDocsOnly(change)) {
     return `${change.fileHits} docs refs · no runtime`;
   }
-  if (change.status === "ignored") {
-    return "Not a finding";
-  }
-  if (change.status === "scheduled") {
+  if (isNotYetEffective(change)) {
     return "Not yet in effect";
+  }
+  if (change.status === "dismissed") {
+    return "Dismissed";
   }
   if (change.fileHits > 0) {
     return `${change.fileHits} refs in ${change.fileCount} files`;
@@ -211,8 +231,8 @@ export function ChangesInbox({
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DetectionStatus | "all">("all");
-  const [severityFilter, setSeverityFilter] = useState<DetectionSeverity | "all">("all");
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [bannerOpen, setBannerOpen] = useState(true);
   const [statusOverride, setStatusOverride] = useState<Record<string, DetectionStatus>>({});
   const [pending, setPending] = useState<{
@@ -225,7 +245,7 @@ export function ChangesInbox({
   const [expandedChanges, setExpandedChanges] = useState<Set<string>>(
     () =>
       new Set(
-        HARDCODED_PROJECT_CHANGES.filter((change) => change.status === "affected" && change.source === "fixture").map(
+        HARDCODED_PROJECT_CHANGES.filter((change) => change.status === "needs_you" && change.source === "fixture").map(
           (c) => c.id,
         ),
       ),
@@ -236,7 +256,6 @@ export function ChangesInbox({
     return HARDCODED_PROJECT_CHANGES.filter((change) => {
       const status = statusOverride[change.id] ?? change.status;
       if (statusFilter !== "all" && status !== statusFilter) return false;
-      if (severityFilter !== "all" && change.severity !== severityFilter) return false;
       if (kindFilter !== "all" && change.kind !== kindFilter) return false;
       if (!q) return true;
       const haystack = [
@@ -254,7 +273,7 @@ export function ChangesInbox({
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [kindFilter, searchQuery, severityFilter, statusFilter, statusOverride]);
+  }, [kindFilter, searchQuery, statusFilter, statusOverride]);
 
   const byProvider = useMemo(() => {
     const groups = new Map<string, ProjectChange[]>();
@@ -270,16 +289,20 @@ export function ChangesInbox({
     const tally = (status: DetectionStatus) =>
       HARDCODED_PROJECT_CHANGES.filter((c) => c.status === status).length;
     return {
-      affected: tally("affected"),
-      humanRequired: tally("human_required"),
-      docsOnly: tally("docs_only"),
-      scheduled: tally("scheduled"),
+      needsYou: tally("needs_you"),
       watching: tally("watching"),
-      ignored: tally("ignored"),
+      dismissed: tally("dismissed"),
     };
   }, []);
 
-  const filtersActive = Boolean(searchQuery) || statusFilter !== "all" || severityFilter !== "all" || kindFilter !== "all";
+  const filtersActive = Boolean(searchQuery) || statusFilter !== "all" || kindFilter !== "all";
+  const moreKindActive = kindFilter !== "all" && MORE_KINDS.includes(kindFilter);
+  const resetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setKindFilter("all");
+    setMoreOpen(false);
+  };
 
   const toggleProvider = (provider: string) => {
     setExpandedProviders((prev) => {
@@ -306,7 +329,7 @@ export function ChangesInbox({
 
   const applyAction = (change: ProjectChange, action: ChangeActionId) => {
     if (action === "dismiss") {
-      setStatusOverride((prev) => ({ ...prev, [change.id]: "ignored" }));
+      setStatusOverride((prev) => ({ ...prev, [change.id]: "dismissed" }));
     } else if (action === "reopen") {
       setStatusOverride((prev) => {
         const next = { ...prev };
@@ -344,7 +367,7 @@ export function ChangesInbox({
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-primary)]">
-      <div className="border-b border-[var(--border-color)] p-4 space-y-3">
+      <div className="border-b border-[var(--border-color)] px-4 pt-4 pb-3 space-y-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)]" />
@@ -352,8 +375,18 @@ export function ChangesInbox({
               placeholder="Search kinds, models, files, statuses…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 pl-9 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+              className="h-8 pl-9 pr-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 inline-flex items-center justify-center rounded-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                aria-label="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
           <Select
             value={statusFilter}
@@ -378,50 +411,102 @@ export function ChangesInbox({
               ))}
             </SelectContent>
           </Select>
-          <Select
-            value={kindFilter}
-            onValueChange={(value) => setKindFilter(value as ChangeKind | "all")}
-          >
-            <SelectTrigger className="h-8 w-[150px] text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
-              <SelectItem value="all" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">
-                All types
-              </SelectItem>
-              {KIND_OPTIONS.map((kind) => (
-                <SelectItem
+        </div>
+
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Type
+          </span>
+            <div className="inline-flex flex-wrap items-center gap-1">
+              <FilterChip active={kindFilter === "all"} onClick={() => setKindFilter("all")}>
+                All
+              </FilterChip>
+              {FEATURED_KINDS.map((kind) => (
+                <FilterChip
                   key={kind}
-                  value={kind}
-                  className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
+                  active={kindFilter === kind}
+                  onClick={() => setKindFilter(kindFilter === kind ? "all" : kind)}
                 >
-                  {CHANGE_KIND_LABELS[kind]}
-                </SelectItem>
+                  <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kind])} />
+                  {kind === "breaking_change" ? "Breaking" : CHANGE_KIND_LABELS[kind]}
+                </FilterChip>
               ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={severityFilter}
-            onValueChange={(value) => setSeverityFilter(value as DetectionSeverity | "all")}
-          >
-            <SelectTrigger className="h-8 w-[130px] text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
-              <SelectValue placeholder="Severity" />
-            </SelectTrigger>
-            <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
-              <SelectItem value="all" className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]">
-                All severity
-              </SelectItem>
-              {SEVERITY_OPTIONS.map((severity) => (
-                <SelectItem
-                  key={severity}
-                  value={severity}
-                  className="text-xs text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
+              <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-[11px] font-medium transition-colors",
+                      "bg-[var(--bg-secondary)] border-[var(--border-color)]",
+                      moreKindActive
+                        ? "text-[var(--text-primary)]"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]",
+                    )}
+                  >
+                    {moreKindActive ? (
+                      <>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kindFilter])} />
+                        {CHANGE_KIND_LABELS[kindFilter]}
+                      </>
+                    ) : (
+                      "More"
+                    )}
+                    <ChevronDown className="h-3 w-3 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="z-[200] w-52 p-1.5 border-[var(--border-color)] bg-[var(--bg-primary)]"
                 >
-                  {severityConfig[severity].label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  {MORE_KINDS.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => {
+                        setKindFilter(kindFilter === kind ? "all" : kind);
+                        setMoreOpen(false);
+                      }}
+                      className={cn(
+                        "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-left transition-colors",
+                        kindFilter === kind
+                          ? "bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]",
+                      )}
+                    >
+                      <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kind])} />
+                      {CHANGE_KIND_LABELS[kind]}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+            </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            {`${filtered.length.toLocaleString()} ${filtered.length === 1 ? "change" : "changes"}`}
+            {statusFilter !== "all" && (
+              <>
+                <span className="mx-1.5 text-[var(--border-color)]">·</span>
+                {statusConfig[statusFilter].label.toLowerCase()}
+              </>
+            )}
+            {kindFilter !== "all" && (
+              <>
+                <span className="mx-1.5 text-[var(--border-color)]">·</span>
+                {CHANGE_KIND_LABELS[kindFilter].toLowerCase()}
+              </>
+            )}
+          </p>
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
@@ -432,17 +517,12 @@ export function ChangesInbox({
               <Bell className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-[var(--text-primary)]">
-                  {counts.affected + counts.humanRequired} change
-                  {counts.affected + counts.humanRequired === 1 ? "" : "s"} need attention
+                  {counts.needsYou} {counts.needsYou === 1 ? "release needs" : "releases need"} you
                 </p>
                 <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-relaxed">
-                  {counts.affected} affected
-                  {counts.humanRequired ? ` · ${counts.humanRequired} human required` : ""}
-                  {counts.docsOnly ? ` · ${counts.docsOnly} docs only` : ""}
-                  {counts.scheduled ? ` · ${counts.scheduled} scheduled` : ""}
-                  {counts.watching ? ` · ${counts.watching} watching` : ""}
-                  {counts.ignored ? ` · ${counts.ignored} ignored` : ""}
-                  . Includes deprecations that already took effect.
+                  {counts.watching} watching
+                  {counts.dismissed ? ` · ${counts.dismissed} dismissed` : ""}.
+                  Includes notes that already took effect.
                 </p>
               </div>
               <button
@@ -468,12 +548,9 @@ export function ChangesInbox({
           ) : (
             Array.from(byProvider.entries()).map(([provider, changes]) => {
               const isExpanded = expandedProviders.has(provider);
-              const groupAffected = changes.filter((c) => displayStatus(c) === "affected").length;
-              const groupHuman = changes.filter((c) => displayStatus(c) === "human_required").length;
-              const groupDocs = changes.filter((c) => displayStatus(c) === "docs_only").length;
-              const groupScheduled = changes.filter((c) => displayStatus(c) === "scheduled").length;
+              const groupNeedsYou = changes.filter((c) => displayStatus(c) === "needs_you").length;
               const groupWatching = changes.filter((c) => displayStatus(c) === "watching").length;
-              const groupIgnored = changes.filter((c) => displayStatus(c) === "ignored").length;
+              const groupDismissed = changes.filter((c) => displayStatus(c) === "dismissed").length;
               const logo =
                 changes[0]?.providerSlug === "google"
                   ? "/google-cloud.svg"
@@ -511,23 +588,14 @@ export function ChangesInbox({
                           </Badge>
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-[10px] flex-wrap">
-                          {groupAffected > 0 && (
-                            <span className="text-red-500">● {groupAffected} Affected</span>
-                          )}
-                          {groupHuman > 0 && (
-                            <span className="text-amber-500">● {groupHuman} Human required</span>
-                          )}
-                          {groupDocs > 0 && (
-                            <span className="text-violet-400">● {groupDocs} Docs only</span>
-                          )}
-                          {groupScheduled > 0 && (
-                            <span className="text-sky-400">● {groupScheduled} Scheduled</span>
+                          {groupNeedsYou > 0 && (
+                            <span className="text-red-500">● {groupNeedsYou} Need you</span>
                           )}
                           {groupWatching > 0 && (
                             <span className="text-[var(--text-secondary)]">● {groupWatching} Watching</span>
                           )}
-                          {groupIgnored > 0 && (
-                            <span className="text-[var(--text-secondary)]">● {groupIgnored} Ignored</span>
+                          {groupDismissed > 0 && (
+                            <span className="text-[var(--text-secondary)]">● {groupDismissed} Dismissed</span>
                           )}
                         </div>
                       </div>
@@ -548,7 +616,6 @@ export function ChangesInbox({
                         const available = actionsFor(change, run, resolvedStatus);
                         const rowAction = available.find((item) => item.onRow);
                         const status = statusConfig[resolvedStatus];
-                        const severity = severityConfig[change.severity];
                         const when = timingLabel(change);
 
                         return (
@@ -581,9 +648,6 @@ export function ChangesInbox({
                                       </span>
                                       <Badge variant="outline" className={cn("text-[9px]", status.bgColor, status.color)}>
                                         {status.label}
-                                      </Badge>
-                                      <Badge variant="outline" className={cn("text-[9px]", severity.className)}>
-                                        {severity.label}
                                       </Badge>
                                       <Badge
                                         variant="outline"

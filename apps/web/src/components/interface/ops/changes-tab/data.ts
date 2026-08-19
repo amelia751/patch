@@ -9,15 +9,7 @@
 
 import type { ChangeKind } from "@/components/interface/provider/data";
 
-export type DetectionStatus =
-  | "affected"
-  | "watching"
-  | "docs_only"
-  | "human_required"
-  | "scheduled"
-  | "ignored";
-
-export type DetectionSeverity = "critical" | "high" | "medium" | "low";
+export type DetectionStatus = "needs_you" | "watching" | "dismissed";
 
 export type FileHitKind = "runtime" | "documentation" | "changelog";
 
@@ -36,7 +28,6 @@ export interface ProjectChange {
   summary: string;
   kind: ChangeKind;
   status: DetectionStatus;
-  severity: DetectionSeverity;
   announcedAt?: string;
   effectiveAt?: string;
   identifiers: string[];
@@ -62,8 +53,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "Imagen 4 generate models stop resolving. Gemini native image generation is a different request surface, not a string rewrite.",
     kind: "deprecation",
-    status: "affected",
-    severity: "critical",
+    status: "needs_you",
     announcedAt: "2026-06-24",
     effectiveAt: "2026-08-17",
     identifiers: [
@@ -115,7 +105,6 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
       "gemini-2.0-flash identifiers retire. No usages in this project, so the note is watched and not opened as a finding.",
     kind: "deprecation",
     status: "watching",
-    severity: "high",
     effectiveAt: "2026-06-01",
     identifiers: [
       "gemini-2.0-flash",
@@ -143,8 +132,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "The pinned Egaki catalog still names the preview id. The provider replacement is a claim — the installed SDK must resolve it before a patch writes it.",
     kind: "replacement",
-    status: "human_required",
-    severity: "high",
+    status: "needs_you",
     effectiveAt: "2026-07-17",
     identifiers: ["gemini-3.1-flash-image-preview"],
     identifierCounts: { "gemini-3.1-flash-image-preview": 4 },
@@ -169,7 +157,6 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary: "New identifier on the generateContent surface. Nothing in this project needs to move because of it.",
     kind: "new_identifier",
     status: "watching",
-    severity: "low",
     effectiveAt: "2026-08-12",
     identifiers: ["gemini-3.5-flash"],
     replacement: "gemini-3.5-flash",
@@ -188,8 +175,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "The retired id appears in Markdown prose and a changelog entry. No source, config, or test path. Report-only — do not open a remediation run.",
     kind: "deprecation",
-    status: "docs_only",
-    severity: "low",
+    status: "watching",
     effectiveAt: "2026-08-17",
     identifiers: ["imagen-4.0-generate-001"],
     identifierCounts: { "imagen-4.0-generate-001": 2 },
@@ -213,8 +199,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "A third-party fal.ai-hosted model whose id contains imagen4. Not a Google first-party endpoint. Editing it is an unnecessary change.",
     kind: "other",
-    status: "ignored",
-    severity: "low",
+    status: "dismissed",
     identifiers: ["fal-ai/imagen4/preview"],
     identifierCounts: { "fal-ai/imagen4/preview": 1 },
     fileHits: 1,
@@ -232,8 +217,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "Substring match on the Spanish word for image. Correct result is no finding and no run.",
     kind: "other",
-    status: "ignored",
-    severity: "low",
+    status: "watching",
     identifiers: [],
     repo: "example-org/localization-site",
     fileHits: 0,
@@ -253,8 +237,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "The vertex/ prefix is a routing decision, not a different model. A migration that only rewrites bare ids leaves Vertex callers broken.",
     kind: "breaking_change",
-    status: "human_required",
-    severity: "critical",
+    status: "needs_you",
     effectiveAt: "2026-08-17",
     identifiers: [
       "vertex/imagen-4.0-generate-001",
@@ -283,8 +266,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "Hits in a changelog are evidence the old id existed, not a call site to patch. Add a new entry instead of editing the past.",
     kind: "change",
-    status: "ignored",
-    severity: "low",
+    status: "watching",
     identifiers: ["imagen-4.0-generate-001"],
     identifierCounts: { "imagen-4.0-generate-001": 7 },
     fileHits: 7,
@@ -302,8 +284,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "Layout fixture: a published note whose effective day is still ahead. Banner should not treat this as already broken.",
     kind: "announcement",
-    status: "scheduled",
-    severity: "medium",
+    status: "watching",
     announcedAt: "2026-08-18",
     effectiveAt: "2026-09-30",
     identifiers: [],
@@ -322,7 +303,6 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary: "Layout fixture: a feature write-up that never becomes a finding. Empty identifier list, no shutdown line.",
     kind: "feature",
     status: "watching",
-    severity: "low",
     identifiers: [],
     fileHits: 0,
     fileCount: 0,
@@ -336,10 +316,9 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     providerSlug: "google",
     product: "Security",
     title: "Security bulletin with no public source URL yet",
-    summary: "Layout fixture: severity is high but PatchAPI has no release-note link to open. Fail closed on the link, not on the row.",
+    summary: "Layout fixture: PatchAPI has no release-note link to open. Fail closed on the link, not on the row.",
     kind: "security",
     status: "watching",
-    severity: "high",
     effectiveAt: "2026-08-01",
     identifiers: [],
     fileHits: 0,
@@ -357,7 +336,6 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary: "Layout fixture: a library note. Mechanical if a lockfile matches; watching when it does not.",
     kind: "libraries",
     status: "watching",
-    severity: "medium",
     identifiers: ["@google/genai"],
     fileHits: 0,
     fileCount: 0,
@@ -373,8 +351,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     title: "Fix",
     summary: "Layout fixture: shortest title, one file, one hit.",
     kind: "fix",
-    status: "affected",
-    severity: "medium",
+    status: "needs_you",
     effectiveAt: "2026-08-10",
     identifiers: ["generateContent"],
     identifierCounts: { generateContent: 1 },
@@ -394,8 +371,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary:
       "Layout fixture: a wrapping title and a long summary so the row, badges, and expanded copy do not collide. HUMAN_REQUIRED because there is no safe silent drop.",
     kind: "issue",
-    status: "human_required",
-    severity: "medium",
+    status: "needs_you",
     announcedAt: "2026-08-05",
     effectiveAt: "2026-08-17",
     identifiers: ["seed", "numberOfImages", "aspectRatio"],
@@ -417,7 +393,6 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     summary: "Layout fixture: kind=other, no dates, no identifiers, no replacement, no links, no files.",
     kind: "other",
     status: "watching",
-    severity: "low",
     identifiers: [],
     fileHits: 0,
     fileCount: 0,
@@ -427,6 +402,15 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
   },
 ];
 
+export function isDocsOnly(change: ProjectChange): boolean {
+  return change.files.length > 0 && change.files.every((file) => file.kind !== "runtime");
+}
+
+export function isNotYetEffective(change: ProjectChange): boolean {
+  if (!change.effectiveAt) return false;
+  return new Date(`${change.effectiveAt}T00:00:00Z`) > new Date();
+}
+
 export const HARDCODED_AFFECTED_COUNT = HARDCODED_PROJECT_CHANGES.filter(
-  (change) => change.status === "affected" || change.status === "human_required",
+  (change) => change.status === "needs_you",
 ).length;
