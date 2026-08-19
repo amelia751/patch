@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Bell, Cloud, Github, Info, Code, Store } from "lucide-react";
+import { Cloud, FilePlus2, Github, Info, Code, Store } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/lib/auth-context";
 import { useProject } from "@/lib/project-context";
@@ -746,7 +746,7 @@ function SystemPageContent() {
               )}
             </TabsTrigger>
             <TabsTrigger value="changes" className="flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[11px] font-medium transition-all data-[state=active]:bg-[var(--bg-primary)] data-[state=active]:text-[var(--text-tertiary)] data-[state=active]:shadow relative">
-              <Bell className="w-3 h-3 mr-2" />
+              <FilePlus2 className="w-3 h-3 mr-2" />
               Changes
               {changesBadgeCount > 0 && (
                 <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold px-1">
