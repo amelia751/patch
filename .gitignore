@@ -1,7 +1,9 @@
 # ---------------------------------------------------------------------------
 # Agent tooling (local-only, never committed)
 # ---------------------------------------------------------------------------
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 .claude/
 .fleet/
 .gemini/
