@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Check,
+  GitBranch,
   GitPullRequest,
   Loader2,
   Lock,
@@ -193,7 +194,7 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
         </div>
       )}
 
-      <div className="flex items-stretch border-b border-[var(--border-color)] px-2">
+      <div className="flex items-stretch w-full border-b border-[var(--border-color)]">
         {(["base", "sandbox", "proposed"] as TreeId[]).map((id) => {
           const open = treeAvailable(run.machine, id);
           const selected = tree === id;
@@ -204,7 +205,7 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
               disabled={!open}
               onClick={() => setPicked(id)}
               className={cn(
-                "px-3 pt-2.5 pb-2 text-left border-b-2 -mb-px transition-colors min-w-0",
+                "flex-1 min-w-0 px-4 pt-2.5 pb-2 text-left border-b-2 -mb-px transition-colors",
                 selected
                   ? "border-[var(--text-primary)] text-[var(--text-primary)]"
                   : "border-transparent text-[var(--text-secondary)]",
@@ -212,11 +213,25 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
               )}
             >
               <p className="text-[11px] font-medium">{TREE_COPY[id].label}</p>
-              <p className="text-[10px] font-mono truncate mt-0.5">
-                {id === "base" && `${shortSha(run.baseSha)}`}
-                {id === "sandbox" && (open ? `worktree · ${shortSha(run.baseSha)}` : "not allocated")}
-                {id === "proposed" && (open ? run.prBranch : "not verified")}
-              </p>
+              <div className="mt-1">
+                {id === "base" && (
+                  <BranchChip name="main" sha={shortSha(run.baseSha)} muted={!selected} />
+                )}
+                {id === "sandbox" &&
+                  (open ? (
+                    <p className="text-[10px] font-mono text-[var(--text-secondary)] truncate">
+                      worktree · {shortSha(run.baseSha)}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-[var(--text-secondary)]">not allocated</p>
+                  ))}
+                {id === "proposed" &&
+                  (open && run.prBranch ? (
+                    <BranchChip name={run.prBranch} active={selected} />
+                  ) : (
+                    <p className="text-[10px] text-[var(--text-secondary)]">not verified</p>
+                  ))}
+              </div>
             </button>
           );
         })}
@@ -296,60 +311,53 @@ function StateRail({ machine }: { machine: MachineState }) {
 }
 
 function BaseTree({ run }: { run: MockRun }) {
-  const runtime = run.files.filter((file) => file.kind === "runtime").length;
+  const runtime = run.files.filter((file) => file.kind === "runtime");
+  const other = run.files.filter((file) => file.kind !== "runtime");
+
+  if (run.files.length === 0 && run.identifiers.length === 0) {
+    return (
+      <p className="text-[12px] text-[var(--text-secondary)]">
+        No usages at this SHA. A sandbox will not be allocated from an empty join.
+      </p>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Meta label="Hits" value={run.fileHits ? String(run.fileHits) : "0"} />
-        <Meta label="Files" value={run.fileCount ? String(run.fileCount) : "0"} />
-        <Meta label="Runtime paths" value={String(runtime)} />
-      </div>
-
+    <div className="space-y-3">
       {run.identifiers.length > 0 && (
-        <section>
-          <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Identifiers at this SHA
-          </h3>
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {run.identifiers.map((id) => (
-              <span
-                key={id}
-                className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-primary)]"
-              >
-                {id}
-              </span>
-            ))}
-          </div>
-        </section>
+        <p className="text-[11px] font-mono text-[var(--text-secondary)] leading-relaxed">
+          {run.identifiers.join("  ·  ")}
+        </p>
       )}
 
-      <section>
-        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-          Inventory
-        </h3>
-        {run.files.length === 0 ? (
-          <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
-            No usages at this SHA. A sandbox will not be allocated from an empty join.
-          </p>
-        ) : (
-          <ul className="mt-1.5 border border-[var(--border-color)] rounded-md divide-y divide-[var(--border-color)]">
-            {run.files.map((file) => (
-              <li
-                key={file.path}
-                className="flex items-center justify-between gap-3 px-3 py-1.5 font-mono text-[11px]"
-              >
-                <span className="text-[var(--text-primary)] truncate">{file.path}</span>
-                <span className="text-[var(--text-secondary)] shrink-0">
-                  {file.kind ?? "file"}
-                  <span className="mx-1">·</span>
-                  {file.hits}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {runtime.length > 0 && (
+        <ul className="space-y-1">
+          {runtime.map((file) => (
+            <li
+              key={file.path}
+              className="flex items-baseline justify-between gap-4 text-[12px]"
+            >
+              <span className="font-mono text-[var(--text-primary)] truncate">{file.path}</span>
+              <span className="font-mono text-[11px] tabular-nums text-[var(--text-secondary)] shrink-0">
+                {file.hits}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {other.length > 0 && (
+        <p className="text-[11px] text-[var(--text-secondary)]">
+          {other.length} documentation and changelog
+          {other.length === 1 ? " file" : " files"} — not in the patch
+        </p>
+      )}
+
+      {runtime.length === 0 && other.length > 0 && (
+        <p className="text-[12px] text-[var(--text-secondary)]">
+          No runtime path at this SHA.
+        </p>
+      )}
     </div>
   );
 }
@@ -409,10 +417,12 @@ function ProposedTree({ run }: { run: MockRun }) {
       {run.machine === "PR_CREATED" && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-[var(--text-primary)] truncate">
-              {run.prBranch} → main
-            </p>
-            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <BranchChip name={run.prBranch ?? "proposed"} active />
+              <span className="text-[11px] text-[var(--text-secondary)] shrink-0">→</span>
+              <BranchChip name="main" muted />
+            </div>
+            <p className="text-[11px] text-[var(--text-secondary)] mt-1.5">
               {run.repo ?? "repo"} · review on GitHub · PatchAPI does not merge
             </p>
           </div>
@@ -534,6 +544,36 @@ function LiveCursor({ line, startedAt }: { line: AgentLogLine; startedAt: number
         <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">{elapsed}s</span>
       )}
     </div>
+  );
+}
+
+function BranchChip({
+  name,
+  sha,
+  active,
+  muted,
+}: {
+  name: string;
+  sha?: string;
+  active?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border max-w-full",
+        active
+          ? "bg-primary/10 border-primary/30 text-primary"
+          : "bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-secondary)]",
+        muted && !active && "opacity-70",
+      )}
+    >
+      <GitBranch className="h-3 w-3 shrink-0 opacity-70" />
+      <span className="font-mono text-[11px] truncate">{name}</span>
+      {sha && (
+        <span className="font-mono text-[10px] opacity-70 shrink-0">{sha}</span>
+      )}
+    </span>
   );
 }
 

@@ -316,6 +316,12 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   return lines;
 }
 
+function branchName(changeId: string): string {
+  const slug = changeId.replace(/[^a-z0-9]+/gi, "-").replace(/-+$/g, "");
+  const withoutDay = slug.replace(/-\d{4}-\d{2}-\d{2}$/, "");
+  return `patchapi/${withoutDay}`;
+}
+
 function checksFor(change: ProjectChange): VerifyCheck[] {
   return [
     { name: "Identifiers mapped as the manifest specifies", passed: Boolean(change.replacement) },
@@ -356,7 +362,7 @@ export function createRun(change: ProjectChange, action: ChangeActionId, seq: nu
     log,
     revealed: Math.min(1, log.length),
     lineStartedAt: Date.now(),
-    prBranch: `patchapi/${change.id.replace(/[^a-z0-9]+/gi, "-").slice(0, 28)}`,
+    prBranch: branchName(change.id),
     traceId: `trc-${Math.random().toString(16).slice(2, 10)}`,
   };
 }
