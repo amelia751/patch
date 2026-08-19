@@ -64,6 +64,7 @@ import {
   isDocsOnly,
   isNotYetEffective,
   affectedRepos,
+  repoTitle,
   runKey,
   type DetectionStatus,
   type FileHitKind,
@@ -251,13 +252,9 @@ function noteTitle(change: ProjectChange): string {
 }
 
 function RepoLabel({ repo }: { repo: string }) {
-  const slash = repo.lastIndexOf("/");
-  const owner = slash > 0 ? repo.slice(0, slash) : null;
-  const name = slash > 0 ? repo.slice(slash + 1) : repo;
   return (
-    <span className="min-w-0 truncate text-xs">
-      {owner && <span className="text-[var(--text-secondary)]">{owner}/</span>}
-      <span className="font-medium text-[var(--text-primary)]">{name}</span>
+    <span className="min-w-0 truncate text-xs font-medium text-[var(--text-primary)]">
+      {repoTitle(repo)}
     </span>
   );
 }
@@ -902,7 +899,7 @@ export function ChangesInbox({
                                         Repository
                                       </label>
                                       <p className="text-xs font-mono text-[var(--text-primary)] mt-1">
-                                        {affectedRepos(change).join(" · ")}
+                                        {affectedRepos(change).map(repoTitle).join(" · ")}
                                       </p>
                                     </div>
                                   )}
