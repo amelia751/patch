@@ -12,9 +12,6 @@ interface TerminalBlockProps {
   className?: string;
 }
 
-/** Max output lines shown per command before capping */
-const OUTPUT_CAP = 16;
-
 interface ParsedCommand {
   command: string;
   output: string[];
@@ -113,10 +110,9 @@ function CommandEntry({
   isLast: boolean;
   prismTheme: Record<string, React.CSSProperties>;
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const hasOutput = cmd.output.length > 0;
-  const isCapped = cmd.output.length > OUTPUT_CAP;
 
   // Detect language hint from command
   const lang = cmd.command.startsWith("powershell") || cmd.command.startsWith("pwsh")
@@ -125,13 +121,22 @@ function CommandEntry({
 
   return (
     <div className={cn(!isLast && "border-b border-[var(--border-color)]")}>
-      {/* Command line — syntax highlighted with expand icon on right */}
       <div
+        role={hasOutput ? "button" : undefined}
+        tabIndex={hasOutput ? 0 : undefined}
+        aria-expanded={hasOutput ? isExpanded : undefined}
+        onClick={() => hasOutput && setIsExpanded((open) => !open)}
+        onKeyDown={(event) => {
+          if (!hasOutput) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setIsExpanded((open) => !open);
+          }
+        }}
         className={cn(
-          "flex items-start gap-0",
-          hasOutput && "cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors"
+          "flex w-full items-start gap-0 text-left",
+          hasOutput && "cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors",
         )}
-        onClick={hasOutput ? () => setIsExpanded(!isExpanded) : undefined}
       >
         <span className="text-emerald-500 select-none flex-shrink-0 text-[11px] leading-[1.5] pl-3 py-1" style={{ fontFamily: MONO_FONT }}>$</span>
         <div className="flex-1 min-w-0 overflow-hidden">
@@ -168,16 +173,15 @@ function CommandEntry({
           <ChevronRight
             className={cn(
               "h-3 w-3 text-[var(--text-secondary)] flex-shrink-0 mt-1.5 mr-3 transition-transform",
-              isExpanded && "rotate-90"
+              isExpanded && "rotate-90",
             )}
           />
         )}
       </div>
 
-      {/* Output — capped with expand */}
-      {hasOutput && (isExpanded || cmd.output.length <= OUTPUT_CAP) && (
-        <div className="px-3 pb-1">
-          {(isExpanded ? cmd.output : cmd.output.slice(0, OUTPUT_CAP)).map((line, idx) => (
+      {hasOutput && isExpanded && (
+        <div className="px-3 pb-2">
+          {cmd.output.map((line, idx) => (
             <div
               key={idx}
               className={cn(
@@ -191,29 +195,6 @@ function CommandEntry({
               {line || " "}
             </div>
           ))}
-          {isCapped && isExpanded && (
-            <div className="text-[10px] text-[var(--text-secondary)] opacity-50 mt-0.5">
-              {cmd.output.length} lines total
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Collapsed preview — show first OUTPUT_CAP lines when not expanded and has more */}
-      {hasOutput && !isExpanded && cmd.output.length > OUTPUT_CAP && (
-        <div className="px-3 pb-1">
-          {cmd.output.slice(0, OUTPUT_CAP).map((line, idx) => (
-            <div
-              key={idx}
-              className="text-[var(--text-secondary)] text-[11px] whitespace-pre-wrap break-all leading-[1.5] opacity-60"
-              style={{ fontFamily: MONO_FONT }}
-            >
-              {line || " "}
-            </div>
-          ))}
-          <div className="text-[10px] text-[var(--text-secondary)] opacity-50 mt-0.5">
-            +{cmd.output.length - OUTPUT_CAP} more lines
-          </div>
         </div>
       )}
     </div>
