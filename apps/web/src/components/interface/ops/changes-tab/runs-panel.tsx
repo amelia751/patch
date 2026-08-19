@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -69,6 +69,14 @@ function statusBar(bucket: RunBucket): string {
   if (bucket === "ready_for_review") return "bg-emerald-500";
   if (bucket === "blocked") return "bg-red-500";
   return "bg-[var(--text-secondary)]";
+}
+
+function statusPill(bucket: RunBucket): string {
+  if (bucket === "active") return "border-sky-400/30 bg-sky-400/10 text-sky-400";
+  if (bucket === "needs_attention") return "border-amber-500/30 bg-amber-500/10 text-amber-500";
+  if (bucket === "ready_for_review") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-500";
+  if (bucket === "blocked") return "border-red-500/30 bg-red-500/10 text-red-500";
+  return "border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)]";
 }
 
 function shortSha(sha?: string): string {
@@ -328,24 +336,54 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
   return (
     <div className="flex-1 min-w-0 flex flex-col">
       <div className="px-5 pt-4 pb-3 border-b border-[var(--border-color)]">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] text-[var(--text-secondary)] font-mono">{run.code}</p>
-            <h2 className="text-[15px] font-semibold text-[var(--text-primary)] mt-1 tracking-tight">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-[10px] font-medium uppercase tracking-wide",
+                statusPill(run.bucket),
+              )}
+            >
+              <span className={cn("h-1.5 w-1.5 rounded-full", statusDot(run.bucket))} />
+              {MACHINE_LABEL[run.machine]}
+            </span>
+            <h2 className="mt-2.5 text-[17px] font-semibold tracking-tight leading-snug text-[var(--text-primary)]">
               {run.title}
             </h2>
-            <p className="text-[12px] font-mono text-[var(--text-secondary)] mt-1.5 truncate">
-              {repo}
-              <span className="mx-1">@</span>
-              {shortSha(run.baseSha)}
-              <span className="mx-1.5 font-sans">·</span>
-              <span className="font-sans">
-                attempt {run.attempt} of {run.attemptBudget}
-              </span>
-              <span className="mx-1.5 font-sans">·</span>
-              <span className="font-sans">simulated</span>
-            </p>
           </div>
+          <span className="shrink-0 mt-0.5 font-mono text-[10px] text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-tertiary)]">
+            {run.code}
+          </span>
+        </div>
+
+        <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+          <FactChip icon={run.repo ? <Github className="h-3 w-3 shrink-0 opacity-70" /> : <Radio className="h-3 w-3 shrink-0 opacity-70" />}>
+            {run.repo ? <RepoName repo={run.repo} /> : repo}
+          </FactChip>
+          {run.baseSha && (
+            <FactChip icon={<GitBranch className="h-3 w-3 shrink-0 opacity-70" />} mono>
+              {shortSha(run.baseSha)}
+            </FactChip>
+          )}
+          <FactChip>
+            <span className="flex items-center gap-1.5">
+              <span>Attempt</span>
+              <span className="flex items-center gap-0.5">
+                {Array.from({ length: run.attemptBudget }, (_, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      i < run.attempt ? "bg-[var(--text-primary)]" : "bg-[var(--border-color)]",
+                    )}
+                  />
+                ))}
+              </span>
+            </span>
+          </FactChip>
+          <span className="ml-1 text-[10px] uppercase tracking-wider text-[var(--text-secondary)]/70">
+            Simulated
+          </span>
         </div>
         <StateRail machine={run.machine} />
       </div>
@@ -809,6 +847,39 @@ function PullRequestCard({ run }: { run: MockRun }) {
         )}
       </div>
     </div>
+  );
+}
+
+function RepoName({ repo }: { repo: string }) {
+  const slash = repo.lastIndexOf("/");
+  if (slash <= 0) return <span className="truncate">{repo}</span>;
+  return (
+    <span className="truncate">
+      <span className="opacity-70">{repo.slice(0, slash)}/</span>
+      {repo.slice(slash + 1)}
+    </span>
+  );
+}
+
+function FactChip({
+  icon,
+  children,
+  mono,
+}: {
+  icon?: ReactNode;
+  children: ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 h-6 px-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-tertiary)] text-[11px] text-[var(--text-secondary)] max-w-full",
+        mono && "font-mono",
+      )}
+    >
+      {icon}
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
