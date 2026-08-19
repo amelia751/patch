@@ -180,7 +180,7 @@ function CommandEntry({
       </div>
 
       {hasOutput && isExpanded && (
-        <div className="px-3 pb-2">
+        <div className="max-h-40 overflow-auto px-3 pb-2">
           {cmd.output.map((line, idx) => (
             <div
               key={idx}
