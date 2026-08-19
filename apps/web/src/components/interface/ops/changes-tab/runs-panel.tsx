@@ -11,6 +11,7 @@ import {
   Lock,
   Radio,
 } from "lucide-react";
+import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
 import {
   MACHINE_LABEL,
   RAIL,
@@ -46,9 +47,19 @@ function shortSha(sha?: string): string {
   return sha ? sha.slice(0, 7) : "unpinned";
 }
 
-function repoShort(repo?: string): string | undefined {
-  if (!repo) return undefined;
-  return repo.split("/")[1] ?? repo;
+function groupRuns(runs: MockRun[]): [string, MockRun[]][] {
+  const groups = new Map<string, MockRun[]>();
+  for (const run of runs) {
+    const key = repoOf(run);
+    const list = groups.get(key) ?? [];
+    list.push(run);
+    groups.set(key, list);
+  }
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (a === UNSCOPED_REPO) return 1;
+    if (b === UNSCOPED_REPO) return -1;
+    return a.localeCompare(b);
+  });
 }
 
 const TREE_COPY: Record<TreeId, { label: string; hint: string }> = {
@@ -103,38 +114,46 @@ export function RunsPanel({
             {runs.length} {runs.length === 1 ? "run" : "runs"}
           </p>
         </div>
-        <div className="px-2 pb-3 space-y-0.5">
-          {runs.map((run) => {
-            const active = selected?.id === run.id;
-            return (
-              <button
-                key={run.id}
-                type="button"
-                onClick={() => onSelect(run.id)}
-                className={cn(
-                  "w-full text-left rounded-lg px-2.5 py-2.5 transition-colors",
-                  active ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-secondary)]",
-                )}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusDot(run.bucket))} />
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)] truncate">
-                    {MACHINE_LABEL[run.machine]}
-                  </span>
-                </div>
-                <p className="text-[13px] text-[var(--text-primary)] leading-snug line-clamp-2">
-                  {run.title}
-                </p>
-                <p className="text-[11px] font-mono text-[var(--text-secondary)] mt-1 truncate">
-                  {repoShort(run.repo) ?? "no repo"}
-                  <span className="mx-1 text-[var(--border-color)]">@</span>
-                  {shortSha(run.baseSha)}
-                  <span className="mx-1.5 font-sans text-[var(--border-color)]">·</span>
-                  <span className="font-sans">{timeAgo(run.createdAt)}</span>
-                </p>
-              </button>
-            );
-          })}
+        <div className="px-2 pb-3 space-y-3">
+          {groupRuns(runs).map(([repo, items]) => (
+            <div key={repo}>
+              <p className="px-2.5 pt-1 pb-1.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                <GitBranch className="h-3 w-3 shrink-0" />
+                <span className="font-mono normal-case tracking-normal truncate">{repoTitle(repo)}</span>
+              </p>
+              <div className="space-y-0.5">
+                {items.map((run) => {
+                  const active = selected?.id === run.id;
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => onSelect(run.id)}
+                      className={cn(
+                        "w-full text-left rounded-lg px-2.5 py-2.5 transition-colors",
+                        active ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-secondary)]",
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusDot(run.bucket))} />
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)] truncate">
+                          {MACHINE_LABEL[run.machine]}
+                        </span>
+                      </div>
+                      <p className="text-[13px] text-[var(--text-primary)] leading-snug line-clamp-2">
+                        {run.title}
+                      </p>
+                      <p className="text-[11px] font-mono text-[var(--text-secondary)] mt-1 truncate">
+                        {shortSha(run.baseSha)}
+                        <span className="mx-1.5 font-sans text-[var(--border-color)]">·</span>
+                        <span className="font-sans">{timeAgo(run.createdAt)}</span>
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

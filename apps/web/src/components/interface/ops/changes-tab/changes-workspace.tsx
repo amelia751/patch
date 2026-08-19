@@ -5,7 +5,7 @@ import { Bell, Radio } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 import type { ChangeActionId, RunProgress } from "./actions";
 import { ChangesInbox } from "./changes-tab";
-import type { ProjectChange } from "./data";
+import { runKey, type ProjectChange } from "./data";
 import { RunsPanel, bucketNeedsYou } from "./runs-panel";
 import {
   advanceRun,
@@ -58,7 +58,7 @@ export function ChangesTab({
     setProgress((prev) => {
       const next = { ...prev };
       for (const run of list) {
-        next[run.changeId] = inboxProgressFor(run.bucket);
+        next[runKey({ id: run.changeId, repo: run.repo })] = inboxProgressFor(run.bucket);
       }
       return next;
     });
@@ -69,12 +69,13 @@ export function ChangesTab({
     const run = createRun(change, action, runs.length + 1);
     setRuns((prev) => [run, ...prev]);
     setSelectedRunId(run.id);
-    setProgress((prev) => ({ ...prev, [change.id]: "running" }));
+    setProgress((prev) => ({ ...prev, [runKey(change)]: "running" }));
     setSection("runs");
   };
 
-  const onOpenRun = (changeId: string) => {
-    const run = runs.find((item) => item.changeId === changeId);
+  const onOpenRun = (change: ProjectChange) => {
+    const key = runKey(change);
+    const run = runs.find((item) => runKey({ id: item.changeId, repo: item.repo }) === key);
     if (run) setSelectedRunId(run.id);
     setSection("runs");
   };

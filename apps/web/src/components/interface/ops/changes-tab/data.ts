@@ -1,6 +1,10 @@
 /**
  * Hardcoded project-change detections until subscribe backfill is live.
  *
+ * Each row is a note × repository join. A project can import many repos;
+ * the same provider note can appear once per repo with that repo's
+ * inventory and status. A run is always one repo at one pinned SHA.
+ *
  * Rows tagged `source: "fixture"` copy identifiers, dates, and URLs from
  * pinned demo files. Rows tagged `source: "ui"` are layout fixtures so the
  * tab can show every kind, status, and empty field — they are not provider
@@ -414,3 +418,17 @@ export function isNotYetEffective(change: ProjectChange): boolean {
 export const HARDCODED_AFFECTED_COUNT = HARDCODED_PROJECT_CHANGES.filter(
   (change) => change.status === "needs_you",
 ).length;
+
+export const UNSCOPED_REPO = "unscoped";
+
+export function repoOf(change: { repo?: string }): string {
+  return change.repo ?? UNSCOPED_REPO;
+}
+
+export function repoTitle(repo: string): string {
+  return repo === UNSCOPED_REPO ? "No repository" : repo;
+}
+
+export function runKey(change: { id: string; repo?: string }): string {
+  return `${change.id}::${repoOf(change)}`;
+}

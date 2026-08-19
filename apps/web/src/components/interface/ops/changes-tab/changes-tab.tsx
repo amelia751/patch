@@ -46,6 +46,7 @@ import {
   ExternalLink,
   FileCode2,
   Filter,
+  GitBranch,
   GitPullRequest,
   Search,
   X,
@@ -61,6 +62,10 @@ import {
   HARDCODED_PROJECT_CHANGES,
   isDocsOnly,
   isNotYetEffective,
+  UNSCOPED_REPO,
+  repoOf,
+  repoTitle,
+  runKey,
   type DetectionStatus,
   type FileHitKind,
   type ProjectChange,
@@ -112,7 +117,7 @@ const fileKindLabel: Record<FileHitKind, string> = {
   changelog: "changelog",
 };
 
-const PROVIDER_PAGE_SIZE = 8;
+const REPO_PAGE_SIZE = 8;
 
 function pageWindow(current: number, total: number): (number | "ellipsis")[] {
   if (total <= 7) {
@@ -252,12 +257,12 @@ export function ChangesInbox({
   onBrowseSubscriptions?: () => void;
   progress: Record<string, RunProgress>;
   onCommitted: (change: ProjectChange, action: ChangeActionId) => void;
-  onOpenRun: (changeId: string) => void;
+  onOpenRun: (change: ProjectChange) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DetectionStatus | "all">("all");
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
-  const [providerPage, setProviderPage] = useState<Record<string, number>>({});
+  const [repoPage, setRepoPage] = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
   const [bannerOpen, setBannerOpen] = useState(true);
   const [statusOverride, setStatusOverride] = useState<Record<string, DetectionStatus>>({});
@@ -265,14 +270,14 @@ export function ChangesInbox({
     change: ProjectChange;
     action: ChangeActionId;
   } | null>(null);
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    () => new Set(HARDCODED_PROJECT_CHANGES.map((change) => change.provider)),
+  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(
+    () => new Set(HARDCODED_PROJECT_CHANGES.map((change) => repoOf(change))),
   );
   const [expandedChanges, setExpandedChanges] = useState<Set<string>>(
     () =>
       new Set(
         HARDCODED_PROJECT_CHANGES.filter((change) => change.status === "needs_you" && change.source === "fixture").map(
-          (c) => c.id,
+          (c) => runKey(c),
         ),
       ),
   );
@@ -280,7 +285,7 @@ export function ChangesInbox({
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return HARDCODED_PROJECT_CHANGES.filter((change) => {
-      const status = statusOverride[change.id] ?? change.status;
+      const status = statusOverride[runKey(change)] ?? change.status;
       if (statusFilter !== "all" && status !== statusFilter) return false;
       if (kindFilter !== "all" && change.kind !== kindFilter) return false;
       if (!q) return true;
@@ -289,6 +294,7 @@ export function ChangesInbox({
         change.summary,
         change.product,
         change.provider,
+        change.repo ?? "",
         change.kind,
         status,
         change.replacement ?? "",
@@ -302,17 +308,22 @@ export function ChangesInbox({
   }, [kindFilter, searchQuery, statusFilter, statusOverride]);
 
   useEffect(() => {
-    setProviderPage({});
+    setRepoPage({});
   }, [kindFilter, searchQuery, statusFilter]);
 
-  const byProvider = useMemo(() => {
+  const byRepo = useMemo(() => {
     const groups = new Map<string, ProjectChange[]>();
     for (const change of filtered) {
-      const list = groups.get(change.provider) ?? [];
+      const key = repoOf(change);
+      const list = groups.get(key) ?? [];
       list.push(change);
-      groups.set(change.provider, list);
+      groups.set(key, list);
     }
-    return groups;
+    return [...groups.entries()].sort(([a], [b]) => {
+      if (a === UNSCOPED_REPO) return 1;
+      if (b === UNSCOPED_REPO) return -1;
+      return a.localeCompare(b);
+    });
   }, [filtered]);
 
   const counts = useMemo(() => {
@@ -331,32 +342,32 @@ export function ChangesInbox({
     setSearchQuery("");
     setStatusFilter("all");
     setKindFilter("all");
-    setProviderPage({});
+    setRepoPage({});
     setMoreOpen(false);
   };
 
-  const setPageFor = (provider: string, page: number) => {
-    setProviderPage((prev) => ({ ...prev, [provider]: page }));
+  const setPageFor = (repo: string, page: number) => {
+    setRepoPage((prev) => ({ ...prev, [repo]: page }));
   };
 
-  const toggleProvider = (provider: string) => {
-    setExpandedProviders((prev) => {
+  const toggleRepo = (repo: string) => {
+    setExpandedRepos((prev) => {
       const next = new Set(prev);
-      if (next.has(provider)) next.delete(provider);
-      else next.add(provider);
+      if (next.has(repo)) next.delete(repo);
+      else next.add(repo);
       return next;
     });
   };
 
   const displayStatus = (change: ProjectChange): DetectionStatus =>
-    statusOverride[change.id] ?? change.status;
+    statusOverride[runKey(change)] ?? change.status;
 
   const displayProgress = (change: ProjectChange): RunProgress =>
-    progress[change.id] ?? "idle";
+    progress[runKey(change)] ?? "idle";
 
   const requestAction = (change: ProjectChange, action: ChangeActionId, run: RunProgress) => {
     if (run !== "idle") {
-      onOpenRun(change.id);
+      onOpenRun(change);
       return;
     }
     setPending({ change, action });
@@ -364,11 +375,11 @@ export function ChangesInbox({
 
   const applyAction = (change: ProjectChange, action: ChangeActionId) => {
     if (action === "dismiss") {
-      setStatusOverride((prev) => ({ ...prev, [change.id]: "dismissed" }));
+      setStatusOverride((prev) => ({ ...prev, [runKey(change)]: "dismissed" }));
     } else if (action === "reopen") {
       setStatusOverride((prev) => {
         const next = { ...prev };
-        delete next[change.id];
+        delete next[runKey(change)];
         return next;
       });
     } else {
@@ -581,42 +592,30 @@ export function ChangesInbox({
               <NoDetectionsEmptyState onBrowseSubscriptions={onBrowseSubscriptions} />
             )
           ) : (
-            Array.from(byProvider.entries()).map(([provider, changes]) => {
-              const isExpanded = expandedProviders.has(provider);
-              const totalPages = Math.max(1, Math.ceil(changes.length / PROVIDER_PAGE_SIZE));
-              const page = Math.min(providerPage[provider] ?? 1, totalPages);
-              const paged = changes.slice((page - 1) * PROVIDER_PAGE_SIZE, page * PROVIDER_PAGE_SIZE);
+            byRepo.map(([repo, changes]) => {
+              const isExpanded = expandedRepos.has(repo);
+              const totalPages = Math.max(1, Math.ceil(changes.length / REPO_PAGE_SIZE));
+              const page = Math.min(repoPage[repo] ?? 1, totalPages);
+              const paged = changes.slice((page - 1) * REPO_PAGE_SIZE, page * REPO_PAGE_SIZE);
               const groupNeedsYou = changes.filter((c) => displayStatus(c) === "needs_you").length;
               const groupWatching = changes.filter((c) => displayStatus(c) === "watching").length;
               const groupDismissed = changes.filter((c) => displayStatus(c) === "dismissed").length;
-              const logo =
-                changes[0]?.providerSlug === "google"
-                  ? "/google-cloud.svg"
-                  : getGCPServiceIcon(changes[0]?.product ?? provider);
 
               return (
                 <div
-                  key={provider}
+                  key={repo}
                   className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden"
                 >
                   <div
                     className="p-3 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors flex items-center justify-between"
-                    onClick={() => toggleProvider(provider)}
+                    onClick={() => toggleRepo(repo)}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0">
-                        <Image
-                          src={logo}
-                          alt={provider}
-                          width={20}
-                          height={20}
-                          className="h-5 w-5 object-contain"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-[var(--text-primary)]">
-                            {provider}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <GitBranch className="h-4 w-4 shrink-0 text-[var(--text-secondary)]" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-semibold text-[var(--text-primary)] font-mono truncate">
+                            {repoTitle(repo)}
                           </span>
                           <Badge
                             variant="outline"
@@ -648,7 +647,8 @@ export function ChangesInbox({
                   {isExpanded && (
                     <div className="border-t border-[var(--border-color)]">
                       {paged.map((change) => {
-                        const open = expandedChanges.has(change.id);
+                        const key = runKey(change);
+                        const open = expandedChanges.has(key);
                         const resolvedStatus = displayStatus(change);
                         const run = displayProgress(change);
                         const available = actionsFor(change, run, resolvedStatus);
@@ -658,10 +658,10 @@ export function ChangesInbox({
                         const when = timingLabel(change);
 
                         return (
-                          <div key={change.id} className="border-b border-[var(--border-color)] last:border-b-0">
+                          <div key={key} className="border-b border-[var(--border-color)] last:border-b-0">
                             <div
                               className="p-3 cursor-pointer hover:bg-[var(--bg-tertiary)] transition-colors"
-                              onClick={() => toggleChange(change.id)}
+                              onClick={() => toggleChange(key)}
                             >
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -865,7 +865,7 @@ export function ChangesInbox({
                             <PaginationContent className="gap-0.5">
                               <PaginationItem>
                                 <PaginationPrevious
-                                  onClick={() => setPageFor(provider, Math.max(1, page - 1))}
+                                  onClick={() => setPageFor(repo, Math.max(1, page - 1))}
                                   className={cn(
                                     "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
                                     "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
@@ -881,7 +881,7 @@ export function ChangesInbox({
                                 ) : (
                                   <PaginationItem key={item}>
                                     <PaginationLink
-                                      onClick={() => setPageFor(provider, item)}
+                                      onClick={() => setPageFor(repo, item)}
                                       isActive={page === item}
                                       className={cn(
                                         "h-7 w-7 text-[11px] cursor-pointer border",
@@ -897,7 +897,7 @@ export function ChangesInbox({
                               )}
                               <PaginationItem>
                                 <PaginationNext
-                                  onClick={() => setPageFor(provider, Math.min(totalPages, page + 1))}
+                                  onClick={() => setPageFor(repo, Math.min(totalPages, page + 1))}
                                   className={cn(
                                     "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
                                     "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
