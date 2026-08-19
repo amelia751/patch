@@ -9,8 +9,11 @@ import type { WorklogEntry } from "@/components/console/thread-types";
 import {
   ArrowRight,
   Check,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   GitBranch,
+  Github,
   GitPullRequest,
   Lock,
   Radio,
@@ -44,6 +47,22 @@ function timeAgo(ts: number): string {
 
 function statusDot(bucket: RunBucket): string {
   if (bucket === "active") return "bg-sky-400 animate-pulse";
+  if (bucket === "needs_attention") return "bg-amber-500";
+  if (bucket === "ready_for_review") return "bg-emerald-500";
+  if (bucket === "blocked") return "bg-red-500";
+  return "bg-[var(--text-secondary)]";
+}
+
+function statusTone(bucket: RunBucket): string {
+  if (bucket === "active") return "text-sky-400";
+  if (bucket === "needs_attention") return "text-amber-500";
+  if (bucket === "ready_for_review") return "text-emerald-500";
+  if (bucket === "blocked") return "text-red-500";
+  return "text-[var(--text-secondary)]";
+}
+
+function statusBar(bucket: RunBucket): string {
+  if (bucket === "active") return "bg-sky-400";
   if (bucket === "needs_attention") return "bg-amber-500";
   if (bucket === "ready_for_review") return "bg-emerald-500";
   if (bucket === "blocked") return "bg-red-500";
@@ -115,56 +134,136 @@ export function RunsPanel({
 
   return (
     <div className="h-full flex min-w-0 bg-[var(--bg-primary)]">
-      <div className="w-[260px] flex-shrink-0 border-r border-[var(--border-color)] overflow-y-auto">
-        <div className="px-4 pt-4 pb-2">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            {runs.length} {runs.length === 1 ? "run" : "runs"}
-          </p>
-        </div>
-        <div className="px-2 pb-3 space-y-3">
-          {groupRuns(runs).map(([repo, items]) => (
-            <div key={repo}>
-              <p className="px-2.5 pt-1 pb-1.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                <GitBranch className="h-3 w-3 shrink-0" />
-                <span className="font-mono normal-case tracking-normal truncate">{repoTitle(repo)}</span>
-              </p>
-              <div className="space-y-0.5">
-                {items.map((run) => {
-                  const active = selected?.id === run.id;
-                  return (
-                    <button
-                      key={run.id}
-                      type="button"
-                      onClick={() => onSelect(run.id)}
-                      className={cn(
-                        "w-full text-left rounded-lg px-2.5 py-2.5 transition-colors",
-                        active ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-secondary)]",
-                      )}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusDot(run.bucket))} />
-                        <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)] truncate">
-                          {MACHINE_LABEL[run.machine]}
-                        </span>
-                      </div>
-                      <p className="text-[13px] text-[var(--text-primary)] leading-snug line-clamp-2">
-                        {run.title}
-                      </p>
-                      <p className="text-[11px] font-mono text-[var(--text-secondary)] mt-1 truncate">
-                        {shortSha(run.baseSha)}
-                        <span className="mx-1.5 font-sans text-[var(--border-color)]">·</span>
-                        <span className="font-sans">{timeAgo(run.createdAt)}</span>
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
+      <RunsList runs={runs} selected={selected} onSelect={onSelect} />
       {selected && <RunDetail run={selected} onContinue={() => onContinue(selected.id)} />}
+    </div>
+  );
+}
+
+function RunsList({
+  runs,
+  selected,
+  onSelect,
+}: {
+  runs: MockRun[];
+  selected: MockRun | null;
+  onSelect: (id: string) => void;
+}) {
+  const groups = groupRuns(runs);
+  const [open, setOpen] = useState<Set<string>>(() => new Set(groups.map(([repo]) => repo)));
+
+  useEffect(() => {
+    if (!selected) return;
+    const repo = repoOf(selected);
+    setOpen((prev) => {
+      if (prev.has(repo)) return prev;
+      const next = new Set(prev);
+      next.add(repo);
+      return next;
+    });
+  }, [selected?.id]);
+
+  const toggle = (repo: string) => {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(repo)) next.delete(repo);
+      else next.add(repo);
+      return next;
+    });
+  };
+
+  return (
+    <div className="w-72 flex-shrink-0 border-r border-[var(--border-color)] flex flex-col overflow-hidden bg-[var(--bg-primary)]">
+      <div className="px-4 py-3 border-b border-[var(--border-color)] shrink-0">
+        <p className="text-sm font-semibold text-[var(--text-primary)]">Runs</p>
+        <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+          {runs.length} {runs.length === 1 ? "run" : "runs"}
+          <span className="mx-1 opacity-40">·</span>
+          {groups.length} {groups.length === 1 ? "repository" : "repositories"}
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {groups.map(([repo, items]) => {
+          const expanded = open.has(repo);
+          const attention = items.filter((run) => run.bucket === "needs_attention" || run.bucket === "blocked").length;
+          return (
+            <div key={repo}>
+              <button
+                type="button"
+                onClick={() => toggle(repo)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-medium uppercase [font-family:var(--font-space-grotesk)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/30 hover:bg-[var(--bg-secondary)]/50 transition-colors"
+              >
+                {expanded ? (
+                  <ChevronDown className="h-3 w-3 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 shrink-0" />
+                )}
+                {repo === UNSCOPED_REPO ? (
+                  <Radio className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Github className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="truncate">{repoTitle(repo)}</span>
+                <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                  {attention > 0 && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                  <span className="text-[9px] tabular-nums normal-case tracking-normal">{items.length}</span>
+                </span>
+              </button>
+              {expanded && (
+                <div className="py-1">
+                  {items.map((run) => {
+                    const active = selected?.id === run.id;
+                    return (
+                      <button
+                        key={run.id}
+                        type="button"
+                        onClick={() => onSelect(run.id)}
+                        className={cn(
+                          "relative w-full text-left px-3 py-2 transition-colors",
+                          active
+                            ? "bg-[var(--bg-tertiary)]"
+                            : "hover:bg-[var(--bg-secondary)]",
+                        )}
+                      >
+                        {active && (
+                          <span
+                            className={cn(
+                              "absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full",
+                              statusBar(run.bucket),
+                            )}
+                          />
+                        )}
+                        <div className="flex items-center gap-2">
+                          <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusDot(run.bucket))} />
+                          <span
+                            className={cn(
+                              "text-[10px] font-medium uppercase tracking-wide truncate",
+                              statusTone(run.bucket),
+                            )}
+                          >
+                            {MACHINE_LABEL[run.machine]}
+                          </span>
+                          <span className="ml-auto shrink-0 text-[10px] text-[var(--text-secondary)]">
+                            {timeAgo(run.createdAt)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[12px] leading-snug line-clamp-2 text-[var(--text-primary)]">
+                          {run.title}
+                        </p>
+                        {run.baseSha && (
+                          <p className="mt-0.5 text-[10px] font-mono text-[var(--text-secondary)]">
+                            {shortSha(run.baseSha)}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
