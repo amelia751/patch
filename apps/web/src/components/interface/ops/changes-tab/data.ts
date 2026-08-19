@@ -445,9 +445,7 @@ export function repoOf(change: { repo?: string }): string {
 }
 
 export function repoTitle(repo: string): string {
-  if (repo === UNSCOPED_REPO) return "No repository";
-  const slash = repo.lastIndexOf("/");
-  return slash > 0 ? repo.slice(slash + 1) : repo;
+  return repo === UNSCOPED_REPO ? "No repository" : repo;
 }
 
 export function runKey(change: { id: string; repo?: string }): string {

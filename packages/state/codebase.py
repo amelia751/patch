@@ -84,9 +84,9 @@ def imported_repo(
 def imported_repos(project: Mapping[str, Any]) -> list[tuple[str, str, str, str]]:
     """`(name, owner, repo, branch)` for every imported GitHub repo, in order.
 
-    The Codebase tab renders one tree. A single import stays flat. Two or more
-    become JetRun-style repo roots (`type=directory`, paths prefixed by name)
-    so Add Repository does not hide the new tree behind a switcher.
+    The Codebase tab renders one tree. Each import is a JetRun-style repo root
+    (`type=directory`, paths prefixed by `owner/repo`) so the tab shows the
+    same slug as Releases and Runs.
     """
     found: list[tuple[str, str, str, str]] = []
     seen: set[str] = set()
@@ -99,15 +99,14 @@ def imported_repos(project: Mapping[str, Any]) -> list[tuple[str, str, str, str]
         if full_name in seen:
             continue
         seen.add(full_name)
-        label = str(repo.get("name") or name) or name
-        found.append((label, owner, name, branch))
+        found.append((full_name, owner, name, branch))
     if found:
         return found
     source = imported_repo(project)
     if source is None:
         return []
     owner, name, branch = source
-    return [(name, owner, name, branch)]
+    return [(f"{owner}/{name}", owner, name, branch)]
 
 
 def resolve_codebase_file(
@@ -115,30 +114,29 @@ def resolve_codebase_file(
 ) -> tuple[str, str, str, str] | None:
     """`(owner, repo, branch, repo-relative path)` for a Codebase tab path.
 
-    Multi-repo trees prefix every node with the repo name, the same way JetRun
-    does, so `egaki/src/index.ts` is a file in `egaki` and not a path inside
-    the first import.
+    Trees prefix every node with `owner/repo`, so `amelia751/egaki/src/index.ts`
+    is a file in that import and not a path inside the first repository.
+    A single import still accepts a repo-relative path without the prefix.
     """
     repos = imported_repos(project)
     if not repos:
         return None
+    for label, owner, repo, branch in sorted(repos, key=lambda item: len(item[0]), reverse=True):
+        if path == label:
+            return None
+        prefix = f"{label}/"
+        if path.startswith(prefix):
+            relative = safe_repo_path(path[len(prefix) :])
+            if relative is None:
+                return None
+            return owner, repo, branch, relative
     if len(repos) == 1:
         _label, owner, repo, branch = repos[0]
         relative = safe_repo_path(path)
         if relative is None:
             return None
         return owner, repo, branch, relative
-    parts = path.split("/", 1)
-    label = parts[0]
-    rest = parts[1] if len(parts) > 1 else ""
-    match = next((item for item in repos if item[0] == label), None)
-    if match is None:
-        return None
-    _label, owner, repo, branch = match
-    relative = safe_repo_path(rest)
-    if relative is None:
-        return None
-    return owner, repo, branch, relative
+    return None
 
 
 def _skipped(path: str) -> bool:
@@ -150,10 +148,9 @@ def build_file_tree(
 ) -> list[dict[str, Any]]:
     """Nest GitHub git-tree entries into the dashboard's `file_tree` shape.
 
-    `path_prefix` is the repo name on a multi-repo project. The frontend sends
-    that prefixed path back to `/codebase/file`, which strips it to find the
-    GitHub blob. Regular folders stay `folder`; only the repo root is
-    `directory`.
+    `path_prefix` is `owner/repo`. The frontend sends that prefixed path back
+    to `/codebase/file`, which strips it to find the GitHub blob. Regular
+    folders stay `folder`; only the repo root is `directory`.
     """
     root: dict[str, Any] = {"children": {}}
     prefix = path_prefix.strip().strip("/")
@@ -264,13 +261,11 @@ def codebase_payload_from_repos(
 ) -> dict[str, Any]:
     """One Codebase tab payload for every imported repo.
 
-    One repo stays a flat tree. Two or more wrap each tree in a `directory`
-    root named after the repo, matching JetRun's multi-repo Codebase tab.
+    Every import is a `directory` root named `owner/repo`, matching Releases
+    and Runs. One repo is still wrapped so the slug is visible.
     """
     if not named_trees:
         return codebase_payload({})
-    if len(named_trees) == 1:
-        return codebase_payload(named_trees[0][1])
     combined: list[dict[str, Any]] = []
     files = 0
     folders = 0

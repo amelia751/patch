@@ -164,7 +164,7 @@ def test_imported_repos_lists_every_import_in_order() -> None:
             "workspaces": [],
         }
     )
-    assert [item[0] for item in found] == ["egaki", "gemini20-hello"]
+    assert [item[0] for item in found] == ["amelia751/egaki", "amelia751/gemini20-hello"]
 
 
 def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> None:
@@ -179,13 +179,14 @@ def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> No
         ],
         "workspaces": [],
     }
-    assert resolve_codebase_file(project, "gemini20-hello/generate.py") == (
+    assert resolve_codebase_file(project, "amelia751/gemini20-hello/generate.py") == (
         "amelia751",
         "gemini20-hello",
         "main",
         "generate.py",
     )
     assert resolve_codebase_file(project, "generate.py") is None
+    assert resolve_codebase_file(project, "gemini20-hello/generate.py") is None
 
 
 def test_resolve_codebase_file_is_flat_for_a_single_import() -> None:
@@ -207,11 +208,11 @@ def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
     payload = codebase_payload_from_repos(
         [
             (
-                "egaki",
+                "amelia751/egaki",
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main", "sha": "aaa"},
             ),
             (
-                "gemini20-hello",
+                "amelia751/gemini20-hello",
                 {
                     "entries": [{"path": "generate.py", "type": "blob"}],
                     "ref": "main",
@@ -221,8 +222,11 @@ def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
         ]
     )
     assert [node["type"] for node in payload["file_tree"]] == ["directory", "directory"]
-    assert [node["name"] for node in payload["file_tree"]] == ["egaki", "gemini20-hello"]
-    assert payload["file_tree"][1]["children"][0]["path"] == "gemini20-hello/generate.py"
+    assert [node["name"] for node in payload["file_tree"]] == [
+        "amelia751/egaki",
+        "amelia751/gemini20-hello",
+    ]
+    assert payload["file_tree"][1]["children"][0]["path"] == "amelia751/gemini20-hello/generate.py"
     assert payload["stats"]["total_files"] == 2
 
 
@@ -230,15 +234,32 @@ def test_combined_payload_keeps_an_empty_second_repo_as_a_directory() -> None:
     payload = codebase_payload_from_repos(
         [
             (
-                "egaki",
+                "amelia751/egaki",
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main"},
             ),
-            ("gemini20-hello", {"entries": [], "ref": "main"}),
+            ("amelia751/gemini20-hello", {"entries": [], "ref": "main"}),
         ]
     )
-    assert [node["name"] for node in payload["file_tree"]] == ["egaki", "gemini20-hello"]
+    assert [node["name"] for node in payload["file_tree"]] == [
+        "amelia751/egaki",
+        "amelia751/gemini20-hello",
+    ]
     assert payload["file_tree"][1]["type"] == "directory"
     assert payload["file_tree"][1]["children"] == []
+
+
+def test_combined_payload_wraps_a_single_import_as_a_directory() -> None:
+    payload = codebase_payload_from_repos(
+        [
+            (
+                "amelia751/egaki",
+                {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main", "sha": "aaa"},
+            ),
+        ]
+    )
+    assert [node["name"] for node in payload["file_tree"]] == ["amelia751/egaki"]
+    assert payload["file_tree"][0]["type"] == "directory"
+    assert payload["file_tree"][0]["children"][0]["path"] == "amelia751/egaki/README.md"
 
 
 def test_codebase_payload_matches_the_dashboard_shape() -> None:
