@@ -381,9 +381,6 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
               </span>
             </span>
           </FactChip>
-          <span className="ml-1 text-[10px] uppercase tracking-wider text-[var(--text-secondary)]/70">
-            Simulated
-          </span>
         </div>
         <StateRail machine={run.machine} />
       </div>
