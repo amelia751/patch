@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Check,
   GitPullRequest,
+  Loader2,
   Lock,
   Radio,
 } from "lucide-react";
@@ -15,13 +16,13 @@ import {
   railIndex,
   treeAvailable,
   treeForMachine,
-  visibleCommands,
+  visibleLog,
+  type AgentLogLine,
   type DiffFile,
   type DiffLine,
   type MachineState,
   type MockRun,
   type RunBucket,
-  type SandboxCommand,
   type TreeId,
 } from "./run-scripts";
 
@@ -225,10 +226,11 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
         {TREE_COPY[tree].hint}
       </p>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 space-y-4">
         {tree === "base" && <BaseTree run={run} />}
         {tree === "sandbox" && <SandboxTree run={run} />}
         {tree === "proposed" && <ProposedTree run={run} />}
+        <AgentLog run={run} />
       </div>
     </div>
   );
@@ -353,52 +355,11 @@ function BaseTree({ run }: { run: MockRun }) {
 }
 
 function SandboxTree({ run }: { run: MockRun }) {
-  const commands = visibleCommands(run);
-
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Meta
-          label="Reset"
-          value={`every attempt → ${shortSha(run.baseSha)}`}
-        />
-        <Meta label="Merge" value="never" />
-      </div>
-
-      <section>
-        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-          Allowlisted commands
-        </h3>
-        <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-          Inner-loop output is diagnostic. The clean build and test below are the
-          orchestrator’s, not the patch author’s.
-        </p>
-        <ul className="mt-2 border border-[var(--border-color)] rounded-md divide-y divide-[var(--border-color)]">
-          {commands.map((command) => (
-            <CommandRow key={`${command.phase}-${command.argv}`} command={command} />
-          ))}
-        </ul>
-      </section>
+    <div className="grid grid-cols-2 gap-3">
+      <Meta label="Reset" value={`every attempt → ${shortSha(run.baseSha)}`} />
+      <Meta label="Merge" value="never" />
     </div>
-  );
-}
-
-function CommandRow({ command }: { command: SandboxCommand }) {
-  return (
-    <li className="px-3 py-2">
-      <div className="flex items-baseline justify-between gap-3">
-        <code className="text-[11px] text-[var(--text-primary)] truncate">{command.argv}</code>
-        <span
-          className={cn(
-            "text-[10px] font-mono shrink-0",
-            command.exit === 0 ? "text-emerald-500" : "text-[var(--text-secondary)]",
-          )}
-        >
-          {command.exit === null ? "—" : `exit ${command.exit}`}
-        </span>
-      </div>
-      <p className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{command.tail}</p>
-    </li>
   );
 }
 
@@ -495,6 +456,83 @@ function DiffLineRow({ line }: { line: DiffLine }) {
     >
       <span className="inline-block w-3 select-none">{mark}</span>
       {line.text}
+    </div>
+  );
+}
+
+function AgentLog({ run }: { run: MockRun }) {
+  const lines = visibleLog(run);
+  const endRef = useRef<HTMLDivElement>(null);
+  const live = run.bucket === "active";
+  const last = lines[lines.length - 1];
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "nearest" });
+  }, [run.revealed, run.machine]);
+
+  return (
+    <section>
+      <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+        Log
+      </h3>
+      <div className="mt-1.5 space-y-1.5">
+        {lines.map((line) => (
+          <LogLine key={line.id} line={line} />
+        ))}
+        {live && last && <LiveCursor line={last} startedAt={run.lineStartedAt} />}
+        <div ref={endRef} />
+      </div>
+    </section>
+  );
+}
+
+function LogLine({ line }: { line: AgentLogLine }) {
+  if (line.kind === "thought") {
+    return (
+      <p className="text-[11px] italic text-[var(--text-secondary)] leading-relaxed">
+        Thought
+        <span className="not-italic ml-1.5 opacity-80">{line.text}</span>
+      </p>
+    );
+  }
+  if (line.kind === "action") {
+    return (
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="text-[11px] text-[var(--text-primary)] shrink-0">{line.verb ?? "Do"}</span>
+        <span className="text-[11px] font-mono text-[var(--text-secondary)] truncate">{line.text}</span>
+      </div>
+    );
+  }
+  if (line.kind === "result") {
+    return (
+      <p className="text-[11px] text-[var(--text-secondary)] pl-3 leading-relaxed">
+        <span className="mr-1.5 text-[var(--text-tertiary)]">⎿</span>
+        {line.text}
+      </p>
+    );
+  }
+  return <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">{line.text}</p>;
+}
+
+function LiveCursor({ line, startedAt }: { line: AgentLogLine; startedAt: number }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    tick();
+    const id = window.setInterval(tick, 400);
+    return () => window.clearInterval(id);
+  }, [startedAt]);
+
+  const verb = line.kind === "thought" ? "Thinking" : line.kind === "action" ? (line.verb ?? "Running") : "Working";
+
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <Loader2 className="h-3 w-3 text-sky-400 animate-spin shrink-0" />
+      <span className="text-[11px] text-[var(--text-secondary)]">{verb}</span>
+      {elapsed > 0 && (
+        <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">{elapsed}s</span>
+      )}
     </div>
   );
 }

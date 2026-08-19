@@ -61,6 +61,16 @@ export interface VerifyCheck {
   passed: boolean;
 }
 
+export type LogKind = "thought" | "action" | "result" | "narration";
+
+export interface AgentLogLine {
+  id: string;
+  at: MachineState;
+  kind: LogKind;
+  verb?: string;
+  text: string;
+}
+
 export interface MockRun {
   id: string;
   code: string;
@@ -84,6 +94,9 @@ export interface MockRun {
   commands: SandboxCommand[];
   diffs: DiffFile[];
   checks: VerifyCheck[];
+  log: AgentLogLine[];
+  revealed: number;
+  lineStartedAt: number;
   prBranch?: string;
   traceId: string;
 }
@@ -235,6 +248,74 @@ function commandsFor(change: ProjectChange): SandboxCommand[] {
   ];
 }
 
+function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
+  const repo = change.repo ?? "imported repositories";
+  const sha = change.baseSha?.slice(0, 12) ?? "unpinned";
+  const runtime = change.files.filter((file) => file.kind === "runtime");
+  const sample = runtime[0]?.path ?? change.files[0]?.path ?? ".";
+  const fromId = change.identifiers[0] ?? "identifier";
+  const lines: AgentLogLine[] = [];
+  let n = 0;
+  const add = (at: MachineState, kind: LogKind, text: string, verb?: string) => {
+    if (!path.includes(at)) return;
+    n += 1;
+    lines.push({ id: `${at}-${n}`, at, kind, text, verb });
+  };
+
+  add("NORMALIZED", "thought", "Provider text is untrusted. Screen it before anything joins inventory.");
+  add("NORMALIZED", "action", change.title, "Normalize");
+  add("NORMALIZED", "result", "ChangeManifest accepted. Identifiers kept as claims.");
+
+  add("IMPACT_SCANNING", "thought", `Join ${fromId} against ${repo} @ ${sha}, not HEAD.`);
+  for (const file of runtime.slice(0, 3)) {
+    add("IMPACT_SCANNING", "action", file.path, "Read");
+  }
+  if (runtime.length === 0 && change.files.length > 0) {
+    add("IMPACT_SCANNING", "action", change.files[0].path, "Read");
+  }
+  add(
+    "IMPACT_SCANNING",
+    "result",
+    runtime.length > 0
+      ? `${change.fileHits ?? 0} hits · ${runtime.length} runtime paths.`
+      : "No runtime path. Do not allocate a sandbox from docs or changelog.",
+  );
+
+  add("POLICY_EVALUATION", "narration", "Auto-merge stays false. Forbidden paths stay forbidden.");
+  add("POLICY_EVALUATION", "action", "Deterministic policy on the impact report", "Evaluate");
+  add(
+    "POLICY_EVALUATION",
+    "result",
+    path.includes("HUMAN_REQUIRED")
+      ? "HUMAN_REQUIRED — a sandbox is not opened until a human continues."
+      : "ALLOW patch and PR. Merge remains off.",
+  );
+
+  add("PATCHING", "thought", "Inspect the installed SDK in the worktree before rewriting.");
+  add("PATCHING", "action", `read_file ${sample}`, "Read");
+  add("PATCHING", "action", "apply_patch", "Apply");
+  add("PATCHING", "result", "Forbidden paths untouched. CHANGELOG.md is not in the diff.");
+  add("PATCHING", "action", "pnpm --dir cli test -- generate.test.ts", "Run");
+  add("PATCHING", "result", "Agent loop — diagnostic, not evidence.");
+
+  add("BUILDING", "action", "pnpm --dir cli build", "Run");
+  add("BUILDING", "result", "Orchestrator clean run from the diff. Not the agent’s own build.");
+
+  add("TESTING", "action", "pnpm --dir cli test", "Run");
+  add("TESTING", "result", "Orchestrator clean run. This is what verification sees.");
+
+  add("VERIFYING", "thought", "Grade the diff and the clean logs. Do not read the patch author’s plan.");
+  add("VERIFYING", "action", "Independent verification", "Verify");
+  add("VERIFYING", "result", "Verifier ≠ patch author. Proposed tree may be opened.");
+
+  add("PR_CREATED", "narration", "Pull request opened. PatchAPI stopped.");
+
+  add("UNAFFECTED", "narration", "Report-only. No runtime path, so no worktree and no pull request.");
+  add("HELD", "narration", "Draft held. No pull request until the note takes effect.");
+
+  return lines;
+}
+
 function checksFor(change: ProjectChange): VerifyCheck[] {
   return [
     { name: "Identifiers mapped as the manifest specifies", passed: Boolean(change.replacement) },
@@ -248,6 +329,7 @@ function checksFor(change: ProjectChange): VerifyCheck[] {
 export function createRun(change: ProjectChange, action: ChangeActionId, seq: number): MockRun {
   const path = pathFor(change, action);
   const machine = path[0] ?? "NORMALIZED";
+  const log = logsFor(change, path);
   return {
     id: `run-${change.id.slice(0, 18)}-${Date.now().toString(36)}`,
     code: `RUN-${String(seq).padStart(3, "0")}`,
@@ -271,6 +353,9 @@ export function createRun(change: ProjectChange, action: ChangeActionId, seq: nu
     commands: commandsFor(change),
     diffs: diffsFor(change),
     checks: checksFor(change),
+    log,
+    revealed: Math.min(1, log.length),
+    lineStartedAt: Date.now(),
     prBranch: `patchapi/${change.id.replace(/[^a-z0-9]+/gi, "-").slice(0, 28)}`,
     traceId: `trc-${Math.random().toString(16).slice(2, 10)}`,
   };
@@ -278,17 +363,25 @@ export function createRun(change: ProjectChange, action: ChangeActionId, seq: nu
 
 export function advanceRun(run: MockRun): MockRun {
   if (run.bucket !== "active") return run;
+  const nextLine = run.log[run.revealed];
+  if (nextLine && nextLine.at === run.machine) {
+    return { ...run, revealed: run.revealed + 1, lineStartedAt: Date.now() };
+  }
   const index = run.path.indexOf(run.machine);
   const next = run.path[index + 1];
   if (!next) return { ...run, bucket: bucketOf(run.machine) };
-  return { ...run, machine: next, bucket: bucketOf(next) };
+  return { ...run, machine: next, bucket: bucketOf(next), lineStartedAt: Date.now() };
 }
 
 export function continueRun(run: MockRun): MockRun {
   const index = run.path.indexOf(run.machine);
   const next = run.path[index + 1];
   if (!next) return { ...run, bucket: bucketOf(run.machine) };
-  return { ...run, machine: next, bucket: bucketOf(next) };
+  return { ...run, machine: next, bucket: bucketOf(next), lineStartedAt: Date.now() };
+}
+
+export function visibleLog(run: MockRun): AgentLogLine[] {
+  return run.log.slice(0, run.revealed);
 }
 
 export function inboxProgressFor(bucket: RunBucket): "idle" | "running" | "pr_opened" {

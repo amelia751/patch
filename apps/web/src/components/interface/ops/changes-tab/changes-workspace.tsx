@@ -51,7 +51,7 @@ export function ChangesTab({
         syncProgress(next);
         return next;
       });
-    }, 720);
+    }, 480);
     return () => window.clearInterval(timer);
   }, [hasActive]);
 
