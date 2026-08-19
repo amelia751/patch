@@ -166,6 +166,11 @@ interface CodebaseTabProps {
 // Utility Functions
 // ============================================================================
 
+function repoLabel(name: string): string {
+  const slash = name.lastIndexOf("/");
+  return slash > 0 ? name.slice(slash + 1) : name;
+}
+
 function getFileIcon(filename: string): React.ReactNode {
   return <FileIcon filename={filename} size={12} />;
 }
@@ -590,7 +595,7 @@ function FileTreeItem({
       <div className={cn(level > 0 && "mt-1")}>
         {projectId && (
           <DisconnectRepoModal
-            repoName={node.name}
+            repoName={repoLabel(node.name)}
             projectId={projectId}
             open={disconnectOpen}
             onOpenChange={setDisconnectOpen}
@@ -608,7 +613,7 @@ function FileTreeItem({
               <ChevronRight className="h-3 w-3 flex-shrink-0" />
             )}
             <Github className="h-3.5 w-3.5 flex-shrink-0" />
-            <span className="truncate">{node.name}</span>
+            <span className="truncate">{repoLabel(node.name)}</span>
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

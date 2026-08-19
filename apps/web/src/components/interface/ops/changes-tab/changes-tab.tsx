@@ -64,6 +64,7 @@ import {
   isDocsOnly,
   isNotYetEffective,
   affectedRepos,
+  repoTitle,
   runKey,
   type DetectionStatus,
   type FileHitKind,
@@ -898,7 +899,7 @@ export function ChangesInbox({
                                         Repository
                                       </label>
                                       <p className="text-xs font-mono text-[var(--text-primary)] mt-1">
-                                        {affectedRepos(change).join(" · ")}
+                                        {affectedRepos(change).map(repoTitle).join(" · ")}
                                       </p>
                                     </div>
                                   )}

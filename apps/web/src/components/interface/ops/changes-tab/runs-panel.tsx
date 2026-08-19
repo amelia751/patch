@@ -676,7 +676,7 @@ function AgentLog({ run }: { run: MockRun }) {
 }
 
 function PullRequestCard({ run }: { run: MockRun }) {
-  const repo = run.repo ?? "imported repositories";
+  const repo = run.repo ? repoTitle(run.repo) : "imported repositories";
   const href = run.repo ? `https://github.com/${run.repo}` : undefined;
 
   return (
