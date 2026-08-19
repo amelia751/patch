@@ -58,50 +58,47 @@ export function actionsFor(
 export function actionDialog(
   change: ProjectChange,
   action: ChangeActionId,
-  repo?: string,
 ): {
   title: string;
   body: string;
   confirm: string;
   destructive?: boolean;
 } {
-  const target = repo ?? change.repo ?? "this project's imported repositories";
-
   switch (action) {
     case "start":
       return {
-        title: `Start remediation for ${change.title}?`,
+        title: isDocsOnly(change) ? "Start anyway" : "Start remediation",
         body:
           (change.migration === "semantic"
             ? "This is a semantic migration, not a model-id rewrite. "
             : isDocsOnly(change)
               ? "These hits are documentation only. Starting a run is unusual. "
               : "") +
-          `PatchAPI will analyze ${target}, generate a patch in isolation, verify it, and open a pull request. It will not merge.`,
+          "PatchAPI will generate a patch in isolation, verify it, and open a pull request. It will not merge.",
         confirm: isDocsOnly(change) ? "Start anyway" : "Start remediation",
       };
     case "review":
       return {
-        title: `Continue ${change.title}?`,
-        body: `A human has to confirm the replacement. The run still stops at a pull request against ${target}.`,
+        title: "Continue this run",
+        body: "A human has to confirm the replacement. The run still stops at a pull request.",
         confirm: "Continue",
       };
     case "prepare":
       return {
-        title: `Prepare ${change.title} early?`,
-        body: `The note is not in effect yet. This drafts impact only. It does not open a pull request.`,
+        title: "Prepare early",
+        body: "The note is not in effect yet. This drafts impact only. It does not open a pull request.",
         confirm: "Prepare early",
       };
     case "dismiss":
       return {
-        title: `Dismiss ${change.title}?`,
+        title: "Dismiss this note",
         body: "This project will stop treating the note as something to remediate. You can reopen it from Dismissed.",
         confirm: "Dismiss",
         destructive: true,
       };
     case "reopen":
       return {
-        title: `Reopen ${change.title}?`,
+        title: "Reopen this note",
         body: "The note returns to Releases so you can start a remediation run later.",
         confirm: "Reopen",
       };

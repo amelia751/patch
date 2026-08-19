@@ -47,6 +47,7 @@ import {
   ExternalLink,
   FileCode2,
   Filter,
+  GitBranch,
   GitPullRequest,
   Search,
   X,
@@ -241,6 +242,103 @@ function usageLabel(change: ProjectChange): string {
     return `${change.fileHits} refs in ${change.fileCount} files`;
   }
   return "No usages in this project";
+}
+
+function RepoLabel({ repo }: { repo: string }) {
+  const slash = repo.lastIndexOf("/");
+  const owner = slash > 0 ? repo.slice(0, slash) : null;
+  const name = slash > 0 ? repo.slice(slash + 1) : repo;
+  return (
+    <span className="min-w-0 truncate text-xs">
+      {owner && <span className="text-[var(--text-secondary)]">{owner}/</span>}
+      <span className="font-medium text-[var(--text-primary)]">{name}</span>
+    </span>
+  );
+}
+
+function ActionConfirmDialog({
+  change,
+  action,
+  repo,
+  onRepoChange,
+  onConfirm,
+}: {
+  change: ProjectChange;
+  action: ChangeActionId;
+  repo: string | null;
+  onRepoChange: (repo: string) => void;
+  onConfirm: () => void;
+}) {
+  const copy = actionDialog(change, action);
+  const repos = affectedRepos(change);
+  const showRepos = action !== "dismiss" && action !== "reopen" && repos.length > 0;
+  const selected = repo ?? repos[0] ?? null;
+
+  return (
+    <>
+      <AlertDialogHeader>
+        <AlertDialogTitle className="text-base text-[var(--text-primary)]">
+          {copy.title}
+        </AlertDialogTitle>
+        <AlertDialogDescription asChild>
+          <div className="space-y-3 text-left">
+            <p className="text-[13px] leading-snug text-[var(--text-primary)]">{change.title}</p>
+            <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">{copy.body}</p>
+          </div>
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+
+      {showRepos && selected && (
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--text-secondary)]">
+            {repos.length > 1 ? "Choose a repository" : "Repository"}
+          </p>
+          {repos.length > 1 ? (
+            <RadioGroup
+              value={selected}
+              onValueChange={onRepoChange}
+              className="gap-0 overflow-hidden rounded-lg border border-[var(--border-color)]"
+            >
+              {repos.map((item) => (
+                <label
+                  key={item}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 cursor-pointer border-b border-[var(--border-color)] last:border-b-0",
+                    item === selected
+                      ? "bg-[var(--bg-tertiary)]"
+                      : "hover:bg-[var(--bg-secondary)]",
+                  )}
+                >
+                  <RadioGroupItem value={item} />
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
+                  <RepoLabel repo={item} />
+                </label>
+              ))}
+            </RadioGroup>
+          ) : (
+            <div className="flex items-center gap-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+              <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
+              <RepoLabel repo={selected} />
+            </div>
+          )}
+        </div>
+      )}
+
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          className={
+            copy.destructive
+              ? "bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
+              : "bg-primary hover:bg-primary/90 text-primary-foreground"
+          }
+          onClick={onConfirm}
+        >
+          {copy.confirm}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </>
+  );
 }
 
 export function ChangesInbox({
@@ -940,53 +1038,15 @@ export function ChangesInbox({
       </div>
 
       <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
-        <AlertDialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+        <AlertDialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] sm:max-w-md">
           {pending && (
-            <>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="text-[var(--text-primary)]">
-                  {actionDialog(pending.change, pending.action, pendingRepo ?? undefined).title}
-                </AlertDialogTitle>
-                <AlertDialogDescription className="text-[var(--text-secondary)] leading-relaxed">
-                  {actionDialog(pending.change, pending.action, pendingRepo ?? undefined).body}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              {pending.action !== "dismiss" && pending.action !== "reopen" && affectedRepos(pending.change).length > 1 && (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)] mb-2">
-                    Repository
-                  </p>
-                  <RadioGroup
-                    value={pendingRepo ?? affectedRepos(pending.change)[0]}
-                    onValueChange={setPendingRepo}
-                    className="gap-2"
-                  >
-                    {affectedRepos(pending.change).map((repo) => (
-                      <label
-                        key={repo}
-                        className="flex items-center gap-2 rounded-md border border-[var(--border-color)] px-2.5 py-2 cursor-pointer"
-                      >
-                        <RadioGroupItem value={repo} />
-                        <span className="text-xs font-mono text-[var(--text-primary)]">{repo}</span>
-                      </label>
-                    ))}
-                  </RadioGroup>
-                </div>
-              )}
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className={
-                    actionDialog(pending.change, pending.action, pendingRepo ?? undefined).destructive
-                      ? "bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
-                      : "bg-primary hover:bg-primary/90 text-primary-foreground"
-                  }
-                  onClick={() => applyAction(pending.change, pending.action)}
-                >
-                  {actionDialog(pending.change, pending.action, pendingRepo ?? undefined).confirm}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </>
+            <ActionConfirmDialog
+              change={pending.change}
+              action={pending.action}
+              repo={pendingRepo}
+              onRepoChange={setPendingRepo}
+              onConfirm={() => applyAction(pending.change, pending.action)}
+            />
           )}
         </AlertDialogContent>
       </AlertDialog>
