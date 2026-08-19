@@ -378,5 +378,5 @@ export function WorklogView({
     );
   }
 
-  return <div className="space-y-2.5">{nodes}</div>;
+  return <div className="flex flex-col gap-3">{nodes}</div>;
 }
