@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ActivitySpinner, WorklogView } from "@/components/console/worklog-view";
 import { collapseWorklogEntries, pairActionResults } from "@/components/console/thread-worklog";
@@ -17,6 +18,7 @@ import {
   GitPullRequest,
   Lock,
   Radio,
+  Search,
   X,
 } from "lucide-react";
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
@@ -140,6 +142,23 @@ export function RunsPanel({
   );
 }
 
+function runMatches(run: MockRun, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [
+    run.title,
+    run.code,
+    MACHINE_LABEL[run.machine],
+    run.repo,
+    run.baseSha,
+    ...run.identifiers,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+}
+
 function RunsList({
   runs,
   selected,
@@ -149,8 +168,12 @@ function RunsList({
   selected: MockRun | null;
   onSelect: (id: string) => void;
 }) {
-  const groups = groupRuns(runs);
-  const [open, setOpen] = useState<Set<string>>(() => new Set(groups.map(([repo]) => repo)));
+  const [query, setQuery] = useState("");
+  const groups = useMemo(() => {
+    const visible = query.trim() ? runs.filter((run) => runMatches(run, query)) : runs;
+    return groupRuns(visible);
+  }, [runs, query]);
+  const [open, setOpen] = useState<Set<string>>(() => new Set(groupRuns(runs).map(([repo]) => repo)));
 
   useEffect(() => {
     if (!selected) return;
@@ -163,6 +186,11 @@ function RunsList({
     });
   }, [selected?.id]);
 
+  useEffect(() => {
+    if (!query.trim()) return;
+    setOpen(new Set(groups.map(([repo]) => repo)));
+  }, [query, groups]);
+
   const toggle = (repo: string) => {
     setOpen((prev) => {
       const next = new Set(prev);
@@ -174,15 +202,33 @@ function RunsList({
 
   return (
     <div className="w-72 flex-shrink-0 border-r border-[var(--border-color)] flex flex-col overflow-hidden bg-[var(--bg-primary)]">
-      <div className="px-4 py-3 border-b border-[var(--border-color)] shrink-0">
-        <p className="text-sm font-semibold text-[var(--text-primary)]">Runs</p>
-        <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-          {runs.length} {runs.length === 1 ? "run" : "runs"}
-          <span className="mx-1 opacity-40">·</span>
-          {groups.length} {groups.length === 1 ? "repository" : "repositories"}
-        </p>
+      <div className="p-3 border-b border-[var(--border-color)] shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)]" />
+          <Input
+            type="text"
+            placeholder="Search runs..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-7 pl-7 pr-7 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
+        {groups.length === 0 && (
+          <p className="px-3 py-6 text-center text-[12px] text-[var(--text-secondary)]">
+            No runs match
+          </p>
+        )}
         {groups.map(([repo, items]) => {
           const expanded = open.has(repo);
           const attention = items.filter((run) => run.bucket === "needs_attention" || run.bucket === "blocked").length;
