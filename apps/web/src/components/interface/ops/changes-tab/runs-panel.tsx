@@ -693,18 +693,18 @@ function TreeRail({
   const steps: {
     id: TreeId;
     icon: typeof GitBranch;
-    chip: { icon: typeof GitBranch; name: string; sha?: string } | { pending: string };
+    chip: { name: string; sha?: string } | { pending: string };
   }[] = [
     {
       id: "base",
       icon: GitBranch,
-      chip: { icon: GitBranch, name: "main", sha: shortSha(run.baseSha) },
+      chip: { name: "main", sha: shortSha(run.baseSha) },
     },
     {
       id: "sandbox",
       icon: FolderGit2,
       chip: treeAvailable(run.machine, "sandbox")
-        ? { icon: FolderGit2, name: "worktree", sha: shortSha(run.baseSha) }
+        ? { name: "worktree", sha: shortSha(run.baseSha) }
         : { pending: "not allocated" },
     },
     {
@@ -712,7 +712,7 @@ function TreeRail({
       icon: GitPullRequest,
       chip:
         treeAvailable(run.machine, "proposed") && run.prBranch && run.machine !== "FAILED"
-          ? { icon: GitBranch, name: run.prBranch }
+          ? { name: run.prBranch }
           : { pending: run.machine === "FAILED" ? "not opened" : "not verified" },
     },
   ];
@@ -746,17 +746,16 @@ function TreeRail({
                 </div>
                 <div className="mt-1.5">
                   {"pending" in step.chip ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
-                      <Lock className="h-3 w-3 shrink-0 opacity-70" />
+                    <span className="inline-flex items-center rounded-md border border-dashed border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
                       {step.chip.pending}
                     </span>
                   ) : (
                     <BranchChip
-                      icon={step.chip.icon}
                       name={step.chip.name}
                       sha={step.chip.sha}
                       active={selected}
                       muted={!selected}
+                      showIcon={false}
                     />
                   )}
                 </div>
@@ -773,13 +772,13 @@ function BranchChip({
   sha,
   active,
   muted,
-  icon: Icon = GitBranch,
+  showIcon = true,
 }: {
   name: string;
   sha?: string;
   active?: boolean;
   muted?: boolean;
-  icon?: typeof GitBranch;
+  showIcon?: boolean;
 }) {
   return (
     <span
@@ -791,7 +790,7 @@ function BranchChip({
         muted && !active && "opacity-80",
       )}
     >
-      <Icon className="h-3 w-3 shrink-0 opacity-70" />
+      {showIcon && <GitBranch className="h-3 w-3 shrink-0 opacity-70" />}
       <span className="font-mono text-[11px] truncate">{name}</span>
       {sha && (
         <span className="font-mono text-[10px] opacity-70 shrink-0">{sha}</span>
