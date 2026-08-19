@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import {
   AlertDialog,
@@ -15,6 +15,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -102,6 +111,22 @@ const fileKindLabel: Record<FileHitKind, string> = {
   documentation: "docs",
   changelog: "changelog",
 };
+
+const PROVIDER_PAGE_SIZE = 8;
+
+function pageWindow(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => index + 1);
+  }
+  const items: (number | "ellipsis")[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) items.push("ellipsis");
+  for (let page = start; page <= end; page += 1) items.push(page);
+  if (end < total - 1) items.push("ellipsis");
+  items.push(total);
+  return items;
+}
 
 const KIND_OPTIONS = Object.keys(CHANGE_KIND_LABELS) as ChangeKind[];
 const STATUS_OPTIONS = Object.keys(statusConfig) as DetectionStatus[];
@@ -232,6 +257,7 @@ export function ChangesInbox({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DetectionStatus | "all">("all");
   const [kindFilter, setKindFilter] = useState<ChangeKind | "all">("all");
+  const [providerPage, setProviderPage] = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
   const [bannerOpen, setBannerOpen] = useState(true);
   const [statusOverride, setStatusOverride] = useState<Record<string, DetectionStatus>>({});
@@ -275,6 +301,10 @@ export function ChangesInbox({
     });
   }, [kindFilter, searchQuery, statusFilter, statusOverride]);
 
+  useEffect(() => {
+    setProviderPage({});
+  }, [kindFilter, searchQuery, statusFilter]);
+
   const byProvider = useMemo(() => {
     const groups = new Map<string, ProjectChange[]>();
     for (const change of filtered) {
@@ -301,7 +331,12 @@ export function ChangesInbox({
     setSearchQuery("");
     setStatusFilter("all");
     setKindFilter("all");
+    setProviderPage({});
     setMoreOpen(false);
+  };
+
+  const setPageFor = (provider: string, page: number) => {
+    setProviderPage((prev) => ({ ...prev, [provider]: page }));
   };
 
   const toggleProvider = (provider: string) => {
@@ -548,6 +583,9 @@ export function ChangesInbox({
           ) : (
             Array.from(byProvider.entries()).map(([provider, changes]) => {
               const isExpanded = expandedProviders.has(provider);
+              const totalPages = Math.max(1, Math.ceil(changes.length / PROVIDER_PAGE_SIZE));
+              const page = Math.min(providerPage[provider] ?? 1, totalPages);
+              const paged = changes.slice((page - 1) * PROVIDER_PAGE_SIZE, page * PROVIDER_PAGE_SIZE);
               const groupNeedsYou = changes.filter((c) => displayStatus(c) === "needs_you").length;
               const groupWatching = changes.filter((c) => displayStatus(c) === "watching").length;
               const groupDismissed = changes.filter((c) => displayStatus(c) === "dismissed").length;
@@ -609,7 +647,7 @@ export function ChangesInbox({
 
                   {isExpanded && (
                     <div className="border-t border-[var(--border-color)]">
-                      {changes.map((change) => {
+                      {paged.map((change) => {
                         const open = expandedChanges.has(change.id);
                         const resolvedStatus = displayStatus(change);
                         const run = displayProgress(change);
@@ -823,6 +861,56 @@ export function ChangesInbox({
                           </div>
                         );
                       })}
+                      {totalPages > 1 && (
+                        <div className="border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2">
+                          <Pagination>
+                            <PaginationContent className="gap-0.5">
+                              <PaginationItem>
+                                <PaginationPrevious
+                                  onClick={() => setPageFor(provider, Math.max(1, page - 1))}
+                                  className={cn(
+                                    "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
+                                    "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+                                    page === 1 && "pointer-events-none opacity-50",
+                                  )}
+                                />
+                              </PaginationItem>
+                              {pageWindow(page, totalPages).map((item, index) =>
+                                item === "ellipsis" ? (
+                                  <PaginationItem key={`ellipsis-${index}`}>
+                                    <PaginationEllipsis className="h-7 w-7 text-[var(--text-secondary)]" />
+                                  </PaginationItem>
+                                ) : (
+                                  <PaginationItem key={item}>
+                                    <PaginationLink
+                                      onClick={() => setPageFor(provider, item)}
+                                      isActive={page === item}
+                                      className={cn(
+                                        "h-7 w-7 text-[11px] cursor-pointer border",
+                                        page === item
+                                          ? "bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                                          : "bg-[var(--bg-primary)] border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+                                      )}
+                                    >
+                                      {item}
+                                    </PaginationLink>
+                                  </PaginationItem>
+                                ),
+                              )}
+                              <PaginationItem>
+                                <PaginationNext
+                                  onClick={() => setPageFor(provider, Math.min(totalPages, page + 1))}
+                                  className={cn(
+                                    "h-7 px-2 text-[11px] cursor-pointer bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)]",
+                                    "hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+                                    page === totalPages && "pointer-events-none opacity-50",
+                                  )}
+                                />
+                              </PaginationItem>
+                            </PaginationContent>
+                          </Pagination>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
