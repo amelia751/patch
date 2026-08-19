@@ -24,8 +24,6 @@ import {
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
 import {
   MACHINE_LABEL,
-  RAIL,
-  railIndex,
   treeAvailable,
   treeForMachine,
   visibleLog,
@@ -33,7 +31,6 @@ import {
   type AgentLogLine,
   type DiffFile,
   type DiffLine,
-  type MachineState,
   type MockRun,
   type RunBucket,
   type TreeId,
@@ -341,7 +338,6 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
             <FactChip mono>{run.code}</FactChip>
           </span>
         </div>
-        <StateRail machine={run.machine} />
       </div>
 
       {run.machine === "HUMAN_REQUIRED" && (
@@ -439,68 +435,6 @@ function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }
         <AgentLog run={run} />
       </div>
     </div>
-  );
-}
-
-function StateRail({ machine }: { machine: MachineState }) {
-  const current = railIndex(machine);
-  const stoppedEarly = machine === "UNAFFECTED" || machine === "HELD";
-  const halted = machine === "FAILED" || machine === "BLOCKED";
-
-  return (
-    <ol className="mt-2.5 flex items-center gap-0 min-w-0">
-      {RAIL.map((step, index) => {
-        const done = index < current || (stoppedEarly && step.at.includes(machine));
-        const here = step.at.includes(machine);
-        const future = index > current && !here;
-        return (
-          <li key={step.label} className="flex items-center min-w-0 flex-1 last:flex-none">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className={cn(
-                  "flex h-3.5 w-3.5 items-center justify-center rounded-full border shrink-0",
-                  here && machine === "HUMAN_REQUIRED" && "border-amber-500/50 bg-amber-500/15",
-                  here && halted && "border-red-500/50 bg-red-500/15",
-                  here && machine !== "HUMAN_REQUIRED" && !halted && "border-sky-400/50 bg-sky-400/15",
-                  done && !here && "border-emerald-500/40 bg-emerald-500/10",
-                  future && "border-[var(--border-color)]",
-                )}
-              >
-                {done && !here ? (
-                  <Check className="h-2 w-2 text-emerald-500" />
-                ) : (
-                  <span
-                    className={cn(
-                      "h-1 w-1 rounded-full",
-                      here && machine === "HUMAN_REQUIRED" && "bg-amber-500",
-                      here && halted && "bg-red-500",
-                      here && machine !== "HUMAN_REQUIRED" && !halted && "bg-sky-400",
-                      future && "bg-[var(--border-color)]",
-                    )}
-                  />
-                )}
-              </span>
-              <span
-                className={cn(
-                  "text-[10px] uppercase tracking-wide truncate",
-                  here ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
-                )}
-              >
-                {step.label}
-              </span>
-            </div>
-            {index < RAIL.length - 1 && (
-              <span
-                className={cn(
-                  "mx-2 h-px flex-1 min-w-[8px]",
-                  index < current ? "bg-emerald-500/40" : "bg-[var(--border-color)]",
-                )}
-              />
-            )}
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 

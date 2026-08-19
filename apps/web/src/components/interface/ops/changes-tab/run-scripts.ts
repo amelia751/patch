@@ -126,15 +126,6 @@ export const MACHINE_LABEL: Record<MachineState, string> = {
   BLOCKED: "Blocked",
 };
 
-export const RAIL: { at: MachineState[]; label: string }[] = [
-  { at: ["NORMALIZED"], label: "Normalize" },
-  { at: ["IMPACT_SCANNING", "UNAFFECTED"], label: "Impact" },
-  { at: ["POLICY_EVALUATION", "HUMAN_REQUIRED", "HELD", "BLOCKED"], label: "Policy" },
-  { at: ["PATCHING", "BUILDING", "TESTING"], label: "Sandbox" },
-  { at: ["VERIFYING", "FAILED"], label: "Verify" },
-  { at: ["PR_CREATED"], label: "PR" },
-];
-
 function bucketOf(machine: MachineState): RunBucket {
   if (machine === "HUMAN_REQUIRED") return "needs_attention";
   if (machine === "PR_CREATED") return "ready_for_review";
@@ -671,11 +662,6 @@ export function visibleCommands(run: MockRun): SandboxCommand[] {
     return run.commands.filter((item) => item.phase === "patch" || item.phase === "build");
   }
   return run.commands;
-}
-
-export function railIndex(machine: MachineState): number {
-  const index = RAIL.findIndex((step) => step.at.includes(machine));
-  return index === -1 ? 0 : index;
 }
 
 export const BUCKET_LABEL: Record<RunBucket, string> = {
