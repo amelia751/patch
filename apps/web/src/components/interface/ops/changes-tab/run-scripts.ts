@@ -1,10 +1,14 @@
 /**
  * Simulated run plans. These are UI fixtures — they do not claim a real
- * sandbox, test, or PR outcome. Each action type has a different ending.
+ * sandbox, test, or PR outcome.
+ *
+ * A run is not a chat. It is a pinned base SHA, an isolated worktree the
+ * Patch agent may edit, and — only after independent verification — a
+ * proposed branch. The publisher stops at the pull request.
  */
 
 import type { ChangeActionId } from "./actions";
-import { isDocsOnly, type ProjectChange } from "./data";
+import { isDocsOnly, type FileHit, type ProjectChange } from "./data";
 
 export type RunBucket =
   | "active"
@@ -14,16 +18,47 @@ export type RunBucket =
   | "idle"
   | "blocked";
 
-export type TodoState = "pending" | "in_progress" | "completed" | "cancelled" | "deferred";
+export type MachineState =
+  | "NORMALIZED"
+  | "IMPACT_SCANNING"
+  | "POLICY_EVALUATION"
+  | "HUMAN_REQUIRED"
+  | "PATCHING"
+  | "BUILDING"
+  | "TESTING"
+  | "VERIFYING"
+  | "PR_CREATED"
+  | "UNAFFECTED"
+  | "HELD"
+  | "FAILED"
+  | "BLOCKED";
 
-export interface RunTodo {
-  id: string;
-  label: string;
-  detail: string;
-  agent: string;
-  state: TodoState;
-  pause?: boolean;
-  pausePrompt?: string;
+export type TreeId = "base" | "sandbox" | "proposed";
+
+export type CommandPhase = "patch" | "build" | "test";
+
+export interface DiffLine {
+  kind: "ctx" | "add" | "del";
+  text: string;
+}
+
+export interface DiffFile {
+  path: string;
+  additions: number;
+  deletions: number;
+  lines: DiffLine[];
+}
+
+export interface SandboxCommand {
+  phase: CommandPhase;
+  argv: string;
+  exit: number | null;
+  tail: string;
+}
+
+export interface VerifyCheck {
+  name: string;
+  passed: boolean;
 }
 
 export interface MockRun {
@@ -31,198 +66,269 @@ export interface MockRun {
   code: string;
   changeId: string;
   title: string;
-  prompt: string;
   repo?: string;
   baseSha?: string;
   fileHits?: number;
   fileCount?: number;
+  identifiers: string[];
+  replacement?: string;
+  files: FileHit[];
   action: ChangeActionId;
+  machine: MachineState;
+  path: MachineState[];
   bucket: RunBucket;
   createdAt: number;
-  todos: RunTodo[];
-  outcome?: string;
-  prLabel?: string;
+  attempt: number;
+  attemptBudget: number;
+  pauseReason?: string;
+  commands: SandboxCommand[];
+  diffs: DiffFile[];
+  checks: VerifyCheck[];
+  prBranch?: string;
   traceId: string;
 }
 
-function todo(
-  id: string,
-  label: string,
-  detail: string,
-  agent: string,
-  extra?: Pick<RunTodo, "pause" | "pausePrompt">,
-): RunTodo {
-  return { id, label, detail, agent, state: "pending", ...extra };
+export const MACHINE_LABEL: Record<MachineState, string> = {
+  NORMALIZED: "Normalizing",
+  IMPACT_SCANNING: "Scanning inventory",
+  POLICY_EVALUATION: "Policy",
+  HUMAN_REQUIRED: "Needs you",
+  PATCHING: "Patching in sandbox",
+  BUILDING: "Clean build",
+  TESTING: "Clean tests",
+  VERIFYING: "Independent verify",
+  PR_CREATED: "PR opened",
+  UNAFFECTED: "No runtime path",
+  HELD: "Held",
+  FAILED: "Failed",
+  BLOCKED: "Blocked",
+};
+
+export const RAIL: { at: MachineState[]; label: string }[] = [
+  { at: ["NORMALIZED"], label: "Normalize" },
+  { at: ["IMPACT_SCANNING", "UNAFFECTED"], label: "Impact" },
+  { at: ["POLICY_EVALUATION", "HUMAN_REQUIRED", "HELD"], label: "Policy" },
+  { at: ["PATCHING", "BUILDING", "TESTING"], label: "Sandbox" },
+  { at: ["VERIFYING"], label: "Verify" },
+  { at: ["PR_CREATED"], label: "PR" },
+];
+
+function bucketOf(machine: MachineState): RunBucket {
+  if (machine === "HUMAN_REQUIRED") return "needs_attention";
+  if (machine === "PR_CREATED") return "ready_for_review";
+  if (machine === "UNAFFECTED" || machine === "HELD") return "idle";
+  if (machine === "FAILED" || machine === "BLOCKED") return "blocked";
+  return "active";
 }
 
-export function scriptFor(change: ProjectChange, action: ChangeActionId): RunTodo[] {
-  const repo = change.repo ?? "imported repositories";
-  const replacement = change.replacement ?? "unresolved";
-
+function pathFor(change: ProjectChange, action: ChangeActionId): MachineState[] {
   if (action === "prepare") {
-    return [
-      todo("n", "Normalize the note", "Untrusted provider text → ChangeManifest. No inventory write.", "Change Intelligence"),
-      todo("m", "Match inventory", `Join known identifiers against ${repo}. Early — note is not in effect.`, "Impact"),
-      todo("i", "Draft impact", "Record what would break if the note lands. Do not allocate a sandbox.", "Impact"),
-      todo("p", "Hold the draft", "No pull request until the effective day. Watching continues.", "Policy"),
-    ];
+    return ["NORMALIZED", "IMPACT_SCANNING", "HELD"];
   }
-
   if (action === "start" && isDocsOnly(change)) {
+    return ["NORMALIZED", "IMPACT_SCANNING", "UNAFFECTED"];
+  }
+  const pause =
+    action === "review" || !change.replacement || change.migration === "semantic";
+  if (pause) {
     return [
-      todo("n", "Normalize the note", "Same ChangeManifest path as a runtime finding.", "Change Intelligence"),
-      todo("m", "Classify inventory", "Hits are documentation and changelog only. No executable path.", "Impact"),
-      todo("s", "Stop without a PR", "Report-only. Opening a patch would rewrite history or docs by accident.", "Policy"),
+      "NORMALIZED",
+      "IMPACT_SCANNING",
+      "POLICY_EVALUATION",
+      "HUMAN_REQUIRED",
+      "PATCHING",
+      "BUILDING",
+      "TESTING",
+      "VERIFYING",
+      "PR_CREATED",
     ];
   }
-
-  if (action === "review" || !change.replacement) {
-    return [
-      todo("n", "Normalize the note", `${change.title} → ChangeManifest. Identifiers kept as claims.`, "Change Intelligence"),
-      todo("m", "Match inventory", `Find ${change.identifiers[0] ?? "identifiers"} in ${repo}.`, "Impact"),
-      todo(
-        "i",
-        "Impact analysis",
-        change.migration === "semantic"
-          ? "Request surfaces differ. A string rewrite is incorrect."
-          : "Replacement must be resolved against the installed SDK.",
-        "Impact",
-      ),
-      todo("g", "Policy pause", `Named replacement is ${replacement}. Auto-patch is off.`, "Policy", {
-        pause: true,
-        pausePrompt: "Allow this replacement and continue to an isolated patch?",
-      }),
-      todo("s", "Allocate sandbox", "Isolated workspace at the pinned base SHA. Not the primary checkout.", "Patch"),
-      todo("x", "Generate patch", "Write only what policy allowed. Forbidden paths stay untouched.", "Patch"),
-      todo("b", "Build and tests", "Simulated checks in the sandbox. Failure would fail closed.", "Verification"),
-      todo("v", "Independent verification", "A separate judge. The patch author does not grade itself.", "Verification"),
-      todo("pr", "Open pull request", "Stop. PatchAPI does not merge.", "PR"),
-    ];
-  }
-
-  if (change.migration === "semantic") {
-    return [
-      todo("n", "Normalize the note", "Imagen 4 retirement hashed and screened as untrusted input.", "Change Intelligence"),
-      todo("m", "Match inventory", `${change.fileHits} refs across ${change.fileCount} files in ${repo}.`, "Impact"),
-      todo("i", "Impact analysis", "Semantic migration: Imagen image surface ≠ Gemini native image generation.", "Impact"),
-      todo("g", "Policy", "Risk MEDIUM. Auto-patch allowed only after option mapping is explicit.", "Policy", {
-        pause: true,
-        pausePrompt: "Continue? Seed / numberOfImages have no Gemini equivalent and will escalate, not drop.",
-      }),
-      todo("s", "Allocate sandbox", `Workspace from ${change.baseSha?.slice(0, 12) ?? "pinned SHA"}.`, "Patch"),
-      todo("x", "Generate patch", "Rewrite catalog strategy, not only model ids. CHANGELOG.md is immutable.", "Patch"),
-      todo("b", "Build and tests", "Simulated typescript build + vitest in isolation.", "Verification"),
-      todo("v", "Independent verification", "Verification Agent vetoes a string-only rewrite.", "Verification"),
-      todo("pr", "Open pull request", "Evidence-backed PR. Humans merge.", "PR"),
-    ];
-  }
-
   return [
-    todo("n", "Normalize the note", `${change.title} → ChangeManifest.`, "Change Intelligence"),
-    todo("m", "Match inventory", `${change.fileHits || 0} refs in ${repo}.`, "Impact"),
-    todo("i", "Impact analysis", "Mechanical identifier rewrite on the same request surface.", "Impact"),
-    todo("g", "Policy ALLOW", "Auto-patch and auto-PR on. Auto-merge stays false.", "Policy"),
-    todo("s", "Allocate sandbox", "Isolated workspace. Generated code never runs on the console.", "Patch"),
-    todo("x", "Generate patch", `Replace identifiers with ${replacement}.`, "Patch"),
-    todo("b", "Build and tests", "Simulated sandbox checks.", "Verification"),
-    todo("v", "Independent verification", "Second model grades the first.", "Verification"),
-    todo("pr", "Open pull request", "Stop at the PR.", "PR"),
+    "NORMALIZED",
+    "IMPACT_SCANNING",
+    "POLICY_EVALUATION",
+    "PATCHING",
+    "BUILDING",
+    "TESTING",
+    "VERIFYING",
+    "PR_CREATED",
   ];
 }
 
-function promptFor(change: ProjectChange, action: ChangeActionId): string {
-  const repo = change.repo ?? "this project's imported repositories";
-  if (action === "prepare") {
-    return `Prepare ${change.title} early against ${repo}. Draft impact only. Do not open a pull request until the note takes effect.`;
+function pauseFor(change: ProjectChange, action: ChangeActionId): string | undefined {
+  if (action === "prepare" || (action === "start" && isDocsOnly(change))) return undefined;
+  if (!change.replacement) {
+    return "No replacement is named. Continuing still stops at a pull request — it will not invent an identifier.";
   }
-  if (action === "start" && isDocsOnly(change)) {
-    return `Check ${change.title} anyway. Hits look documentation-only — confirm and stop if there is no runtime path.`;
+  if (change.migration === "semantic") {
+    return "Seed / numberOfImages have no Gemini equivalent. Continue only if those options escalate, not drop.";
   }
   if (action === "review") {
-    return `Continue ${change.title} on ${repo}. Do not auto-patch. Confirm the replacement, then open a pull request. Do not merge.`;
+    return `Named replacement is ${change.replacement}. Allow it and continue to an isolated patch?`;
   }
-  return `Start a remediation for ${change.title} against ${repo}. Analyze, patch in isolation, verify, and open a pull request. Do not merge.`;
+  return undefined;
+}
+
+function diffsFor(change: ProjectChange): DiffFile[] {
+  const runtime = change.files.filter((file) => file.kind === "runtime").slice(0, 2);
+  const fromId = change.identifiers[0];
+  const toId = change.replacement;
+  if (!fromId || !toId || runtime.length === 0) return [];
+
+  return runtime.map((file, index) => {
+    const lines: DiffLine[] =
+      change.migration === "semantic" && index === 0
+        ? [
+            { kind: "ctx", text: "  models: [" },
+            { kind: "del", text: `    { id: "${fromId}", surface: "imagen.generate" },` },
+            { kind: "add", text: `    { id: "${toId}", surface: "generateContent" },` },
+            { kind: "ctx", text: "  ]" },
+          ]
+        : [
+            { kind: "ctx", text: "  id:" },
+            { kind: "del", text: `    "${fromId}"` },
+            { kind: "add", text: `    "${toId}"` },
+          ];
+    return {
+      path: file.path,
+      additions: lines.filter((line) => line.kind === "add").length,
+      deletions: lines.filter((line) => line.kind === "del").length,
+      lines,
+    };
+  });
+}
+
+function commandsFor(change: ProjectChange): SandboxCommand[] {
+  const sample = change.files.find((file) => file.kind === "runtime")?.path ?? ".";
+  const sha = change.baseSha?.slice(0, 12) ?? "unpinned";
+  return [
+    {
+      phase: "patch",
+      argv: `read_file ${sample}`,
+      exit: 0,
+      tail: `Workspace root only. Base ${sha}.`,
+    },
+    {
+      phase: "patch",
+      argv: "apply_patch",
+      exit: 0,
+      tail: "Forbidden paths untouched. CHANGELOG.md is not in the diff.",
+    },
+    {
+      phase: "patch",
+      argv: "pnpm --dir cli test -- generate.test.ts",
+      exit: 0,
+      tail: "Agent loop — diagnostic, not evidence.",
+    },
+    {
+      phase: "build",
+      argv: "pnpm --dir cli build",
+      exit: 0,
+      tail: "Orchestrator clean run from the diff. Not the agent’s own build.",
+    },
+    {
+      phase: "test",
+      argv: "pnpm --dir cli test",
+      exit: 0,
+      tail: "Orchestrator clean run. This is what verification sees.",
+    },
+  ];
+}
+
+function checksFor(change: ProjectChange): VerifyCheck[] {
+  return [
+    { name: "Identifiers mapped as the manifest specifies", passed: Boolean(change.replacement) },
+    { name: "CHANGELOG.md and other history files untouched", passed: true },
+    { name: "Forbidden paths untouched", passed: true },
+    { name: "Clean build and tests from the diff alone", passed: true },
+    { name: "Verifier did not see the patch author’s plan", passed: true },
+  ];
 }
 
 export function createRun(change: ProjectChange, action: ChangeActionId, seq: number): MockRun {
-  const todos = scriptFor(change, action);
-  if (todos[0]) todos[0].state = "in_progress";
+  const path = pathFor(change, action);
+  const machine = path[0] ?? "NORMALIZED";
   return {
     id: `run-${change.id.slice(0, 18)}-${Date.now().toString(36)}`,
     code: `RUN-${String(seq).padStart(3, "0")}`,
     changeId: change.id,
     title: change.title,
-    prompt: promptFor(change, action),
     repo: change.repo,
     baseSha: change.baseSha,
     fileHits: change.fileHits,
     fileCount: change.fileCount,
+    identifiers: change.identifiers,
+    replacement: change.replacement,
+    files: change.files,
     action,
-    bucket: "active",
+    machine,
+    path,
+    bucket: bucketOf(machine),
     createdAt: Date.now(),
-    todos,
+    attempt: 1,
+    attemptBudget: 3,
+    pauseReason: pauseFor(change, action),
+    commands: commandsFor(change),
+    diffs: diffsFor(change),
+    checks: checksFor(change),
+    prBranch: `patchapi/${change.id.replace(/[^a-z0-9]+/gi, "-").slice(0, 28)}`,
     traceId: `trc-${Math.random().toString(16).slice(2, 10)}`,
   };
 }
 
 export function advanceRun(run: MockRun): MockRun {
   if (run.bucket !== "active") return run;
-  const todos = run.todos.map((t) => ({ ...t }));
-  const current = todos.find((t) => t.state === "in_progress");
-  if (!current) return finishIfDone({ ...run, todos });
-
-  current.state = "completed";
-  const next = todos.find((t) => t.state === "pending");
-  if (!next) return finishIfDone({ ...run, todos });
-
-  next.state = "in_progress";
-  if (next.pause) {
-    return { ...run, todos, bucket: "needs_attention" };
-  }
-  return { ...run, todos };
+  const index = run.path.indexOf(run.machine);
+  const next = run.path[index + 1];
+  if (!next) return { ...run, bucket: bucketOf(run.machine) };
+  return { ...run, machine: next, bucket: bucketOf(next) };
 }
 
 export function continueRun(run: MockRun): MockRun {
-  const todos = run.todos.map((t) => ({ ...t }));
-  const paused = todos.find((t) => t.state === "in_progress" && t.pause);
-  if (paused) paused.state = "completed";
-  const next = todos.find((t) => t.state === "pending");
-  if (!next) return finishIfDone({ ...run, todos });
-  next.state = "in_progress";
-  return { ...run, todos, bucket: next.pause ? "needs_attention" : "active" };
-}
-
-function finishIfDone(run: MockRun): MockRun {
-  const remaining = run.todos.some((t) => t.state === "pending" || t.state === "in_progress");
-  if (remaining) return run;
-
-  const last = run.todos[run.todos.length - 1];
-  if (last?.id === "pr") {
-    return {
-      ...run,
-      bucket: "ready_for_review",
-      outcome: "Pull request opened. PatchAPI stopped.",
-      prLabel: `${run.repo ?? "repo"}#—`,
-    };
-  }
-  if (run.action === "prepare") {
-    return {
-      ...run,
-      bucket: "idle",
-      outcome: "Draft held. No pull request until the note takes effect.",
-    };
-  }
-  return {
-    ...run,
-    bucket: "idle",
-    outcome: "Report-only. No runtime path, so no pull request.",
-  };
+  const index = run.path.indexOf(run.machine);
+  const next = run.path[index + 1];
+  if (!next) return { ...run, bucket: bucketOf(run.machine) };
+  return { ...run, machine: next, bucket: bucketOf(next) };
 }
 
 export function inboxProgressFor(bucket: RunBucket): "idle" | "running" | "pr_opened" {
   if (bucket === "ready_for_review") return "pr_opened";
   if (bucket === "active" || bucket === "needs_attention" || bucket === "waiting") return "running";
   return "idle";
+}
+
+export function treeAvailable(machine: MachineState, tree: TreeId): boolean {
+  if (tree === "base") return true;
+  if (tree === "sandbox") {
+    return (
+      machine === "PATCHING" ||
+      machine === "BUILDING" ||
+      machine === "TESTING" ||
+      machine === "VERIFYING" ||
+      machine === "PR_CREATED"
+    );
+  }
+  return machine === "VERIFYING" || machine === "PR_CREATED";
+}
+
+export function treeForMachine(machine: MachineState): TreeId {
+  if (treeAvailable(machine, "proposed")) return "proposed";
+  if (treeAvailable(machine, "sandbox")) return "sandbox";
+  return "base";
+}
+
+export function visibleCommands(run: MockRun): SandboxCommand[] {
+  if (!treeAvailable(run.machine, "sandbox")) return [];
+  if (run.machine === "PATCHING") return run.commands.filter((item) => item.phase === "patch");
+  if (run.machine === "BUILDING") {
+    return run.commands.filter((item) => item.phase === "patch" || item.phase === "build");
+  }
+  return run.commands;
+}
+
+export function railIndex(machine: MachineState): number {
+  const index = RAIL.findIndex((step) => step.at.includes(machine));
+  return index === -1 ? 0 : index;
 }
 
 export const BUCKET_LABEL: Record<RunBucket, string> = {
@@ -232,13 +338,4 @@ export const BUCKET_LABEL: Record<RunBucket, string> = {
   ready_for_review: "Ready for review",
   idle: "Idle",
   blocked: "Blocked",
-};
-
-export const BUCKET_TONE: Record<RunBucket, string> = {
-  active: "text-sky-400 bg-sky-400/10 border-sky-400/30",
-  needs_attention: "text-amber-500 bg-amber-500/10 border-amber-500/30",
-  waiting: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
-  ready_for_review: "text-emerald-500 bg-emerald-500/10 border-emerald-500/30",
-  idle: "text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-[var(--border-color)]",
-  blocked: "text-red-500 bg-red-500/10 border-red-500/30",
 };

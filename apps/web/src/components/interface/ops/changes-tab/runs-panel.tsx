@@ -1,14 +1,28 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Check, GitPullRequest, Loader2, Radio } from "lucide-react";
 import {
-  BUCKET_LABEL,
-  BUCKET_TONE,
+  Check,
+  GitPullRequest,
+  Lock,
+  Radio,
+} from "lucide-react";
+import {
+  MACHINE_LABEL,
+  RAIL,
+  railIndex,
+  treeAvailable,
+  treeForMachine,
+  visibleCommands,
+  type DiffFile,
+  type DiffLine,
+  type MachineState,
   type MockRun,
   type RunBucket,
-  type RunTodo,
+  type SandboxCommand,
+  type TreeId,
 } from "./run-scripts";
 
 function timeAgo(ts: number): string {
@@ -26,10 +40,29 @@ function statusDot(bucket: RunBucket): string {
   return "bg-[var(--text-secondary)]";
 }
 
+function shortSha(sha?: string): string {
+  return sha ? sha.slice(0, 7) : "unpinned";
+}
+
 function repoShort(repo?: string): string | undefined {
   if (!repo) return undefined;
   return repo.split("/")[1] ?? repo;
 }
+
+const TREE_COPY: Record<TreeId, { label: string; hint: string }> = {
+  base: {
+    label: "Base",
+    hint: "Imported repository at the pinned SHA. Inventory is joined here. PatchAPI does not write this tree.",
+  },
+  sandbox: {
+    label: "Sandbox",
+    hint: "Isolated worktree cloned from the same SHA. The Patch agent may edit here. This is not your checkout, and it is not evidence.",
+  },
+  proposed: {
+    label: "Proposed",
+    hint: "Verified diff replayed onto a clean tree. This is the branch the publisher opens. PatchAPI does not merge.",
+  },
+};
 
 export function RunsPanel({
   runs,
@@ -53,8 +86,7 @@ export function RunsPanel({
           </div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">No runs yet</h2>
           <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed">
-            Start a remediation from Releases. Each run is one piece of work — it stops at a pull
-            request.
+            Start a remediation from Releases
           </p>
         </div>
       </div>
@@ -63,7 +95,7 @@ export function RunsPanel({
 
   return (
     <div className="h-full flex min-w-0 bg-[var(--bg-primary)]">
-      <div className="w-[280px] flex-shrink-0 border-r border-[var(--border-color)] overflow-y-auto">
+      <div className="w-[260px] flex-shrink-0 border-r border-[var(--border-color)] overflow-y-auto">
         <div className="px-4 pt-4 pb-2">
           <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
             {runs.length} {runs.length === 1 ? "run" : "runs"}
@@ -72,7 +104,6 @@ export function RunsPanel({
         <div className="px-2 pb-3 space-y-0.5">
           {runs.map((run) => {
             const active = selected?.id === run.id;
-            const done = run.todos.filter((t) => t.state === "completed").length;
             return (
               <button
                 key={run.id}
@@ -80,33 +111,24 @@ export function RunsPanel({
                 onClick={() => onSelect(run.id)}
                 className={cn(
                   "w-full text-left rounded-lg px-2.5 py-2.5 transition-colors",
-                  active
-                    ? "bg-[var(--bg-tertiary)]"
-                    : "hover:bg-[var(--bg-secondary)]",
+                  active ? "bg-[var(--bg-tertiary)]" : "hover:bg-[var(--bg-secondary)]",
                 )}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusDot(run.bucket))} />
                   <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)] truncate">
-                    {BUCKET_LABEL[run.bucket]}
-                  </span>
-                  <span className="ml-auto text-[10px] tabular-nums text-[var(--text-secondary)]">
-                    {done}/{run.todos.length}
+                    {MACHINE_LABEL[run.machine]}
                   </span>
                 </div>
                 <p className="text-[13px] text-[var(--text-primary)] leading-snug line-clamp-2">
                   {run.title}
                 </p>
-                <p className="text-[11px] text-[var(--text-secondary)] mt-1 truncate">
-                  {run.code}
-                  {repoShort(run.repo) ? (
-                    <>
-                      <span className="mx-1.5 text-[var(--border-color)]">·</span>
-                      {repoShort(run.repo)}
-                    </>
-                  ) : null}
-                  <span className="mx-1.5 text-[var(--border-color)]">·</span>
-                  {timeAgo(run.createdAt)}
+                <p className="text-[11px] font-mono text-[var(--text-secondary)] mt-1 truncate">
+                  {repoShort(run.repo) ?? "no repo"}
+                  <span className="mx-1 text-[var(--border-color)]">@</span>
+                  {shortSha(run.baseSha)}
+                  <span className="mx-1.5 font-sans text-[var(--border-color)]">·</span>
+                  <span className="font-sans">{timeAgo(run.createdAt)}</span>
                 </p>
               </button>
             );
@@ -120,183 +142,371 @@ export function RunsPanel({
 }
 
 function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }) {
-  const done = run.todos.filter((t) => t.state === "completed").length;
-  const progress = run.todos.length === 0 ? 0 : Math.round((done / run.todos.length) * 100);
+  const current = treeForMachine(run.machine);
+  const [picked, setPicked] = useState<TreeId | null>(null);
+
+  useEffect(() => {
+    setPicked(null);
+  }, [run.id, run.machine]);
+
+  const tree = picked ?? current;
+  const repo = run.repo ?? "imported repositories";
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      <div className="px-6 pt-5 pb-0 border-b border-[var(--border-color)]">
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--border-color)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] text-[var(--text-secondary)] font-mono">{run.code}</p>
             <h2 className="text-[15px] font-semibold text-[var(--text-primary)] mt-1 tracking-tight">
               {run.title}
             </h2>
-            <p className="text-[12px] text-[var(--text-secondary)] mt-1.5 truncate">
-              {[run.repo ?? "this project", run.baseSha ? run.baseSha.slice(0, 7) : null]
-                .filter(Boolean)
-                .join(" · ")}
+            <p className="text-[12px] font-mono text-[var(--text-secondary)] mt-1.5 truncate">
+              {repo}
+              <span className="mx-1">@</span>
+              {shortSha(run.baseSha)}
+              <span className="mx-1.5 font-sans">·</span>
+              <span className="font-sans">
+                attempt {run.attempt} of {run.attemptBudget}
+              </span>
+              <span className="mx-1.5 font-sans">·</span>
+              <span className="font-sans">simulated</span>
             </p>
           </div>
-          <span
-            className={cn(
-              "shrink-0 inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-              BUCKET_TONE[run.bucket],
-            )}
-          >
-            {BUCKET_LABEL[run.bucket]}
-          </span>
         </div>
-
-        <p className="mt-3 mb-4 text-[12px] text-[var(--text-secondary)] leading-relaxed max-w-2xl">
-          {run.prompt}
-        </p>
-
-        <div className="h-0.5 w-full rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
-          <div
-            className={cn(
-              "h-full rounded-full transition-[width] duration-300",
-              run.bucket === "blocked"
-                ? "bg-red-500"
-                : run.bucket === "needs_attention"
-                  ? "bg-amber-500"
-                  : run.bucket === "ready_for_review" || run.bucket === "idle"
-                    ? "bg-emerald-500"
-                    : "bg-sky-400",
-            )}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <p className="mt-1.5 mb-3 text-[10px] tabular-nums text-[var(--text-secondary)]">
-          {done} of {run.todos.length} steps
-        </p>
+        <StateRail machine={run.machine} />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-[680px] mx-auto px-6 py-6">
-          <ol className="relative">
-            {run.todos.map((todo, index) => (
-              <TimelineStep
-                key={todo.id}
-                todo={todo}
-                last={index === run.todos.length - 1}
-                onContinue={onContinue}
-              />
-            ))}
-          </ol>
+      {run.machine === "HUMAN_REQUIRED" && (
+        <div className="px-5 py-3 border-b border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3">
+          <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
+            {run.pauseReason ?? "A human has to confirm before a sandbox is allocated."}
+          </p>
+          <Button
+            size="sm"
+            className="h-7 shrink-0 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={onContinue}
+          >
+            Allocate sandbox
+          </Button>
+        </div>
+      )}
 
-          {run.outcome && (
-            <div
+      <div className="flex items-stretch border-b border-[var(--border-color)] px-2">
+        {(["base", "sandbox", "proposed"] as TreeId[]).map((id) => {
+          const open = treeAvailable(run.machine, id);
+          const selected = tree === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              disabled={!open}
+              onClick={() => setPicked(id)}
               className={cn(
-                "mt-2 rounded-lg border px-4 py-3",
-                run.bucket === "ready_for_review"
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-[var(--border-color)] bg-[var(--bg-secondary)]",
+                "px-3 pt-2.5 pb-2 text-left border-b-2 -mb-px transition-colors min-w-0",
+                selected
+                  ? "border-[var(--text-primary)] text-[var(--text-primary)]"
+                  : "border-transparent text-[var(--text-secondary)]",
+                open ? "hover:text-[var(--text-primary)]" : "opacity-40 cursor-not-allowed",
               )}
             >
-              <p className="text-[13px] text-[var(--text-primary)] leading-relaxed">{run.outcome}</p>
-              {run.bucket === "ready_for_review" && (
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-medium text-[var(--text-primary)] truncate">
-                      {run.prLabel ?? `${run.repo ?? "repo"} · pull request`}
-                    </p>
-                    <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-                      {run.fileCount
-                        ? `${run.fileCount} files · review on GitHub · PatchAPI does not merge`
-                        : "Review on GitHub · PatchAPI does not merge"}
-                    </p>
-                  </div>
-                  <GitPullRequest className="h-4 w-4 text-emerald-500 shrink-0" />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+              <p className="text-[11px] font-medium">{TREE_COPY[id].label}</p>
+              <p className="text-[10px] font-mono truncate mt-0.5">
+                {id === "base" && `${shortSha(run.baseSha)}`}
+                {id === "sandbox" && (open ? `worktree · ${shortSha(run.baseSha)}` : "not allocated")}
+                {id === "proposed" && (open ? run.prBranch : "not verified")}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="px-5 pt-3 text-[11px] text-[var(--text-secondary)] leading-relaxed">
+        {TREE_COPY[tree].hint}
+      </p>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
+        {tree === "base" && <BaseTree run={run} />}
+        {tree === "sandbox" && <SandboxTree run={run} />}
+        {tree === "proposed" && <ProposedTree run={run} />}
       </div>
     </div>
   );
 }
 
-function TimelineStep({
-  todo,
-  last,
-  onContinue,
-}: {
-  todo: RunTodo;
-  last: boolean;
-  onContinue: () => void;
-}) {
-  const waiting = todo.state === "in_progress" && Boolean(todo.pause);
-  const working = todo.state === "in_progress" && !todo.pause;
-  const done = todo.state === "completed";
-  const pending = todo.state === "pending" || todo.state === "deferred" || todo.state === "cancelled";
+function StateRail({ machine }: { machine: MachineState }) {
+  const current = railIndex(machine);
+  const stoppedEarly = machine === "UNAFFECTED" || machine === "HELD";
 
   return (
-    <li className="flex gap-3">
-      <div className="flex flex-col items-center w-5 shrink-0">
+    <ol className="mt-3 flex items-center gap-0 min-w-0">
+      {RAIL.map((step, index) => {
+        const done = index < current || (stoppedEarly && step.at.includes(machine));
+        const here = step.at.includes(machine);
+        const future = index > current && !here;
+        return (
+          <li key={step.label} className="flex items-center min-w-0 flex-1 last:flex-none">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className={cn(
+                  "flex h-3.5 w-3.5 items-center justify-center rounded-full border shrink-0",
+                  here && machine === "HUMAN_REQUIRED" && "border-amber-500/50 bg-amber-500/15",
+                  here && machine !== "HUMAN_REQUIRED" && "border-sky-400/50 bg-sky-400/15",
+                  done && !here && "border-emerald-500/40 bg-emerald-500/10",
+                  future && "border-[var(--border-color)]",
+                )}
+              >
+                {done && !here ? (
+                  <Check className="h-2 w-2 text-emerald-500" />
+                ) : (
+                  <span
+                    className={cn(
+                      "h-1 w-1 rounded-full",
+                      here && machine === "HUMAN_REQUIRED" && "bg-amber-500",
+                      here && machine !== "HUMAN_REQUIRED" && "bg-sky-400",
+                      future && "bg-[var(--border-color)]",
+                    )}
+                  />
+                )}
+              </span>
+              <span
+                className={cn(
+                  "text-[10px] uppercase tracking-wide truncate",
+                  here ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]",
+                )}
+              >
+                {step.label}
+              </span>
+            </div>
+            {index < RAIL.length - 1 && (
+              <span
+                className={cn(
+                  "mx-2 h-px flex-1 min-w-[8px]",
+                  index < current ? "bg-emerald-500/40" : "bg-[var(--border-color)]",
+                )}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function BaseTree({ run }: { run: MockRun }) {
+  const runtime = run.files.filter((file) => file.kind === "runtime").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <Meta label="Hits" value={run.fileHits ? String(run.fileHits) : "0"} />
+        <Meta label="Files" value={run.fileCount ? String(run.fileCount) : "0"} />
+        <Meta label="Runtime paths" value={String(runtime)} />
+      </div>
+
+      {run.identifiers.length > 0 && (
+        <section>
+          <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Identifiers at this SHA
+          </h3>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {run.identifiers.map((id) => (
+              <span
+                key={id}
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-primary)]"
+              >
+                {id}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+          Inventory
+        </h3>
+        {run.files.length === 0 ? (
+          <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
+            No usages at this SHA. A sandbox will not be allocated from an empty join.
+          </p>
+        ) : (
+          <ul className="mt-1.5 border border-[var(--border-color)] rounded-md divide-y divide-[var(--border-color)]">
+            {run.files.map((file) => (
+              <li
+                key={file.path}
+                className="flex items-center justify-between gap-3 px-3 py-1.5 font-mono text-[11px]"
+              >
+                <span className="text-[var(--text-primary)] truncate">{file.path}</span>
+                <span className="text-[var(--text-secondary)] shrink-0">
+                  {file.kind ?? "file"}
+                  <span className="mx-1">·</span>
+                  {file.hits}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SandboxTree({ run }: { run: MockRun }) {
+  const commands = visibleCommands(run);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Meta
+          label="Reset"
+          value={`every attempt → ${shortSha(run.baseSha)}`}
+        />
+        <Meta label="Merge" value="never" />
+      </div>
+
+      <section>
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+          Allowlisted commands
+        </h3>
+        <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+          Inner-loop output is diagnostic. The clean build and test below are the
+          orchestrator’s, not the patch author’s.
+        </p>
+        <ul className="mt-2 border border-[var(--border-color)] rounded-md divide-y divide-[var(--border-color)]">
+          {commands.map((command) => (
+            <CommandRow key={`${command.phase}-${command.argv}`} command={command} />
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function CommandRow({ command }: { command: SandboxCommand }) {
+  return (
+    <li className="px-3 py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <code className="text-[11px] text-[var(--text-primary)] truncate">{command.argv}</code>
         <span
           className={cn(
-            "mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border",
-            done && "border-emerald-500/40 bg-emerald-500/10",
-            working && "border-sky-400/40 bg-sky-400/10",
-            waiting && "border-amber-500/40 bg-amber-500/10",
-            pending && "border-[var(--border-color)] bg-[var(--bg-primary)]",
+            "text-[10px] font-mono shrink-0",
+            command.exit === 0 ? "text-emerald-500" : "text-[var(--text-secondary)]",
           )}
         >
-          {done ? (
-            <Check className="h-3 w-3 text-emerald-500" />
-          ) : working ? (
-            <Loader2 className="h-3 w-3 text-sky-400 animate-spin" />
-          ) : waiting ? (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-          ) : (
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--border-color)]" />
-          )}
+          {command.exit === null ? "—" : `exit ${command.exit}`}
         </span>
-        {!last && <span className="mt-1 w-px flex-1 min-h-[12px] bg-[var(--border-color)]" />}
       </div>
-
-      <div className={cn("min-w-0 flex-1", last ? "pb-0" : "pb-5")}>
-        <div className="flex items-baseline justify-between gap-3">
-          <p
-            className={cn(
-              "text-[13px] font-medium leading-snug",
-              pending ? "text-[var(--text-secondary)]" : "text-[var(--text-primary)]",
-            )}
-          >
-            {todo.label}
-          </p>
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
-            {todo.agent}
-          </span>
-        </div>
-
-        {pending ? null : waiting ? (
-          <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-            <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
-              {todo.pausePrompt ?? todo.detail}
-            </p>
-            <Button
-              size="sm"
-              className="mt-2.5 h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={onContinue}
-            >
-              Continue
-            </Button>
-          </div>
-        ) : (
-          <p
-            className={cn(
-              "mt-1 text-[12px] leading-relaxed",
-              working ? "text-[var(--text-secondary)] italic" : "text-[var(--text-secondary)]",
-            )}
-          >
-            {todo.detail}
-          </p>
-        )}
-      </div>
+      <p className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{command.tail}</p>
     </li>
+  );
+}
+
+function ProposedTree({ run }: { run: MockRun }) {
+  const verified = run.machine === "PR_CREATED" || run.machine === "VERIFYING";
+
+  return (
+    <div className="space-y-4">
+      <section>
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+          Independent verification
+        </h3>
+        <div className="mt-1.5 border border-[var(--border-color)] rounded-md px-3 py-2.5">
+          <p className="text-[12px] text-[var(--text-primary)]">
+            {verified
+              ? "Verifier is not the patch author and was not given the patch plan."
+              : "Nothing has graded this run."}
+          </p>
+          <ul className="mt-2 space-y-1">
+            {run.checks.map((check) => (
+              <li key={check.name} className="flex items-start gap-2 text-[11px]">
+                {check.passed && verified ? (
+                  <Check className="h-3 w-3 mt-0.5 text-emerald-500 shrink-0" />
+                ) : (
+                  <Lock className="h-3 w-3 mt-0.5 text-[var(--text-secondary)] shrink-0" />
+                )}
+                <span className="text-[var(--text-secondary)]">{check.name}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {run.diffs.length > 0 && (
+        <section>
+          <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Unified diff against {shortSha(run.baseSha)}
+          </h3>
+          <div className="mt-1.5 space-y-2">
+            {run.diffs.map((file) => (
+              <DiffCard key={file.path} file={file} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {run.machine === "PR_CREATED" && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium text-[var(--text-primary)] truncate">
+              {run.prBranch} → main
+            </p>
+            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+              {run.repo ?? "repo"} · review on GitHub · PatchAPI does not merge
+            </p>
+          </div>
+          <GitPullRequest className="h-4 w-4 text-emerald-500 shrink-0" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiffCard({ file }: { file: DiffFile }) {
+  return (
+    <div className="border border-[var(--border-color)] rounded-md overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-[var(--bg-secondary)]">
+        <span className="text-[11px] font-mono text-[var(--text-primary)] truncate">{file.path}</span>
+        <span className="text-[10px] font-mono shrink-0">
+          <span className="text-emerald-500">+{file.additions}</span>
+          <span className="mx-1 text-[var(--text-secondary)]">/</span>
+          <span className="text-red-400">−{file.deletions}</span>
+        </span>
+      </div>
+      <pre className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-x-auto">
+        {file.lines.map((line, index) => (
+          <DiffLineRow key={`${file.path}-${index}`} line={line} />
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+function DiffLineRow({ line }: { line: DiffLine }) {
+  const mark = line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ";
+  return (
+    <div
+      className={cn(
+        "px-1 -mx-1 rounded-sm",
+        line.kind === "add" && "bg-emerald-500/10 text-emerald-400",
+        line.kind === "del" && "bg-red-500/10 text-red-400",
+        line.kind === "ctx" && "text-[var(--text-secondary)]",
+      )}
+    >
+      <span className="inline-block w-3 select-none">{mark}</span>
+      {line.text}
+    </div>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+        {label}
+      </p>
+      <p className="mt-0.5 text-[12px] font-mono text-[var(--text-primary)]">{value}</p>
+    </div>
   );
 }
 
