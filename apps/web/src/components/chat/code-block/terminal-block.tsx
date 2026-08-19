@@ -9,6 +9,7 @@ import { useSyntaxTheme, MONO_FONT } from "./syntax-theme";
 interface TerminalBlockProps {
   code: string;
   onCopy?: (code: string) => void;
+  className?: string;
 }
 
 /** Max output lines shown per command before capping */
@@ -30,7 +31,7 @@ interface ParsedCommand {
  *   $ command two
  *   more output
  */
-export function TerminalBlock({ code, onCopy }: TerminalBlockProps) {
+export function TerminalBlock({ code, onCopy, className }: TerminalBlockProps) {
   const [copied, setCopied] = useState(false);
   const { prismTheme } = useSyntaxTheme();
 
@@ -67,7 +68,7 @@ export function TerminalBlock({ code, onCopy }: TerminalBlockProps) {
   };
 
   return (
-    <div className="my-3 rounded-lg overflow-hidden border border-[var(--border-color)] max-w-full relative group not-prose">
+    <div className={cn("my-3 rounded-lg overflow-hidden border border-[var(--border-color)] max-w-full relative group not-prose", className)}>
       {/* Header */}
       <div className="bg-[var(--bg-tertiary)] px-3 py-1.5 flex items-center justify-between border-b border-[var(--border-color)]">
         <div className="flex items-center gap-2">

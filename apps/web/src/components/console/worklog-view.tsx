@@ -317,26 +317,16 @@ export function WorklogView({
       continue;
     }
     if (entry.kind === "action" && isShellTool(inferToolType(entry), entry.text)) {
-      const group = [{ ...entry }];
-      while (index + 1 < entries.length) {
-        const next = entries[index + 1];
-        const last = group[group.length - 1];
-        if (next.kind === "result" && last && !last.result) {
-          last.result = next.text;
-          index += 1;
-          continue;
-        }
-        if (next.kind === "action" && isShellTool(inferToolType(next), next.text)) {
-          index += 1;
-          group.push({ ...next });
-          continue;
-        }
-        break;
+      const command = { ...entry };
+      if (index + 1 < entries.length && entries[index + 1].kind === "result" && !command.result) {
+        command.result = entries[index + 1].text;
+        index += 1;
       }
       nodes.push(
         <TerminalBlock
           key={key}
-          code={shellFence(group)}
+          className="!my-0"
+          code={shellFence([command])}
           onCopy={(code) => navigator.clipboard.writeText(code)}
         />,
       );
@@ -358,6 +348,20 @@ export function WorklogView({
         </div>,
       );
       continue;
+    }
+    if (entry.kind === "block") {
+      const fence = entry.text.trim().match(/^```(?:terminal|bash|sh)\n([\s\S]*?)\n```$/);
+      if (fence) {
+        nodes.push(
+          <TerminalBlock
+            key={key}
+            className="!my-0"
+            code={fence[1]}
+            onCopy={(code) => navigator.clipboard.writeText(code)}
+          />,
+        );
+        continue;
+      }
     }
     if (entry.kind === "response" || entry.kind === "block") {
       nodes.push(

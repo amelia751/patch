@@ -392,8 +392,12 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   add(
     "PATCHING",
     "block",
+    terminalFence(`sandbox @ ${sha}`, [{ cmd: "apply_patch", out: applyLog(sample) }]),
+  );
+  add(
+    "PATCHING",
+    "block",
     terminalFence(`sandbox @ ${sha}`, [
-      { cmd: "apply_patch", out: applyLog(sample) },
       { cmd: "pnpm --dir cli test -- generate.test.ts", out: diagnosticTestLog() },
     ]),
   );
