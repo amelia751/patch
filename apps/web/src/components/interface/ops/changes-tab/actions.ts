@@ -79,7 +79,7 @@ export function actionDialog(
       };
     case "review":
       return {
-        title: "Continue this run",
+        title: "Continue",
         body: "A human has to confirm the replacement. The run still stops at a pull request.",
         confirm: "Continue",
       };
@@ -91,15 +91,15 @@ export function actionDialog(
       };
     case "dismiss":
       return {
-        title: "Dismiss this note",
-        body: "This project will stop treating the note as something to remediate. You can reopen it from Dismissed.",
+        title: "Dismiss",
+        body: "This project will stop remediating it. You can reopen it from Dismissed.",
         confirm: "Dismiss",
         destructive: true,
       };
     case "reopen":
       return {
-        title: "Reopen this note",
-        body: "The note returns to Releases so you can start a remediation run later.",
+        title: "Reopen",
+        body: "The note returns to Releases.",
         confirm: "Reopen",
       };
   }

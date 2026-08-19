@@ -244,6 +244,12 @@ function usageLabel(change: ProjectChange): string {
   return "No usages in this project";
 }
 
+function noteTitle(change: ProjectChange): string {
+  const kind = CHANGE_KIND_LABELS[change.kind];
+  const stripped = change.title.replace(new RegExp(`^${kind}:\\s*`, "i"), "").trim();
+  return stripped || change.title;
+}
+
 function RepoLabel({ repo }: { repo: string }) {
   const slash = repo.lastIndexOf("/");
   const owner = slash > 0 ? repo.slice(0, slash) : null;
@@ -280,39 +286,33 @@ function ActionConfirmDialog({
         <AlertDialogTitle className="text-base text-[var(--text-primary)]">
           {copy.title}
         </AlertDialogTitle>
-        <div className="flex items-start gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)]">
-            <Image
-              src={getGCPServiceIcon(change.product)}
-              alt=""
-              width={16}
-              height={16}
-              className="h-4 w-4 object-contain"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start gap-2">
-              <p className="line-clamp-3 text-[13px] font-medium leading-snug text-[var(--text-primary)]">
-                {change.title}
-              </p>
-              <Badge
-                variant="outline"
-                className={cn("mt-0.5 shrink-0 text-[9px]", kindTone[change.kind])}
-              >
-                {CHANGE_KIND_LABELS[change.kind]}
-              </Badge>
+        <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)]">
+              <Image
+                src={getGCPServiceIcon(change.product)}
+                alt=""
+                width={16}
+                height={16}
+                className="h-4 w-4 object-contain"
+              />
             </div>
-            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+            <p className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
               {change.product}
               <span> · {usageLabel(change)}</span>
-              {repos.length === 1 && (
-                <span>
-                  {" · "}
-                  {repos[0]}
-                </span>
-              )}
             </p>
+            <Badge
+              variant="outline"
+              className={cn("shrink-0 text-[9px]", kindTone[change.kind])}
+            >
+              {CHANGE_KIND_LABELS[change.kind]}
+            </Badge>
           </div>
+          {noteTitle(change).toLowerCase() !== CHANGE_KIND_LABELS[change.kind].toLowerCase() && (
+            <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-[var(--text-primary)]">
+              {noteTitle(change)}
+            </p>
+          )}
         </div>
         <AlertDialogDescription className="text-xs leading-relaxed text-[var(--text-secondary)]">
           {copy.body}
