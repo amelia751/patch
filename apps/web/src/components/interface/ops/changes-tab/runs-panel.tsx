@@ -7,7 +7,9 @@ import { ActivitySpinner, WorklogView } from "@/components/console/worklog-view"
 import { collapseWorklogEntries, pairActionResults } from "@/components/console/thread-worklog";
 import type { WorklogEntry } from "@/components/console/thread-types";
 import {
+  ArrowRight,
   Check,
+  ExternalLink,
   GitBranch,
   GitPullRequest,
   Lock,
@@ -435,21 +437,7 @@ function ProposedTree({ run }: { run: MockRun }) {
         </section>
       )}
 
-      {run.machine === "PR_CREATED" && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <BranchChip name={run.prBranch ?? "proposed"} active />
-              <span className="text-[11px] text-[var(--text-secondary)] shrink-0">→</span>
-              <BranchChip name="main" muted />
-            </div>
-            <p className="text-[11px] text-[var(--text-secondary)] mt-1.5">
-              {run.repo ?? "repo"} · review on GitHub · PatchAPI does not merge
-            </p>
-          </div>
-          <GitPullRequest className="h-4 w-4 text-emerald-500 shrink-0" />
-        </div>
-      )}
+      {run.machine === "PR_CREATED" && <PullRequestCard run={run} />}
     </div>
   );
 }
@@ -565,6 +553,54 @@ function AgentLog({ run }: { run: MockRun }) {
         <div ref={endRef} />
       </div>
     </section>
+  );
+}
+
+function PullRequestCard({ run }: { run: MockRun }) {
+  const repo = run.repo ?? "imported repositories";
+  const href = run.repo ? `https://github.com/${run.repo}` : undefined;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-emerald-500/25 bg-[var(--bg-secondary)]">
+      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-[var(--border-color)]">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10">
+            <GitPullRequest className="h-3.5 w-3.5 text-emerald-500" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-[var(--text-primary)]">Pull request opened</p>
+            <p className="text-[11px] text-[var(--text-secondary)] truncate">{repo}</p>
+          </div>
+        </div>
+        <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+          Ready for review
+        </span>
+      </div>
+
+      <div className="px-3.5 py-3 space-y-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <BranchChip name={run.prBranch ?? "proposed"} active />
+          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
+          <BranchChip name="main" muted />
+        </div>
+        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+          PatchAPI stops here. It does not merge.
+        </p>
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-primary hover:underline underline-offset-2"
+          >
+            Review on GitHub
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : (
+          <p className="text-[12px] font-medium text-[var(--text-secondary)]">Review on GitHub</p>
+        )}
+      </div>
+    </div>
   );
 }
 
