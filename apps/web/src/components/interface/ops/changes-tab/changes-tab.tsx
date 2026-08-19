@@ -271,56 +271,78 @@ function ActionConfirmDialog({
 }) {
   const copy = actionDialog(change, action);
   const repos = affectedRepos(change);
-  const showRepos = action !== "dismiss" && action !== "reopen" && repos.length > 0;
+  const pickRepo = action !== "dismiss" && action !== "reopen" && repos.length > 1;
   const selected = repo ?? repos[0] ?? null;
 
   return (
     <>
-      <AlertDialogHeader>
+      <AlertDialogHeader className="space-y-3 text-left">
         <AlertDialogTitle className="text-base text-[var(--text-primary)]">
           {copy.title}
         </AlertDialogTitle>
-        <AlertDialogDescription asChild>
-          <div className="space-y-3 text-left">
-            <p className="text-[13px] leading-snug text-[var(--text-primary)]">{change.title}</p>
-            <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">{copy.body}</p>
+        <div className="flex items-start gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)]">
+            <Image
+              src={getGCPServiceIcon(change.product)}
+              alt=""
+              width={16}
+              height={16}
+              className="h-4 w-4 object-contain"
+            />
           </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-2">
+              <p className="line-clamp-3 text-[13px] font-medium leading-snug text-[var(--text-primary)]">
+                {change.title}
+              </p>
+              <Badge
+                variant="outline"
+                className={cn("mt-0.5 shrink-0 text-[9px]", kindTone[change.kind])}
+              >
+                {CHANGE_KIND_LABELS[change.kind]}
+              </Badge>
+            </div>
+            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+              {change.product}
+              <span> · {usageLabel(change)}</span>
+              {repos.length === 1 && (
+                <span>
+                  {" · "}
+                  {repos[0]}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+        <AlertDialogDescription className="text-xs leading-relaxed text-[var(--text-secondary)]">
+          {copy.body}
         </AlertDialogDescription>
       </AlertDialogHeader>
 
-      {showRepos && selected && (
+      {pickRepo && selected && (
         <div className="space-y-2">
-          <p className="text-xs text-[var(--text-secondary)]">
-            {repos.length > 1 ? "Choose a repository" : "Repository"}
-          </p>
-          {repos.length > 1 ? (
-            <RadioGroup
-              value={selected}
-              onValueChange={onRepoChange}
-              className="gap-0 overflow-hidden rounded-lg border border-[var(--border-color)]"
-            >
-              {repos.map((item) => (
-                <label
-                  key={item}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 cursor-pointer border-b border-[var(--border-color)] last:border-b-0",
-                    item === selected
-                      ? "bg-[var(--bg-tertiary)]"
-                      : "hover:bg-[var(--bg-secondary)]",
-                  )}
-                >
-                  <RadioGroupItem value={item} />
-                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
-                  <RepoLabel repo={item} />
-                </label>
-              ))}
-            </RadioGroup>
-          ) : (
-            <div className="flex items-center gap-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
-              <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
-              <RepoLabel repo={selected} />
-            </div>
-          )}
+          <p className="text-xs text-[var(--text-secondary)]">Choose a repository</p>
+          <RadioGroup
+            value={selected}
+            onValueChange={onRepoChange}
+            className="gap-0 overflow-hidden rounded-lg border border-[var(--border-color)]"
+          >
+            {repos.map((item) => (
+              <label
+                key={item}
+                className={cn(
+                  "flex cursor-pointer items-center gap-3 border-b border-[var(--border-color)] px-3 py-2.5 last:border-b-0",
+                  item === selected
+                    ? "bg-[var(--bg-tertiary)]"
+                    : "hover:bg-[var(--bg-secondary)]",
+                )}
+              >
+                <RadioGroupItem value={item} />
+                <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
+                <RepoLabel repo={item} />
+              </label>
+            ))}
+          </RadioGroup>
         </div>
       )}
 
