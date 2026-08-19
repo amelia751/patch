@@ -228,7 +228,7 @@ function RunsList({
                         {active && (
                           <span
                             className={cn(
-                              "absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full",
+                              "absolute left-0 top-2 bottom-2 w-px",
                               statusBar(run.bucket),
                             )}
                           />
