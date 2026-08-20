@@ -30,8 +30,14 @@ export type RegisterProviderInput = {
   slug: string;
   website: string;
   contact_email: string;
+  contact_url?: string;
   category: ProviderCategory;
   description: string;
+  hq?: string;
+  since?: string;
+  console_url?: string;
+  docs_url?: string;
+  status_url?: string;
   attested: true;
 };
 

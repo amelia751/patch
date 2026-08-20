@@ -183,6 +183,23 @@ async def list_providers(pool: asyncpg.Pool) -> list[dict[str, Any]]:
         return payloads
 
 
+def _optional_text(value: str) -> str | None:
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _parse_since_year(value: str) -> date | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if re.fullmatch(r"\d{4}", cleaned) is None:
+        raise ProviderStoreError("Since must be a four-digit year.")
+    year = int(cleaned)
+    if year < 1800 or year > 2100:
+        raise ProviderStoreError("Since must be a four-digit year.")
+    return date(year, 1, 1)
+
+
 async def register_provider(
     pool: asyncpg.Pool,
     *,
@@ -193,6 +210,12 @@ async def register_provider(
     description: str,
     website: str = "",
     contact_email: str = "",
+    contact_url: str = "",
+    hq: str = "",
+    since: str = "",
+    console_url: str = "",
+    docs_url: str = "",
+    status_url: str = "",
 ) -> dict[str, Any]:
     cleaned_name = name.strip()
     cleaned_slug = slug.strip().lower()
@@ -207,27 +230,38 @@ async def register_provider(
     if not cleaned_description:
         raise ProviderStoreError("Describe what you publish.")
     email = contact_email.strip()
+    contact = contact_url.strip()
     if email and "@" not in email:
         raise ProviderStoreError("Enter a valid contact email, or leave it blank.")
-    site = website.strip()
+    since_date = _parse_since_year(since)
     try:
         async with pool.acquire() as connection:
             row = await connection.fetchrow(
                 """
                 INSERT INTO providers (
-                    name, slug, website, contact_email, category, description,
-                    owner_user_id, verified, status
+                    name, slug, website, contact_email, contact_url, category, description,
+                    owner_user_id, verified, status, hq, since,
+                    console_url, docs_url, status_url
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, false, 'draft')
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, false, 'draft',
+                    $9, $10, $11, $12, $13
+                )
                 RETURNING *
                 """,
                 cleaned_name,
                 cleaned_slug,
-                site or None,
+                _optional_text(website),
                 email or None,
+                _optional_text(contact),
                 cleaned_category,
                 cleaned_description,
                 owner_user_id,
+                _optional_text(hq),
+                since_date,
+                _optional_text(console_url),
+                _optional_text(docs_url),
+                _optional_text(status_url),
             )
     except Exception as exc:
         message = str(exc)

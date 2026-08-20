@@ -1733,7 +1733,12 @@ function RegisterDialog({
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [website, setWebsite] = useState("");
+  const [consoleUrl, setConsoleUrl] = useState("");
+  const [docsUrl, setDocsUrl] = useState("");
+  const [statusUrl, setStatusUrl] = useState("");
   const [email, setEmail] = useState("");
+  const [hq, setHq] = useState("");
+  const [since, setSince] = useState("");
   const [category, setCategory] = useState<ProviderCategory>("ai");
   const [description, setDescription] = useState("");
   const [attested, setAttested] = useState(false);
@@ -1744,7 +1749,12 @@ function RegisterDialog({
     setSlug("");
     setSlugTouched(false);
     setWebsite("");
+    setConsoleUrl("");
+    setDocsUrl("");
+    setStatusUrl("");
     setEmail("");
+    setHq("");
+    setSince("");
     setCategory("ai");
     setDescription("");
     setAttested(false);
@@ -1754,7 +1764,12 @@ function RegisterDialog({
   const handleSubmit = async () => {
     if (!name.trim()) return setError("Enter an organization name.");
     if (!slugify(slug)) return setError("Enter a URL slug.");
-    if (email.trim() && !email.includes("@")) return setError("Enter a valid contact email, or leave it blank.");
+    if (email.trim() && email.includes(" ") && !email.includes("@")) {
+      return setError("Enter a contact email or URL, or leave it blank.");
+    }
+    if (since.trim() && !/^\d{4}$/.test(since.trim())) {
+      return setError("Since must be a four-digit year, or leave it blank.");
+    }
     if (!description.trim()) return setError("Describe what you publish.");
     if (!attested) return setError("Confirm the trust boundary before registering.");
     setError(null);
@@ -1763,9 +1778,15 @@ function RegisterDialog({
         name: name.trim(),
         slug: slugify(slug),
         website: website.trim(),
-        contact_email: email.trim(),
+        contact_email: email.includes("@") ? email.trim() : "",
+        contact_url: email.includes("@") ? "" : email.trim(),
         category,
         description: description.trim(),
+        hq: hq.trim(),
+        since: since.trim(),
+        console_url: consoleUrl.trim(),
+        docs_url: docsUrl.trim(),
+        status_url: statusUrl.trim(),
         attested: true,
       });
       reset();
@@ -1782,13 +1803,14 @@ function RegisterDialog({
         if (!v) reset();
       }}
     >
-      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-lg">
+      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
             Register as provider
           </DialogTitle>
           <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            Required: organization, slug, category, and what you publish. Website and email are optional.
+            These fields are the public profile — same layout as Google Cloud. Organization,
+            slug, category, and description are required.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3.5 py-1">
@@ -1800,7 +1822,7 @@ function RegisterDialog({
                   setName(e.target.value);
                   if (!slugTouched) setSlug(slugify(e.target.value));
                 }}
-                placeholder="Acme AI"
+                placeholder="Google Cloud"
                 className={fieldClass}
               />
             </Field>
@@ -1811,52 +1833,104 @@ function RegisterDialog({
                   setSlugTouched(true);
                   setSlug(slugify(e.target.value));
                 }}
-                placeholder="acme-ai"
+                placeholder="google"
                 className={cn(fieldClass, "font-mono")}
               />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Website" hint="Optional">
-              <Input
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                placeholder="https://acme.ai"
-                className={fieldClass}
-              />
+            <Field label="Category">
+              <Select value={category} onValueChange={(v) => setCategory(v as ProviderCategory)}>
+                <SelectTrigger className={selectTriggerClass}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  align="start"
+                  side="bottom"
+                  sideOffset={4}
+                  className={cn(selectContentClass, "w-[var(--radix-select-trigger-width)]")}
+                >
+                  {(Object.keys(CATEGORY_LABELS) as ProviderCategory[]).map((key) => (
+                    <SelectItem key={key} value={key} className={selectItemClass}>
+                      {CATEGORY_LABELS[key]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
-            <Field label="Contact email" hint="Optional">
+            <Field label="Since" hint="Optional">
               <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="api@acme.ai"
+                value={since}
+                onChange={(e) => setSince(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="2008"
+                inputMode="numeric"
                 className={fieldClass}
               />
             </Field>
           </div>
-          <Field label="Category">
-            <Select value={category} onValueChange={(v) => setCategory(v as ProviderCategory)}>
-              <SelectTrigger className={selectTriggerClass}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className={selectContentClass}>
-                {(Object.keys(CATEGORY_LABELS) as ProviderCategory[]).map((key) => (
-                  <SelectItem key={key} value={key} className={selectItemClass}>
-                    {CATEGORY_LABELS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="What you publish">
+          <Field label="Description">
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Model IDs and deprecation dates for the Acme image API."
+              placeholder="A suite of cloud services for compute, storage, data analytics, and machine learning."
               className={textareaClass}
             />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Website" hint="Optional">
+              <Input
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://cloud.google.com"
+                className={fieldClass}
+              />
+            </Field>
+            <Field label="Console" hint="Optional">
+              <Input
+                value={consoleUrl}
+                onChange={(e) => setConsoleUrl(e.target.value)}
+                placeholder="https://console.cloud.google.com"
+                className={fieldClass}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Docs" hint="Optional">
+              <Input
+                value={docsUrl}
+                onChange={(e) => setDocsUrl(e.target.value)}
+                placeholder="https://cloud.google.com/docs"
+                className={fieldClass}
+              />
+            </Field>
+            <Field label="Status" hint="Optional">
+              <Input
+                value={statusUrl}
+                onChange={(e) => setStatusUrl(e.target.value)}
+                placeholder="https://status.cloud.google.com"
+                className={fieldClass}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Contact" hint="Optional">
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="api@acme.ai or https://cloud.google.com/contact"
+                className={fieldClass}
+              />
+            </Field>
+            <Field label="Headquarters" hint="Optional">
+              <Input
+                value={hq}
+                onChange={(e) => setHq(e.target.value)}
+                placeholder="1600 Amphitheatre Parkway, Mountain View, CA"
+                className={fieldClass}
+              />
+            </Field>
+          </div>
           <label className="flex items-start gap-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5 cursor-pointer">
             <input
               type="checkbox"
@@ -1984,10 +2058,12 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid gap-1.5">
-      <Label className="text-xs text-[var(--text-secondary)]">{label}</Label>
+    <div className="grid gap-1.5 min-w-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <Label className="text-xs text-[var(--text-secondary)]">{label}</Label>
+        {hint && <span className="text-[10px] text-[var(--text-secondary)]">{hint}</span>}
+      </div>
       {children}
-      {hint && <p className="text-[10px] text-[var(--text-secondary)]">{hint}</p>}
     </div>
   );
 }

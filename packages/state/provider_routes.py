@@ -94,6 +94,12 @@ async def post_provider(request: Request) -> JSONResponse:
             description=str(body.get("description") or ""),
             website=str(body.get("website") or ""),
             contact_email=str(body.get("contact_email") or body.get("contactEmail") or ""),
+            contact_url=str(body.get("contact_url") or body.get("contactUrl") or ""),
+            hq=str(body.get("hq") or ""),
+            since=str(body.get("since") or ""),
+            console_url=str(body.get("console_url") or body.get("consoleUrl") or ""),
+            docs_url=str(body.get("docs_url") or body.get("docsUrl") or ""),
+            status_url=str(body.get("status_url") or body.get("statusUrl") or ""),
         )
     except ProviderStoreError as exc:
         status = 409 if "already registered" in str(exc) else 400
