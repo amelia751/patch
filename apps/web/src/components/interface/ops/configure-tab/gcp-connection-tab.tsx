@@ -376,7 +376,6 @@ export function GCPConnectionTab({
                     {/* Summary info */}
                     <span className="text-xs text-[var(--text-secondary)] truncate flex-1 min-w-0">
                       {conn.region} · {conn.project_id}
-                      {conn.service_account_email && ` · ${conn.service_account_email}`}
                     </span>
 
                     {/* Edit button (stop propagation so it doesn't toggle) */}
@@ -419,14 +418,6 @@ export function GCPConnectionTab({
                               <p className="text-xs text-[var(--text-primary)] font-mono truncate">{conn.repo_full_name}</p>
                             </div>
                           ) : null}
-                          {conn.service_account_email && (
-                            <div className="col-span-2 min-w-0">
-                              <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1 block">Service Account</label>
-                              <p className="text-[11px] text-[var(--text-primary)] font-mono bg-[var(--bg-primary)] px-2.5 py-1.5 rounded border border-[var(--border-color)] break-all">
-                                {conn.service_account_email}
-                              </p>
-                            </div>
-                          )}
                           <div>
                             <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1 block">Connected</label>
                             <p className="text-xs text-[var(--text-primary)]">
