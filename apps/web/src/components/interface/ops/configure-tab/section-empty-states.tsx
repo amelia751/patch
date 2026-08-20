@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Cloud, CloudOff, Key, FolderPlus } from "lucide-react";
+import { Cloud, CloudOff, Key, FolderPlus, Fingerprint, Vault } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ChooseCloudProviderEmptyStateProps {
@@ -73,6 +73,62 @@ export function SecretsEmptyState() {
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
           Select a project to manage secrets and configure sensitive data for your backend services.
+        </p>
+        <Button
+          size="sm"
+          onClick={() => router.push("/")}
+          className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+        >
+          <FolderPlus className="h-3 w-3 mr-1" />
+          Select Project
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function IdentityEmptyState() {
+  const router = useRouter();
+
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center max-w-md px-4">
+        <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
+          <Fingerprint className="h-5 w-5 text-[var(--text-secondary)]" />
+        </div>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
+          No agent identity
+        </h2>
+        <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
+          Select a project to register SPIFFE principals. Agents authenticate as themselves — no API key.
+        </p>
+        <Button
+          size="sm"
+          onClick={() => router.push("/")}
+          className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+        >
+          <FolderPlus className="h-3 w-3 mr-1" />
+          Select Project
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function AuthManagerEmptyState() {
+  const router = useRouter();
+
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center max-w-md px-4">
+        <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
+          <Vault className="h-5 w-5 text-[var(--text-secondary)]" />
+        </div>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
+          No vault providers
+        </h2>
+        <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
+          Select a project to register auth-manager providers. Agents request a name; the vault attaches the secret.
         </p>
         <Button
           size="sm"

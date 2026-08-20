@@ -82,7 +82,9 @@ function SystemPageContent() {
   const initialConfigureSection =
     configureSectionParam === "auth" ||
     configureSectionParam === "secrets" ||
-    configureSectionParam === "connection"
+    configureSectionParam === "connection" ||
+    configureSectionParam === "identity" ||
+    configureSectionParam === "auth_manager"
       ? configureSectionParam
       : undefined;
 
@@ -94,7 +96,7 @@ function SystemPageContent() {
 
   /** Thread CTAs can jump to Configure subsection without a full URL navigation. */
   const [navConfigureSection, setNavConfigureSection] = useState<
-    "connection" | "secrets" | "auth" | null
+    "connection" | "secrets" | "auth" | "identity" | "auth_manager" | null
   >(null);
 
   /** One-shot: open Add Secret or GCP service-account dialog after navigating to Configure. */
@@ -114,6 +116,8 @@ function SystemPageContent() {
     | "connection"
     | "secrets"
     | "auth"
+    | "identity"
+    | "auth_manager"
     | undefined;
 
   // Tab state (CI/CD and Knowledge hidden until those surfaces are ready)
@@ -231,7 +235,9 @@ function SystemPageContent() {
       if (
         d?.configureSection === "auth" ||
         d?.configureSection === "secrets" ||
-        d?.configureSection === "connection"
+        d?.configureSection === "connection" ||
+        d?.configureSection === "identity" ||
+        d?.configureSection === "auth_manager"
       ) {
         setNavConfigureSection(d.configureSection);
       }
