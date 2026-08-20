@@ -53,6 +53,31 @@ def test_load_config_reads_github_app_json(tmp_path: Path) -> None:
     assert config.github_oauth_configured() is True
 
 
+def test_load_config_prefers_github_app_environment(tmp_path: Path) -> None:
+    """Cloud Run mounts client id/secret/id as env and the PEM as a file."""
+    pem = tmp_path / "github-app.pem"
+    pem.write_text("-----BEGIN RSA PRIVATE KEY-----\ntest\n")
+
+    config = load_config(
+        {
+            "PATCHAPI_GITHUB_OAUTH_CLIENT_ID": "Iv1.env",
+            "PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET": "env-secret",
+            "GITHUB_APP_ID": "456",
+            "GITHUB_APP_SLUG": "patchapi",
+            "GITHUB_APP_PRIVATE_KEY_PATH": str(pem),
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.github_client_id == "Iv1.env"
+    assert config.github_client_secret == "env-secret"
+    assert config.github_app_id == "456"
+    assert config.github_app_slug == "patchapi"
+    assert config.github_private_key_path == pem
+    assert config.github_oauth_configured() is True
+    assert config.github_app_jwt_configured() is True
+
+
 def test_public_repository_projects_the_import_list_fields() -> None:
     from packages.auth.github_oauth import public_repository
 

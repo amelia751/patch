@@ -56,7 +56,7 @@ target: **Imagen 4 → Gemini 3.1 Flash Image**.
 | Cloud Run | `patchapi-web` (dashboard) and `patchapi-api` (control plane). Push to `main` deploys via `.github/workflows/deploy-cloud-run.yml`. |
 | Artifact Registry | `us-central1-docker.pkg.dev/patch-505223/patchapi` — web and api images. |
 | Cloud SQL (Postgres 16) | Instance `patchapi-console`. Authoritative workflow state (constraint 7). Local talks to it through the Cloud SQL Auth Proxy (`127.0.0.1:5433`). |
-| Secret Manager | `patchapi-database-url`, `patchapi-identity-api-key`, `patchapi-session-secret`, `patchapi-github-webhook-secret`, Google OAuth client id/secret. Values never land in the repo. |
+| Secret Manager | Platform: `patchapi-database-url`, `patchapi-identity-api-key`, `patchapi-session-secret`, Google OAuth client id/secret, GitHub webhook HMAC, GitHub App client id/secret/App ID/PEM. Customer payloads: `patchapi-ps-*` (project secrets) and `patchapi-gcp-*` (Connect GCP JSON). Values never land in the repo. |
 | Identity Platform | Email/password and Google sign-in (`identitytoolkit.googleapis.com`). Firebase auth domain `patch-505223.firebaseapp.com`. |
 | Google OAuth | Web client in APIs & Services → Credentials. Continue with Google; origins/redirects below. |
 | IAM + Workload Identity Federation | Pool `github-actions` / provider `github`. GitHub Actions impersonates `patchapi-github-deploy@…` — no JSON key in CI. Workload SAs: `patchapi-web@…`, `patchapi-api@…`. |
@@ -222,13 +222,24 @@ After create:
 3. Generate a webhook secret and put it in
    `.secrets/github-webhook-secret.txt`. Cloud Run reads the same value from
    Secret Manager (`patchapi-github-webhook-secret` → `PATCHAPI_GITHUB_WEBHOOK_SECRET`).
-4. Do **not** install the App on every repo yet. Install it on
+4. Copy the App blob and PEM into Secret Manager (never commit them):
+
+   ```bash
+   ./scripts/sync_github_app_secrets.sh
+   ```
+
+   That writes `patchapi-github-app` (the JSON blob),
+   `patchapi-github-oauth-client-id`, `patchapi-github-oauth-client-secret`,
+   `patchapi-github-app-id`, and `patchapi-github-app-private-key`. The next
+   push to `main` mounts them on `patchapi-api`.
+5. Do **not** install the App on every repo yet. Install it on
    `amelia751/egaki` (and later whatever the console imports).
 
 Env the control plane will read (see `.env.example`):
 
 ```text
 GITHUB_APP_ID=
+GITHUB_APP_SLUG=patchapi
 GITHUB_APP_PRIVATE_KEY_PATH=.secrets/github-app.pem
 PATCHAPI_GITHUB_OAUTH_CLIENT_ID=
 PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET=
@@ -236,7 +247,9 @@ PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=http://localhost:8080/api/auth/github/callbac
 ```
 
 On Cloud Run the redirect URI is
-`https://patchapi-api-913371146929.us-central1.run.app/api/auth/github/callback`.
+`https://patchapi-api-913371146929.us-central1.run.app/api/auth/github/callback`
+and the PEM is mounted at `/var/github/app.pem`. Public liveness is
+`GET /health` — Cloud Run reserves `/healthz`.
 
 ### Google OAuth (already created)
 

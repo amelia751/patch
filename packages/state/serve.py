@@ -130,6 +130,11 @@ def main() -> None:
         build_app(),
         host=os.environ.get("HOST", _DEFAULT_HOST),
         port=int(os.environ.get("PORT", _DEFAULT_PORT)),
+        # Cloud Run terminates TLS in front of the container. Without these
+        # flags Starlette builds `http://` callback URLs and GitHub refuses
+        # the registered https redirect.
+        proxy_headers=True,
+        forwarded_allow_ips="*",
         # Never reload from a watched directory: reload imports whatever is on
         # disk, which is the opposite of the guarantee that the control plane
         # runs only code it shipped with.

@@ -42,6 +42,7 @@ ENV_GITHUB_CLIENT_ID: Final[str] = "PATCHAPI_GITHUB_OAUTH_CLIENT_ID"
 ENV_GITHUB_CLIENT_SECRET: Final[str] = "PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET"
 ENV_GITHUB_REDIRECT: Final[str] = "PATCHAPI_GITHUB_OAUTH_REDIRECT_URI"
 ENV_GITHUB_APP_ID: Final[str] = "GITHUB_APP_ID"
+ENV_GITHUB_APP_SLUG: Final[str] = "GITHUB_APP_SLUG"
 ENV_GITHUB_PRIVATE_KEY: Final[str] = "GITHUB_APP_PRIVATE_KEY_PATH"
 ENV_FRONTEND_ORIGIN: Final[str] = "PATCHAPI_FRONTEND_ORIGIN"
 
@@ -236,7 +237,11 @@ def load_config(
         or _text(github_file.get("client_secret") or github_file.get("clientSecret"))
         or None
     )
-    github_app_slug = _text(github_file.get("app_slug") or github_file.get("slug")) or None
+    github_app_slug = (
+        env.get(ENV_GITHUB_APP_SLUG, "").strip()
+        or _text(github_file.get("app_slug") or github_file.get("slug"))
+        or None
+    )
     github_app_id = (
         env.get(ENV_GITHUB_APP_ID, "").strip()
         or _text(github_file.get("app_id") or github_file.get("appId"))

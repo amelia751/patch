@@ -102,13 +102,22 @@ async def _bind_github_installation(
 
 
 def _oauth_callback_uri(request: Request, path: str, fallback: str) -> str:
-    """Use the host the browser actually called so the state cookie round-trips.
+    """Pick the callback URI the OAuth client actually registered.
 
-    `localhost` and `127.0.0.1` are different cookie sites. The OAuth client
-    must list both callback URLs (README); this picks the one that matches
-    the request.
+    Cloud Run terminates TLS and Starlette sees `http://` on the container.
+    GitHub and Google require the exact https URI in the client. When the
+    configured fallback is already https, use it.
+
+    Locally the fallback is `http://localhost:8080/...`. `localhost` and
+    `127.0.0.1` are different cookie sites, so that path still follows the
+    host the browser called.
     """
+    if fallback.startswith("https://"):
+        return fallback
     incoming = str(request.base_url).rstrip("/") + path
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    if proto == "https" and incoming.startswith("http://"):
+        incoming = "https://" + incoming[len("http://") :]
     return incoming or fallback
 
 

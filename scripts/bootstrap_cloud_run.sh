@@ -104,6 +104,23 @@ bind_project_role "$DEPLOY_SA" roles/run.admin
 bind_project_role "$DEPLOY_SA" roles/artifactregistry.writer
 bind_project_role "$DEPLOY_SA" roles/secretmanager.secretAccessor
 bind_project_role "$API_SA" roles/secretmanager.secretAccessor
+# Create / rotate / delete patchapi-ps-* and patchapi-gcp-* payloads.
+# Reveal stays on secretAccessor. This role has no setIamPolicy.
+VAULT_ROLE=projects/${PROJECT_ID}/roles/patchapiSecretVault
+VAULT_PERMS=secretmanager.secrets.create,secretmanager.secrets.delete,secretmanager.secrets.get,secretmanager.versions.add
+if gcloud iam roles describe patchapiSecretVault --project="$PROJECT_ID" >/dev/null 2>&1; then
+  gcloud iam roles update patchapiSecretVault \
+    --project="$PROJECT_ID" \
+    --permissions="$VAULT_PERMS" \
+    --quiet >/dev/null
+else
+  gcloud iam roles create patchapiSecretVault \
+    --project="$PROJECT_ID" \
+    --title="PatchAPI secret vault" \
+    --description="Create, rotate, and delete PatchAPI-managed Secret Manager payloads." \
+    --permissions="$VAULT_PERMS"
+fi
+bind_project_role "$API_SA" "$VAULT_ROLE"
 bind_project_role "$API_SA" roles/logging.logWriter
 bind_project_role "$API_SA" roles/firebaseauth.admin
 bind_project_role "$WEB_SA" roles/logging.logWriter
@@ -180,6 +197,9 @@ CLIENT_SECRET="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))
 ensure_secret_value patchapi-google-oauth-client-id "$CLIENT_ID"
 ensure_secret_value patchapi-google-oauth-client-secret "$CLIENT_SECRET"
 ensure_secret_value patchapi-database-url "unset"
+if [[ -f "$ROOT/.secrets/github-app.json" && -f "$ROOT/.secrets/github-app.pem" ]]; then
+  "$ROOT/scripts/sync_github_app_secrets.sh"
+fi
 
 printf 'reserving Cloud Run services\n'
 deploy_hello() {
