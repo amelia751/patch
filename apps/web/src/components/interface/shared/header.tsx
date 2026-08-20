@@ -119,7 +119,7 @@ function DisconnectGitHubModal({
   username: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onDisconnected?: () => void;
+  onDisconnected?: () => void | Promise<void>;
 }) {
   const [confirmText, setConfirmText] = useState("");
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -141,7 +141,11 @@ function DisconnectGitHubModal({
       }
       onOpenChange(false);
       setConfirmText("");
-      onDisconnected?.();
+      try {
+        await onDisconnected?.();
+      } finally {
+        window.location.reload();
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to disconnect");
     } finally {
