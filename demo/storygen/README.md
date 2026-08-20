@@ -1,10 +1,11 @@
 # Storygen
 
-A one-page Next.js app: type a prompt, get a short story back.
+A one-page Next.js app in the Molang story-generator layout: type a prompt,
+get a title, cover, and short story back. Words are not tokenized.
 
-The API route in `app/api/story` calls Gemini through `lib/gemini.ts`. That
-file pins `gemini-2.0-flash`, which stopped serving on 2026-06-01. The June 1,
-2026 changelog directs callers to `gemini-3.5-flash`.
+`lib/gemini.ts` pins two retired Google identifiers. Story text uses
+`gemini-2.0-flash`, shut down 2026-06-01; the June 1 changelog directs
+callers to `gemini-3.5-flash`. The cover uses `imagen-4.0-generate-001`.
 
 ```bash
 cp .env.example .env.local   # set GEMINI_API_KEY
