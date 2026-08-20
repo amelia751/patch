@@ -4,7 +4,7 @@
 # Auth is the artful-journey development key, stored as repo secret GCP_SA_KEY
 # (contents of artful-journey-486915-a8-fc72d9d68c0b.json). Runtime identity
 # stays jetrun-viewer@ so GEMINI_API_KEY can be the Secret Manager ref.
-name: Deploy Cloud Run
+name: Deploy Cloud Run on every update to main
 
 on:
   push:
