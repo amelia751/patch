@@ -69,7 +69,7 @@ IMAGEN_4_IDENTIFIERS: Final[tuple[str, ...]] = (
 
 # The Gemini 2.0 Flash family retired 2026-06-01. Kept in step with
 # `demo/fixtures/google-gemini20-deprecation.json`. Without these, importing
-# `gemini20-hello` indexes as ready with 0 usages and the Codebase tab looks
+# `storygen` indexes as ready with 0 usages and the Codebase tab looks
 # like the add failed.
 GEMINI_20_IDENTIFIERS: Final[tuple[str, ...]] = (
     "gemini-2.0-flash",

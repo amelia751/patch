@@ -2,7 +2,7 @@
 
     uv run --all-packages python scripts/smoke_patch_loop.py
 
-What it does, in order: copy the pinned `demo/gemini20-hello` fixture into a
+What it does, in order: copy the pinned `demo/storygen` fixture into a
 disposable sandbox session outside the repository, seed the pinned Gemini 2.0
 shutdown manifest, scan, clear the deterministic policy gate, then run one real
 Patch turn on Vertex Gemini that has to make `python3 generate.py` exit 0.
@@ -61,13 +61,20 @@ EXIT_PASS: Final[int] = 0
 EXIT_FAIL: Final[int] = 1
 EXIT_SKIP: Final[int] = 3
 
-DEFAULT_FIXTURE: Final[Path] = REPO_ROOT / "demo" / "gemini20-hello"
+DEFAULT_FIXTURE: Final[Path] = REPO_ROOT / "demo" / "storygen"
 DEFAULT_FEED_DIR: Final[Path] = REPO_ROOT / "demo" / "fixtures"
 DEFAULT_RUN_ID: Final[str] = "smoke-patch-loop"
 
 # Compiled artefacts of a previous local run are not part of the fixture and
 # would let a stale module answer the check the loop is supposed to prove.
-_NOT_FIXTURE: Final[tuple[str, ...]] = ("__pycache__", "*.pyc", ".sandbox-home", ".sandbox-tmp")
+_NOT_FIXTURE: Final[tuple[str, ...]] = (
+    "__pycache__",
+    "*.pyc",
+    "node_modules",
+    ".next",
+    ".sandbox-home",
+    ".sandbox-tmp",
+)
 
 
 def _apply_repo_pins() -> None:

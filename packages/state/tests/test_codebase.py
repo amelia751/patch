@@ -63,7 +63,7 @@ def test_imported_repo_selects_a_named_second_import() -> None:
         {
             "repositories": [
                 {"full_name": "amelia751/egaki", "default_branch": "main"},
-                {"full_name": "amelia751/gemini20-hello", "default_branch": "main"},
+                {"full_name": "amelia751/storygen", "default_branch": "main"},
             ],
             "workspaces": [
                 {
@@ -71,14 +71,14 @@ def test_imported_repo_selects_a_named_second_import() -> None:
                     "repo_branch": "develop",
                 },
                 {
-                    "repo_url": "https://github.com/amelia751/gemini20-hello.git",
+                    "repo_url": "https://github.com/amelia751/storygen.git",
                     "repo_branch": "main",
                 },
             ],
         },
-        full_name="amelia751/gemini20-hello",
+        full_name="amelia751/storygen",
     )
-    assert source == ("amelia751", "gemini20-hello", "main")
+    assert source == ("amelia751", "storygen", "main")
 
 
 def test_imported_repo_does_not_borrow_another_repo_workspace_branch() -> None:
@@ -86,7 +86,7 @@ def test_imported_repo_does_not_borrow_another_repo_workspace_branch() -> None:
         {
             "repositories": [
                 {"full_name": "amelia751/egaki", "default_branch": "main"},
-                {"full_name": "amelia751/gemini20-hello", "default_branch": "main"},
+                {"full_name": "amelia751/storygen", "default_branch": "main"},
             ],
             "workspaces": [
                 {
@@ -95,9 +95,9 @@ def test_imported_repo_does_not_borrow_another_repo_workspace_branch() -> None:
                 }
             ],
         },
-        full_name="amelia751/gemini20-hello",
+        full_name="amelia751/storygen",
     )
-    assert source == ("amelia751", "gemini20-hello", "main")
+    assert source == ("amelia751", "storygen", "main")
 
 
 def test_imported_repo_rejects_a_repo_the_project_did_not_import() -> None:
@@ -109,7 +109,7 @@ def test_imported_repo_rejects_a_repo_the_project_did_not_import() -> None:
                 ],
                 "workspaces": [],
             },
-            full_name="amelia751/gemini20-hello",
+            full_name="amelia751/storygen",
         )
         is None
     )
@@ -118,10 +118,10 @@ def test_imported_repo_rejects_a_repo_the_project_did_not_import() -> None:
 def test_build_file_tree_prefixes_paths_for_a_second_repo() -> None:
     tree = build_file_tree(
         [{"path": "generate.py", "type": "blob"}],
-        path_prefix="gemini20-hello",
+        path_prefix="storygen",
     )
-    assert tree[0]["path"] == "gemini20-hello/generate.py"
-    assert tree[0]["id"] == "gemini20-hello/generate.py"
+    assert tree[0]["path"] == "storygen/generate.py"
+    assert tree[0]["id"] == "storygen/generate.py"
 
 
 def test_build_file_tree_nests_blobs_under_folders() -> None:
@@ -156,15 +156,15 @@ def test_imported_repos_lists_every_import_in_order() -> None:
             "repositories": [
                 {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
                 {
-                    "name": "gemini20-hello",
-                    "full_name": "amelia751/gemini20-hello",
+                    "name": "storygen",
+                    "full_name": "amelia751/storygen",
                     "default_branch": "main",
                 },
             ],
             "workspaces": [],
         }
     )
-    assert [item[0] for item in found] == ["amelia751/egaki", "amelia751/gemini20-hello"]
+    assert [item[0] for item in found] == ["amelia751/egaki", "amelia751/storygen"]
 
 
 def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> None:
@@ -172,21 +172,21 @@ def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> No
         "repositories": [
             {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
             {
-                "name": "gemini20-hello",
-                "full_name": "amelia751/gemini20-hello",
+                "name": "storygen",
+                "full_name": "amelia751/storygen",
                 "default_branch": "main",
             },
         ],
         "workspaces": [],
     }
-    assert resolve_codebase_file(project, "amelia751/gemini20-hello/generate.py") == (
+    assert resolve_codebase_file(project, "amelia751/storygen/generate.py") == (
         "amelia751",
-        "gemini20-hello",
+        "storygen",
         "main",
         "generate.py",
     )
     assert resolve_codebase_file(project, "generate.py") is None
-    assert resolve_codebase_file(project, "gemini20-hello/generate.py") is None
+    assert resolve_codebase_file(project, "storygen/generate.py") is None
 
 
 def test_resolve_codebase_file_is_flat_for_a_single_import() -> None:
@@ -212,7 +212,7 @@ def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main", "sha": "aaa"},
             ),
             (
-                "amelia751/gemini20-hello",
+                "amelia751/storygen",
                 {
                     "entries": [{"path": "generate.py", "type": "blob"}],
                     "ref": "main",
@@ -224,9 +224,9 @@ def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
     assert [node["type"] for node in payload["file_tree"]] == ["directory", "directory"]
     assert [node["name"] for node in payload["file_tree"]] == [
         "amelia751/egaki",
-        "amelia751/gemini20-hello",
+        "amelia751/storygen",
     ]
-    assert payload["file_tree"][1]["children"][0]["path"] == "amelia751/gemini20-hello/generate.py"
+    assert payload["file_tree"][1]["children"][0]["path"] == "amelia751/storygen/generate.py"
     assert payload["stats"]["total_files"] == 2
 
 
@@ -237,12 +237,12 @@ def test_combined_payload_keeps_an_empty_second_repo_as_a_directory() -> None:
                 "amelia751/egaki",
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main"},
             ),
-            ("amelia751/gemini20-hello", {"entries": [], "ref": "main"}),
+            ("amelia751/storygen", {"entries": [], "ref": "main"}),
         ]
     )
     assert [node["name"] for node in payload["file_tree"]] == [
         "amelia751/egaki",
-        "amelia751/gemini20-hello",
+        "amelia751/storygen",
     ]
     assert payload["file_tree"][1]["type"] == "directory"
     assert payload["file_tree"][1]["children"] == []

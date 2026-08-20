@@ -3,3 +3,5 @@
 # is a reproducible materialization of it.
 egaki/checkout/
 egaki/artifacts/
+storygen/node_modules/
+storygen/.next/

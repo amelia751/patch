@@ -68,10 +68,13 @@ _BUILDERS: Final[dict[AgentId, Any]] = {
 DETERMINISTIC_ENV_VAR: Final[str] = "PATCHAPI_PATCH_LOOP_DETERMINISTIC"
 
 # A module-level assignment of a quoted string, which is the shape the pinned
-# slice's model binding takes. Deliberately not a general Python parse: the
-# orchestrator's post-patch check has to be something a reviewer can read.
+# slice's model binding takes. Accepts `NAME =`, `const NAME =`, and
+# `export const NAME =` so the same check reads Python and the Next.js
+# entry point. Deliberately not a general parse: the orchestrator's post-patch
+# check has to be something a reviewer can read.
 _BINDING_ASSIGNMENT: Final[re.Pattern[str]] = re.compile(
-    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<quote>['\"])(?P<value>[^'\"]*)(?P=quote)",
+    r"^(?:export\s+)?(?:const\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+    r"(?P<quote>['\"])(?P<value>[^'\"]*)(?P=quote)",
     re.MULTILINE,
 )
 
@@ -81,7 +84,7 @@ def binding_value(source: str, name: str) -> str | None:
 
     The check a Patch turn is graded on. It reads the binding rather than
     searching the whole file because a migration target legitimately keeps the
-    retired identifiers around — `demo/gemini20-hello` lists them in the set it
+    retired identifiers around — `demo/storygen` lists them in the set it
     checks against — and a substring search would call a correct patch a failure.
     """
     for match in _BINDING_ASSIGNMENT.finditer(source):
@@ -109,12 +112,12 @@ class VerticalSlice:
 
 # Roadmap Phase 1: the smallest target whose exit code is decided entirely by
 # the model identifier in its source, so a green run proves the patch landed
-# rather than proving a provider was reachable. Fixture: demo/gemini20-hello.
+# rather than proving a provider was reachable. Fixture: demo/storygen.
 GEMINI20_SLICE: Final[VerticalSlice] = VerticalSlice(
     change_id="gemini20-flash-shutdown-2026-06-01",
-    repo="patchapi/gemini20-hello",
+    repo="amelia751/storygen",
     skill_id="google_gemini20_migration",
-    entrypoint="generate.py",
+    entrypoint="lib/gemini.ts",
     binding="MODEL",
     build_command="python3 generate.py",
     test_command="python3 -m unittest test_generate.py",
@@ -649,16 +652,12 @@ class Orchestrator:
         for match in _BINDING_ASSIGNMENT.finditer(source):
             if match.group("name") != slice_.binding:
                 continue
-            before = source.splitlines(keepends=True)
-            index = source.count("\n", 0, match.start())
-            quote = match.group("quote")
-            newline = "\n" if before[index].endswith("\n") else ""
-            after = list(before)
-            after[index] = f"{slice_.binding} = {quote}{replacement}{quote}{newline}"
+            start, end = match.span("value")
+            patched = source[:start] + replacement + source[end:]
             return "".join(
                 difflib.unified_diff(
-                    before,
-                    after,
+                    source.splitlines(keepends=True),
+                    patched.splitlines(keepends=True),
                     fromfile=f"a/{slice_.entrypoint}",
                     tofile=f"b/{slice_.entrypoint}",
                 )
@@ -692,6 +691,7 @@ class Orchestrator:
         uris: list[str] = []
         for name, text in files.items():
             path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
             uris.append(path.as_uri())
         self._context.evidence_root = root

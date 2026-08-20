@@ -44,14 +44,14 @@ def session(tmp_path: Path, repo_root: Path):
     """A local sandbox session holding a copy of the pinned fixture.
 
     The fixture is copied, never opened in place. A loop that edited
-    `demo/gemini20-hello` would leave the next run's red state already green.
+    `demo/storygen` would leave the next run's red state already green.
     """
     opened = LocalSession(root=tmp_path, run_id="run-patch-loop")
     shutil.copytree(
-        repo_root / "demo" / "gemini20-hello",
+        repo_root / "demo" / "storygen",
         opened.working_dir,
         dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "node_modules", ".next"),
     )
     yield opened
     opened.close()
@@ -71,7 +71,7 @@ def sandboxed_context(session, repo_root: Path, feed_dir: Path) -> RunContext:
 def test_the_fixture_starts_red(session):
     """Without this the green assertions below would prove nothing."""
     assert session.execute(["python3", "generate.py"], 60).exit_code == 1
-    assert binding_value(session.read_file("generate.py"), "MODEL") == RETIRED
+    assert binding_value(session.read_file("lib/gemini.ts"), "MODEL") == RETIRED
 
 
 def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, session):

@@ -82,7 +82,7 @@ a broken patch. The character comes from the change, and the fixture states it
 
 ## Out of scope for the patch
 
-- Grading apparatus. In `demo/gemini20-hello`, `RETIRED_MODELS` and
+- Grading apparatus. In `demo/storygen`, `RETIRED_MODELS` and
   `test_generate.py` encode the requirement; editing either reaches green
   without migrating anything.
 - Changelogs and other historical records.
@@ -101,14 +101,15 @@ python3 -m unittest test_generate.py
 Both must exit 0, and `generate.py` must print `ok:<replacement id>`. Before
 the patch both exit non-zero — a run that cannot show the red-to-green
 transition has not demonstrated anything. No retired identifier may remain on
-the exercised path. This change needs no live provider call: the target makes
-no network request, so a live gate would be theater rather than evidence.
+the exercised path (`lib/gemini.ts`). This change needs no live provider call
+for the gate: `generate.py` makes no network request, so a live gate would be
+theater rather than evidence.
 
 ## Related
 
 - `demo/fixtures/google-gemini20-deprecation.json` — the change fixture, with
   the hashed page excerpt at
   `demo/fixtures/pages/gemini20-deprecations.excerpt.html`.
-- `demo/gemini20-hello/expected-findings.yaml` — the graded findings. A rubric
+- `demo/storygen/expected-findings.yaml` — the graded findings. A rubric
   for evaluating agents, never an input to them.
 - `skills/google_imagen_migration/SKILL.md` — the semantic-migration case.

@@ -23,8 +23,8 @@ from packages.repo_scan import scan_tree
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 FIXTURE: Final[Path] = REPO_ROOT / "demo" / "fixtures" / "google-gemini20-deprecation.json"
-TARGET: Final[Path] = REPO_ROOT / "demo" / "gemini20-hello"
-ENTRYPOINT: Final[str] = "generate.py"
+TARGET: Final[Path] = REPO_ROOT / "demo" / "storygen"
+ENTRYPOINT: Final[str] = "lib/gemini.ts"
 
 # Restated here rather than read from the fixture: a test that derives its
 # expectation from the file under test cannot detect the file changing.

@@ -154,12 +154,12 @@ def test_watchlist_for_returns_the_pinned_imagen_and_gemini20_families():
     assert watchlist_for("google") == IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS
 
 
-def test_indexes_the_gemini20_hello_fixture():
-    root = Path(__file__).resolve().parents[3] / "demo" / "gemini20-hello"
-    inventory = index(root, repository="amelia751/gemini20-hello")
+def test_indexes_the_storygen_fixture():
+    root = Path(__file__).resolve().parents[3] / "demo" / "storygen"
+    inventory = index(root, repository="amelia751/storygen")
 
     assert "gemini-2.0-flash" in inventory.matched_identifiers
-    runtime = [usage for usage in inventory.usages if usage.file_path == "generate.py"]
+    runtime = [usage for usage in inventory.usages if usage.file_path == "lib/gemini.ts"]
     assert runtime
     assert runtime[0].identifier == "gemini-2.0-flash"
 

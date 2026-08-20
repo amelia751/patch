@@ -6,7 +6,7 @@
 # it in would pre-program the answer (roadmap §15.6).
 
 version: "1.0.0"
-target: demo/gemini20-hello
+target: demo/storygen
 change_fixture: demo/fixtures/google-gemini20-deprecation.json
 migration_character: mechanical
 
@@ -16,13 +16,13 @@ identifier_counts:
 findings:
   - id: G-01
     severity: critical
-    file: generate.py
-    line: 12
+    file: lib/gemini.ts
+    line: 1
     identifier: gemini-2.0-flash
     replacement: gemini-3.5-flash
     evidence: |
-      `MODEL = "gemini-2.0-flash"` is the model the module would send its
-      requests to.
+      `export const MODEL = "gemini-2.0-flash"` is the model the API route
+      sends generateContent requests to.
     why_it_breaks: |
       The identifier stopped resolving at the provider on 2026-06-01.
     reasoning: |
@@ -34,7 +34,7 @@ findings:
   - id: G-02
     severity: info
     file: generate.py
-    lines: [19, 20, 21, 22]
+    lines: [27, 28, 29, 30]
     evidence: |
       `RETIRED_MODELS` enumerates all four shut-down identifiers.
     reasoning: |
