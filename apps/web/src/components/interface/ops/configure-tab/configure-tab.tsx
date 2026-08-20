@@ -9,6 +9,7 @@ import { AWSConnectionTab } from "./aws-connection-tab";
 import { GCPConnectEmptyState } from "./gcp-connect-empty-state";
 import { GCPConnectionTab } from "./gcp-connection-tab";
 import { SecretsTab, type WorkspaceRef } from "./secrets-tab";
+import type { SecretRepoOption } from "@/components/interface/secret-managers";
 import { ChooseCloudProviderEmptyState, ConnectionEmptyState, SecretsEmptyState } from "./section-empty-states";
 
 function isResolvedCloudProvider(p: string | null | undefined): p is "aws" | "gcp" {
@@ -52,6 +53,7 @@ interface ConfigureTabProps {
   workspaces?: WorkspaceRef[];
   repoFullName?: string | null;
   repoDefaultBranch?: string | null;
+  repos?: SecretRepoOption[];
   /** Demo / logged-out: secrets UI uses mock data and Add simulates save. */
   secretsPreviewMode?: boolean;
   /** Logged-in: showing demo-shaped data until the API returns real secrets — hide destructive/example actions that would hit the API with fake ids. */
@@ -84,6 +86,7 @@ export function ConfigureTab({
   workspaces,
   repoFullName = null,
   repoDefaultBranch = null,
+  repos = [],
   secretsPreviewMode,
   secretsUseMockFallback = false,
   cloudAccountConnected = true,
@@ -214,6 +217,7 @@ export function ConfigureTab({
                 workspaces={workspaces}
                 repoFullName={repoFullName}
                 repoDefaultBranch={repoDefaultBranch}
+                repos={repos}
                 secretsPreviewMode={secretsPreviewMode}
                 secretsUseMockFallback={secretsUseMockFallback}
                 onRequirementSatisfied={onRequirementSatisfied}

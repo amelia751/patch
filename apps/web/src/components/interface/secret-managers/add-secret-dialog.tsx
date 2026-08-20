@@ -25,16 +25,29 @@ import {
   ChevronRight,
   FolderOpen,
   Layers,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export type SecretWorkspaceOption = {
   id: string;
   name: string;
   /** Repo-relative folder for this workspace (GitHub import picker). */
   workspace_path?: string | null;
+  repo_url?: string | null;
 };
 
+export type SecretRepoOption = {
+  fullName: string;
+  defaultBranch?: string | null;
+};
 
 interface AddSecretDialogProps {
   open: boolean;
@@ -54,6 +67,8 @@ interface AddSecretDialogProps {
   /** Linked GitHub `owner/repo` — when set (and not preview), scope uses real repo folders like import. */
   repoFullName?: string | null;
   repoDefaultBranch?: string | null;
+  /** Imported repos on this console project. One repo auto-selects; several need a pick. */
+  repos?: SecretRepoOption[];
   /** Demo / logged-out: no API call; simulate success. */
   secretsPreviewMode?: boolean;
   onSaved?: () => void;
@@ -68,6 +83,15 @@ function normalizeRepoPath(p: string | null | undefined): string {
 
 function workspacePathOf(w: SecretWorkspaceOption): string {
   return normalizeRepoPath(w.workspace_path ?? null);
+}
+
+function fullNameFromRepoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim().replace(/\.git$/u, "");
+  const match = /github\.com[:/]([^/]+\/[^/]+)/iu.exec(trimmed);
+  if (match?.[1]) return match[1];
+  if (/^[^/]+\/[^/]+$/u.test(trimmed)) return trimmed;
+  return null;
 }
 
 /**
@@ -123,6 +147,7 @@ export function AddSecretDialog({
   initialWorkspaceScope = "__shared__",
   repoFullName = null,
   repoDefaultBranch = null,
+  repos = [],
   secretsPreviewMode = false,
   onSaved,
 }: AddSecretDialogProps) {
@@ -141,6 +166,26 @@ export function AddSecretDialog({
   }, [workspaces]);
   const workspacesForScope = workspaces.length > 0 ? workspaces : lastNonEmptyWorkspacesRef.current;
 
+  const repoOptions: SecretRepoOption[] = (() => {
+    const fromProp = repos.filter((r) => r.fullName.includes("/"));
+    if (fromProp.length > 0) return fromProp;
+    if (repoFullName?.includes("/")) {
+      return [{ fullName: repoFullName, defaultBranch: repoDefaultBranch }];
+    }
+    return [];
+  })();
+
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState("");
+  const selectedRepo =
+    repoOptions.find((r) => r.fullName === selectedRepoFullName) ??
+    (repoOptions.length === 1 ? repoOptions[0] : undefined);
+  const workspacesForSelectedRepo = selectedRepo
+    ? workspacesForScope.filter((w) => {
+        const fromUrl = fullNameFromRepoUrl(w.repo_url);
+        return !fromUrl || fromUrl === selectedRepo.fullName;
+      })
+    : workspacesForScope;
+
   const [secretName, setSecretName] = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [showSecretKey, setShowSecretKey] = useState(false);
@@ -158,7 +203,7 @@ export function AddSecretDialog({
   const [repoFoldersError, setRepoFoldersError] = useState<string | null>(null);
   const [repoFoldersRetryKey, setRepoFoldersRetryKey] = useState(0);
 
-  const useRepoBrowser = Boolean(repoFullName?.includes("/")) && !secretsPreviewMode;
+  const useRepoBrowser = Boolean(selectedRepo?.fullName.includes("/")) && !secretsPreviewMode;
   const [detectedEntries, setDetectedEntries] = useState<{ key: string; value: string }[]>([]);
   const [isParsingEnv, setIsParsingEnv] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -209,7 +254,7 @@ export function AddSecretDialog({
           setFolderPath([]);
           if (scopeLocked || mode !== "add") setWorkspaceScope("__shared__");
         } else {
-          const ws = workspacesForScope.find((w) => w.id === scope);
+          const ws = workspacesForSelectedRepo.find((w) => w.id === scope);
           const bp = normalizeRepoPath(ws?.workspace_path ?? null);
           setFolderPath(bp ? bp.split("/").filter(Boolean) : []);
           if (scopeLocked || mode !== "add") setWorkspaceScope(scope);
@@ -219,7 +264,7 @@ export function AddSecretDialog({
       if (!scopeLocked && mode === "add" && scope !== "__shared__") {
         setFolderPath((prev) => {
           if (prev.length > 0) return prev;
-          const ws = workspacesForScope.find((w) => w.id === scope);
+          const ws = workspacesForSelectedRepo.find((w) => w.id === scope);
           const bp = normalizeRepoPath(ws?.workspace_path ?? null);
           return bp ? bp.split("/").filter(Boolean) : prev;
         });
@@ -231,7 +276,7 @@ export function AddSecretDialog({
       setWorkspaceScope(scope);
       setScopeBrowseWorkspaceId(scope === "__shared__" ? null : scope);
     }
-  }, [open, initialWorkspaceScope, useRepoBrowser, workspacesForScope, scopeLocked, mode]);
+  }, [open, initialWorkspaceScope, useRepoBrowser, workspacesForSelectedRepo, scopeLocked, mode]);
 
   useEffect(() => {
     if (!open || !useRepoBrowser || scopeLocked) {
@@ -240,7 +285,7 @@ export function AddSecretDialog({
       setRepoFoldersError(null);
       return;
     }
-    const full = repoFullName as string;
+    const full = selectedRepo?.fullName ?? "";
     const [owner, repo] = full.split("/");
     if (!owner || !repo) {
       setRepoFolders([]);
@@ -252,7 +297,8 @@ export function AddSecretDialog({
     setRepoFoldersError(null);
     const params = new URLSearchParams();
     if (pathStr) params.set("path", pathStr);
-    if (repoDefaultBranch?.trim()) params.set("ref", repoDefaultBranch.trim());
+    const ref = (selectedRepo?.defaultBranch || repoDefaultBranch || "").trim();
+    if (ref) params.set("ref", ref);
     const qs = params.toString() ? `?${params.toString()}` : "";
     fetch(`${API_URL}/api/github/repos/${owner}/${repo}/files${qs}`, {
       credentials: "include",
@@ -299,7 +345,8 @@ export function AddSecretDialog({
     open,
     useRepoBrowser,
     scopeLocked,
-    repoFullName,
+    selectedRepo?.fullName,
+    selectedRepo?.defaultBranch,
     repoDefaultBranch,
     folderPath.join("/"),
     repoFoldersRetryKey,
@@ -313,12 +360,38 @@ export function AddSecretDialog({
     setRepoFoldersError(null);
     setRepoFoldersRetryKey(0);
     setScopeBrowseWorkspaceId(null);
+    setSelectedRepoFullName("");
     setIsSubmitting(false);
     setIsParsingEnv(false);
   }, [open]);
 
+  const repoOptionKey = repoOptions.map((r) => r.fullName).join("|");
+  useEffect(() => {
+    if (!open) return;
+    if (repoOptions.length === 1) {
+      setSelectedRepoFullName(repoOptions[0].fullName);
+      return;
+    }
+    if (repoOptions.length > 1) {
+      setSelectedRepoFullName((prev) =>
+        repoOptions.some((r) => r.fullName === prev) ? prev : repoOptions[0].fullName
+      );
+    }
+    // repoOptionKey is the stable identity of the imported-repo list
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid resetting on new array identity
+  }, [open, repoOptionKey]);
+
+  const pickRepo = (fullName: string) => {
+    if (fullName === selectedRepoFullName) return;
+    setSelectedRepoFullName(fullName);
+    setFolderPath([]);
+    setRepoFolders([]);
+    setRepoFoldersError(null);
+    setWorkspaceScope("__shared__");
+  };
+
   /** Repo-browser add mode: scope follows `folderPath` synchronously (avoids init vs sync effect races). */
-  const scopeFromFolderBrowse = workspaceIdForSelectedFolder(folderPath, workspacesForScope);
+  const scopeFromFolderBrowse = workspaceIdForSelectedFolder(folderPath, workspacesForSelectedRepo);
   const activeWorkspaceScope =
     open && useRepoBrowser && !scopeLocked && mode === "add"
       ? scopeFromFolderBrowse
@@ -632,6 +705,45 @@ export function AddSecretDialog({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-4 space-y-4">
+          {repoOptions.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs text-[var(--text-secondary)]">Project</Label>
+              {repoOptions.length === 1 || scopeLocked ? (
+                <div className="flex items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1.5 text-xs text-[var(--text-primary)]">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
+                  <span className="font-mono truncate">
+                    {selectedRepo?.fullName ?? repoOptions[0].fullName}
+                  </span>
+                </div>
+              ) : (
+                <Select
+                  value={selectedRepo?.fullName ?? ""}
+                  onValueChange={pickRepo}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+                    <SelectValue placeholder="Select a repository" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+                    {repoOptions.map((repo) => (
+                      <SelectItem
+                        key={repo.fullName}
+                        value={repo.fullName}
+                        className="text-xs font-mono"
+                      >
+                        {repo.fullName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                {repoOptions.length === 1
+                  ? "Only imported repository on this project — folder scope below applies here."
+                  : "Imported repository. Folder scope below applies to the selected repo."}
+              </p>
+            </div>
+          )}
+
           {showWorkspaceScope && (
             <div className="space-y-2">
               <Label className="text-xs text-[var(--text-secondary)]">Workspace scope</Label>

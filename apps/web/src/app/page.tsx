@@ -155,7 +155,7 @@ function SystemPageContent() {
     }[]
   >([]);
   const [projectWorkspaces, setProjectWorkspaces] = useState<
-    { id: string; name: string; workspace_path?: string | null }[]
+    { id: string; name: string; workspace_path?: string | null; repo_url?: string | null }[]
   >([]);
   const [projectRepos, setProjectRepos] = useState<
     { full_name: string; default_branch: string; type: string }[]
@@ -607,8 +607,12 @@ function SystemPageContent() {
     return { configured: [], pending: [] };
   }, [isAuthenticated, storedSecrets, requirements, opsData]);
 
-  const workspacesForSecrets: { id: string; name: string; workspace_path?: string | null }[] =
-    isAuthenticated ? projectWorkspaces : workspacesFromOpsMock;
+  const workspacesForSecrets: {
+    id: string;
+    name: string;
+    workspace_path?: string | null;
+    repo_url?: string | null;
+  }[] = isAuthenticated ? projectWorkspaces : workspacesFromOpsMock;
 
   const secretsRepo = useMemo(() => {
     const r = projectRepos.find((x) => x.type === "backend") || projectRepos[0];
@@ -618,6 +622,17 @@ function SystemPageContent() {
       defaultBranch: (r.default_branch || "main").trim() || "main",
     };
   }, [projectRepos]);
+
+  const secretsRepos = useMemo(
+    () =>
+      projectRepos
+        .filter((r) => typeof r.full_name === "string" && r.full_name.includes("/"))
+        .map((r) => ({
+          fullName: r.full_name,
+          defaultBranch: (r.default_branch || "main").trim() || "main",
+        })),
+    [projectRepos],
+  );
 
   const secretsUseMockFallback = false;
 
@@ -792,6 +807,7 @@ function SystemPageContent() {
             workspaces={workspacesForSecrets}
             repoFullName={isAuthenticated ? secretsRepo.fullName : null}
             repoDefaultBranch={isAuthenticated ? secretsRepo.defaultBranch : null}
+            repos={isAuthenticated ? secretsRepos : []}
             secretsPreviewMode={!isAuthenticated}
             secretsUseMockFallback={secretsUseMockFallback}
             cloudAccountConnected={!shouldShowCloudConnectionEmptyState}

@@ -26,11 +26,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { Key, Plus, RefreshCw, AlertTriangle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AddSecretDialog } from "@/components/interface/secret-managers";
+import { AddSecretDialog, type SecretRepoOption } from "@/components/interface/secret-managers";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export type WorkspaceRef = { id: string; name: string; workspace_path?: string | null };
+export type WorkspaceRef = {
+  id: string;
+  name: string;
+  workspace_path?: string | null;
+  repo_url?: string | null;
+};
 
 export interface ConfiguredSecretRow {
   id: string;
@@ -67,6 +72,8 @@ interface SecretsTabProps {
   /** Linked GitHub `owner/repo` for repo folder scope (Add Secret). */
   repoFullName?: string | null;
   repoDefaultBranch?: string | null;
+  /** Imported repos — Add Secret picks one when there are several. */
+  repos?: SecretRepoOption[];
   projectId?: string;
   /** Demo / logged-out: Add Secret simulates save; no API. */
   secretsPreviewMode?: boolean;
@@ -180,6 +187,7 @@ export function SecretsTab({
   workspaces = [],
   repoFullName = null,
   repoDefaultBranch = null,
+  repos = [],
   projectId,
   secretsPreviewMode = false,
   secretsUseMockFallback = false,
@@ -637,6 +645,7 @@ export function SecretsTab({
         initialWorkspaceScope="__shared__"
         repoFullName={repoFullName}
         repoDefaultBranch={repoDefaultBranch}
+        repos={repos}
         secretsPreviewMode={secretsPreviewMode}
         onSaved={() => onRequirementSatisfied?.()}
       />
@@ -655,6 +664,7 @@ export function SecretsTab({
           }
           repoFullName={repoFullName}
           repoDefaultBranch={repoDefaultBranch}
+          repos={repos}
           requirementId={selectedSecret.id}
           secretsPreviewMode={secretsPreviewMode}
           onSaved={() => onRequirementSatisfied?.()}
@@ -677,6 +687,7 @@ export function SecretsTab({
           }
           repoFullName={repoFullName}
           repoDefaultBranch={repoDefaultBranch}
+          repos={repos}
           secretsPreviewMode={secretsPreviewMode}
           onSaved={() => {
             setRotateTarget(null);
