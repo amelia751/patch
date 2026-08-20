@@ -16,44 +16,34 @@ from packages.state.pool import StateUnavailableError
 if TYPE_CHECKING:
     import asyncpg
 
-_NAME_TOKEN = re.compile(r"^[A-Za-z][A-Za-z'-]*$")
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
-FALLBACK_NAME = "First Organization"
 
 
 def first_name(
     *,
     given_name: str | None = None,
     display_name: str | None = None,
-    email: str | None = None,
-) -> str | None:
-    """Return a given name suitable for '{First}'s Organization', or None."""
+) -> str:
+    """First name from Google given_name, or the first word of the signup name."""
     for raw in (given_name, display_name):
         token = _name_token(raw)
         if token:
             return token
-    local = (email or "").split("@", 1)[0].strip()
-    if local and "." not in local and "+" not in local:
-        return _name_token(local)
-    return None
+    raise ValueError("first name is required")
 
 
 def organization_name(
     *,
     given_name: str | None = None,
     display_name: str | None = None,
-    email: str | None = None,
 ) -> str:
-    """'{First}'s Organization' when a first name exists, else First Organization."""
-    first = first_name(given_name=given_name, display_name=display_name, email=email)
-    if first:
-        return f"{first}'s Organization"
-    return FALLBACK_NAME
+    """Always '{First}'s Organization' — email, Google, and GitHub all collect a name."""
+    return f"{first_name(given_name=given_name, display_name=display_name)}'s Organization"
 
 
 def organization_slug(name: str) -> str:
     cleaned = _SLUG_STRIP.sub("-", name.lower().replace("'", "")).strip("-")
-    return cleaned or "first-organization"
+    return cleaned or "organization"
 
 
 def personal_organization(user_id: UUID, name: str, slug: str) -> dict[str, str]:
@@ -92,7 +82,6 @@ async def read_personal_organization(
                 name = organization_name(
                     given_name=given_name,
                     display_name=row["display_name"],
-                    email=row["email"],
                 )
                 slug = organization_slug(name)
                 merged = {**settings, "organization_name": name, "organization_slug": slug}
@@ -164,6 +153,6 @@ def _name_token(raw: str | None) -> str | None:
     if not raw:
         return None
     token = raw.strip().split()[0] if raw.strip() else ""
-    if _NAME_TOKEN.fullmatch(token) is None:
+    if not token:
         return None
     return token[0].upper() + token[1:]

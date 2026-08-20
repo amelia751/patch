@@ -219,14 +219,16 @@ function OrganizationSwitcher() {
       return;
     }
 
-    const derived = organizationNameFromUser(user?.display_name, user?.email);
-    setOrganization({
-      id: user?.id ?? "",
-      name: derived.name,
-      slug: derived.slug,
-      type: "personal",
-      role: "owner",
-    });
+    if (user?.display_name) {
+      const derived = organizationNameFromUser(user.display_name);
+      setOrganization({
+        id: user.id,
+        name: derived.name,
+        slug: derived.slug,
+        type: "personal",
+        role: "owner",
+      });
+    }
 
     const fetchOrganization = async () => {
       try {

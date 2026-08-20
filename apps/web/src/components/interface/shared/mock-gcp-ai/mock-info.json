@@ -6,8 +6,8 @@
   },
   "defaultOrganization": {
     "id": "",
-    "name": "First Organization",
-    "slug": "first-organization",
+    "name": "Alex's Organization",
+    "slug": "alexs-organization",
     "type": "personal",
     "role": "owner"
   },

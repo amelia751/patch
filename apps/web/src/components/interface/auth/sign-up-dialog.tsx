@@ -155,12 +155,12 @@ export function SignUpPanel({
         <form onSubmit={handleEmailSignUp} className="space-y-3">
           <div className="grid gap-2">
             <Label htmlFor={`${titleId}-name`} className={cn("text-xs", authLabel)}>
-              Full Name
+              First name
             </Label>
             <Input
               id={`${titleId}-name`}
               type="text"
-              placeholder="Enter your full name"
+              placeholder="Enter your first name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={cn("h-10 text-sm focus:border-primary focus:ring-primary/20", authField)}
