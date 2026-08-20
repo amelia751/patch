@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from sandbox.credentials import LIVE_VERIFICATION_CREDENTIALS
+
 PLAN_SCHEMA_VERSION = "sandbox.plan.v1"
 RESULT_SCHEMA_VERSION = "sandbox.result.v1"
 
@@ -23,17 +25,8 @@ RESULT_SCHEMA_VERSION = "sandbox.result.v1"
 NetworkPhase = Literal["none", "dependencies", "live_verification"]
 NETWORK_PHASES: tuple[NetworkPhase, ...] = ("none", "dependencies", "live_verification")
 
-# The only environment variables a step may ever request, and only during live
-# verification. Anything else is denied at plan-load time rather than at run
-# time, so an unsupported request can never reach a sandbox.
-LIVE_VERIFICATION_CREDENTIALS: frozenset[str] = frozenset(
-    {
-        "GOOGLE_API_KEY",
-        "GOOGLE_CLOUD_PROJECT",
-        "GOOGLE_CLOUD_LOCATION",
-        "GOOGLE_GENAI_USE_VERTEXAI",
-    }
-)
+# Re-exported so existing `from sandbox.runner.config import …` call sites keep
+# working. The allowlist itself lives in sandbox/credentials.py.
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 900
 

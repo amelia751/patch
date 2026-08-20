@@ -46,6 +46,13 @@ from packages.state.providers import (
     subscribe_project,
     unsubscribe_project,
 )
+from packages.state.secret_manager import GoogleSecretVault, SecretStoreError, gcp_project
+from packages.state.secrets import (
+    SecretInputError,
+    delete_secret,
+    list_secrets,
+    upsert_secret,
+)
 from packages.state.session import COOKIE_NAME, load_session_secret, parse
 from packages.state.users import read_github_connection
 
@@ -518,6 +525,155 @@ async def disconnect_owned_repository(
         )
     if project is None:
         return JSONResponse({"detail": "Repository not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+def _vault() -> GoogleSecretVault | JSONResponse:
+    try:
+        return GoogleSecretVault(gcp_project())
+    except SecretStoreError as exc:
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "secret_manager",
+                "reason": str(exc),
+            },
+            status_code=503,
+        )
+
+
+def _workspace_scope(raw: str | None) -> tuple[UUID | None, bool] | JSONResponse:
+    """Parse the optional workspace filter the Secrets tab sends.
+
+    `_shared` means `workspace_id IS NULL`. A missing value matches the unique
+    `(project_id, secret_name)` row.
+    """
+    if raw is None or not raw.strip():
+        return None, False
+    value = raw.strip()
+    if value in {"_shared", "__shared__"}:
+        return None, True
+    try:
+        return UUID(value), False
+    except ValueError:
+        return JSONResponse({"detail": "workspace_id must be a UUID or _shared"}, status_code=400)
+
+
+@router.get("/{project_id}/secrets")
+async def list_owned_secrets(request: Request, project_id: UUID) -> JSONResponse:
+    """Configured secret *names* and Secret Manager pointers. Never payloads."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        rows = await list_secrets(_pool(request), project_id, user_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if rows is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    return JSONResponse({"secrets": rows})
+
+
+@router.post("/{project_id}/secrets")
+async def upsert_owned_secret(request: Request, project_id: UUID) -> JSONResponse:
+    """Accept a value once, write Secret Manager, persist only the pointer."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    body = await _json_body(request)
+    name = str(body.get("secret_name") or "").strip()
+    value = body.get("secret_value")
+    if not isinstance(value, str):
+        return JSONResponse({"detail": "secret_value is required"}, status_code=400)
+    workspace_raw = body.get("workspace_id")
+    workspace_id: UUID | None = None
+    if workspace_raw not in (None, "", "__shared__", "_shared"):
+        try:
+            workspace_id = UUID(str(workspace_raw))
+        except ValueError:
+            return JSONResponse({"detail": "workspace_id must be a UUID"}, status_code=400)
+    vault = _vault()
+    if isinstance(vault, JSONResponse):
+        return vault
+    try:
+        row = await upsert_secret(
+            _pool(request),
+            project_id,
+            user_id,
+            secret_name=name,
+            secret_value=value,
+            vault=vault,
+            workspace_id=workspace_id,
+            secret_type=str(body.get("type") or "api_key"),
+        )
+    except SecretInputError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except SecretStoreError as exc:
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "secret_manager",
+                "reason": str(exc),
+            },
+            status_code=503,
+        )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if row is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    return JSONResponse(row, status_code=201)
+
+
+@router.delete("/{project_id}/secrets/{secret_name}")
+async def delete_owned_secret(
+    request: Request, project_id: UUID, secret_name: str
+) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    scope = _workspace_scope(request.query_params.get("workspace_id"))
+    if isinstance(scope, JSONResponse):
+        return scope
+    workspace_id, shared = scope
+    vault = _vault()
+    if isinstance(vault, JSONResponse):
+        return vault
+    try:
+        deleted = await delete_secret(
+            _pool(request),
+            project_id,
+            user_id,
+            secret_name=secret_name,
+            vault=vault,
+            workspace_id=workspace_id,
+            shared=shared,
+        )
+    except SecretInputError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except SecretStoreError as exc:
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "secret_manager",
+                "reason": str(exc),
+            },
+            status_code=503,
+        )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if deleted is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    if not deleted:
+        return JSONResponse({"detail": "Secret not found"}, status_code=404)
     return JSONResponse({"ok": True})
 
 

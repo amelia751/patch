@@ -40,6 +40,21 @@ def test_git_source_must_pin_a_sha():
         SandboxPlan.from_json(data)
 
 
+def test_egaki_live_key_is_on_the_allowlist():
+    data = plan_with(
+        steps=[
+            {
+                "name": "live",
+                "argv": ["python3", "--version"],
+                "phase": "live_verification",
+                "credentials": ["GOOGLE_GENERATIVE_AI_API_KEY"],
+            }
+        ]
+    )
+    plan = SandboxPlan.from_json(data)
+    assert plan.steps[0].credentials == ("GOOGLE_GENERATIVE_AI_API_KEY",)
+
+
 def test_credentials_outside_the_allowlist_are_refused():
     data = plan_with(
         steps=[

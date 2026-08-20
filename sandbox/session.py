@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Protocol, runtime_checkable
 
+from sandbox.credentials import LIVE_VERIFICATION_CREDENTIALS
+
 # Inherited verbatim when present, and nothing else. Built from an allowlist so
 # a credential added to the operator's shell tomorrow — GITHUB_TOKEN,
 # GOOGLE_APPLICATION_CREDENTIALS, a cloud SDK config pointer — is excluded by
@@ -172,10 +174,23 @@ class LocalSession:
     def run_id(self) -> str:
         return self._run_id
 
-    def execute(self, argv: list[str], timeout_seconds: float = 300) -> ExecutionResult:
+    def execute(
+        self,
+        argv: list[str],
+        timeout_seconds: float = 300,
+        *,
+        extra_env: Mapping[str, str] | None = None,
+    ) -> ExecutionResult:
         if not argv:
             raise ValueError("argv must not be empty")
         environment = build_workspace_environment(self._workspace, run_id=self._run_id)
+        if extra_env:
+            unknown = sorted(set(extra_env) - LIVE_VERIFICATION_CREDENTIALS)
+            if unknown:
+                raise ValueError(
+                    f"extra_env names outside the live-verification allowlist: {unknown}"
+                )
+            environment.update(extra_env)
         try:
             process = subprocess.Popen(
                 argv,

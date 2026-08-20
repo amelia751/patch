@@ -19,6 +19,8 @@ in `db/migrations/`.
 | `google_models.py` | Gemini / Vertex model snapshot (deprecation pages + list APIs) |
 | `google_release_notes.py` | Last 365 days of the public BigQuery release-notes table |
 | `provider_routes.py` | `GET /api/providers/google` and `/google/changes` |
+| `secrets.py` | `project_secrets` names and pointers; never a value column |
+| `secret_manager.py` | Secret Manager create / rotate / delete / reveal |
 | `data/google_services.json` | Committed Service Usage snapshot (stand-in for Postgres) |
 | `data/google_models.json` | Committed Gemini / Vertex lifecycle snapshot |
 | `data/google_release_notes.json` | Committed last-year release notes |

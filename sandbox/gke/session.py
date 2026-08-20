@@ -21,15 +21,18 @@ runtime on port 8888 that the PatchAPI runner image does not serve.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
+from ..credentials import LIVE_VERIFICATION_CREDENTIALS
 from ..session import (
     ExecutionResult,
     SandboxError,
@@ -77,6 +80,24 @@ _CHDIR_EXEC_PROGRAM = (
     "    os.chdir(root)\n"
     "os.execvp(sys.argv[2], sys.argv[2:])\n"
 )
+# Loads extra_env from a JSON file written over stdin (never argv), unlinks it,
+# then execs. The live key must not appear on the kubectl command line.
+_LIVE_ENV_EXEC_PROGRAM = (
+    "import json,os,sys\n"
+    "root,env_path=sys.argv[1],sys.argv[2]\n"
+    "data=json.loads(open(env_path,encoding='utf-8').read())\n"
+    "os.unlink(env_path)\n"
+    "if not isinstance(data,dict):\n"
+    "    raise SystemExit('live env is not an object')\n"
+    "os.environ.update({str(k):str(v) for k,v in data.items()})\n"
+    "if os.path.isdir(root):\n"
+    "    os.chdir(root)\n"
+    "os.execvp(sys.argv[3], sys.argv[3:])\n"
+)
+_PHASE_FILES = {
+    "dependencies": "phase-dependency-install.yaml",
+    "live_verification": "phase-live-verification.yaml",
+}
 _READ_PROGRAM = "import pathlib,sys; sys.stdout.write(pathlib.Path(sys.argv[1]).read_text())"
 _WRITE_PROGRAM = (
     "import pathlib,sys; p=pathlib.Path(sys.argv[1]); "
@@ -230,6 +251,7 @@ class GkeSession:
         self._pod: str | None = None
         self._applied = False
         self._closed = False
+        self._phase_policies: list[str] = []
 
     # -- identity ---------------------------------------------------------
 
@@ -302,6 +324,8 @@ class GkeSession:
             return
         self._closed = True
         try:
+            for policy_name in list(self._phase_policies):
+                self.clear_network_phase(policy_name)
             if not self._applied:
                 return
             self._kubectl(
@@ -327,27 +351,60 @@ class GkeSession:
 
     # -- execution --------------------------------------------------------
 
-    def execute(self, argv: list[str], timeout_seconds: float = 300) -> ExecutionResult:
+    def execute(
+        self,
+        argv: list[str],
+        timeout_seconds: float = 300,
+        *,
+        extra_env: Mapping[str, str] | None = None,
+    ) -> ExecutionResult:
         """Run `argv` inside the sandbox container. Never a shell string."""
 
         if not argv:
             raise ValueError("argv must not be empty")
         pod = self._require_pod()
-        completed = self._kubectl(
-            [
-                "exec",
-                pod,
-                "-c",
-                _RUNNER_CONTAINER,
-                "--",
-                "python3",
-                "-c",
-                _CHDIR_EXEC_PROGRAM,
-                str(_POD_WORKSPACE),
-                *argv,
-            ],
-            timeout=timeout_seconds,
-        )
+        if extra_env:
+            unknown = sorted(set(extra_env) - LIVE_VERIFICATION_CREDENTIALS)
+            if unknown:
+                raise ValueError(
+                    f"extra_env names outside the live-verification allowlist: {unknown}"
+                )
+            env_path = f"/tmp/{self._claim_name}.live-env.json"
+            staged = self._exec_python(_WRITE_PROGRAM, env_path, stdin=json.dumps(dict(extra_env)))
+            if staged.exit_code != 0:
+                return staged
+            completed = self._kubectl(
+                [
+                    "exec",
+                    pod,
+                    "-c",
+                    _RUNNER_CONTAINER,
+                    "--",
+                    "python3",
+                    "-c",
+                    _LIVE_ENV_EXEC_PROGRAM,
+                    str(_POD_WORKSPACE),
+                    env_path,
+                    *argv,
+                ],
+                timeout=timeout_seconds,
+            )
+        else:
+            completed = self._kubectl(
+                [
+                    "exec",
+                    pod,
+                    "-c",
+                    _RUNNER_CONTAINER,
+                    "--",
+                    "python3",
+                    "-c",
+                    _CHDIR_EXEC_PROGRAM,
+                    str(_POD_WORKSPACE),
+                    *argv,
+                ],
+                timeout=timeout_seconds,
+            )
         if completed is _TIMED_OUT:
             return ExecutionResult(exit_code=-1, timed_out=True)
         return ExecutionResult(
@@ -355,6 +412,36 @@ class GkeSession:
             stdout=completed.stdout or "",
             stderr=completed.stderr or "",
         )
+
+    def apply_network_phase(self, phase: str) -> str:
+        """Open a run-scoped egress policy. Caller must `clear_network_phase`."""
+        filename = _PHASE_FILES.get(phase)
+        if filename is None:
+            raise ValueError(f"unknown network phase {phase!r}")
+        uid = self._claim_uid
+        if not uid:
+            raise SandboxError(f"session {self._claim_name} has no claim uid yet")
+        policy_name = f"phase-{phase.replace('_', '-')}-{self._claim_name}"
+        text = (_GKE_DIR / filename).read_text(encoding="utf-8")
+        rendered = text.replace("PATCHAPI_PHASE_POLICY_NAME", policy_name).replace(
+            "PATCHAPI_SANDBOX_CLAIM_UID", uid
+        )
+        path = self._scratch / f"{policy_name}.yaml"
+        path.write_text(rendered, encoding="utf-8")
+        applied = self._kubectl(["apply", "-f", str(path)])
+        if applied.returncode != 0:
+            raise SandboxUnavailableError(
+                f"cannot apply {phase} policy: {applied.stderr.strip()}"
+            )
+        self._phase_policies.append(policy_name)
+        return policy_name
+
+    def clear_network_phase(self, policy_name: str) -> None:
+        self._kubectl(
+            ["delete", "networkpolicy", policy_name, "--ignore-not-found", "--wait=true"],
+            timeout=60,
+        )
+        self._phase_policies = [name for name in self._phase_policies if name != policy_name]
 
     def read_file(self, relpath: str) -> str:
         path = resolve_within(_POD_WORKSPACE, relpath)

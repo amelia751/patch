@@ -75,6 +75,31 @@ def test_execute_hides_operator_credentials(session, monkeypatch):
     assert result.stdout.strip() == "[]"
 
 
+def test_execute_can_inject_a_live_verification_key(session, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs-should-never-be-visible")
+    program = (
+        "import os; "
+        "print('present' if os.environ.get('GOOGLE_GENERATIVE_AI_API_KEY') else 'missing'); "
+        "print('github' if 'GITHUB_TOKEN' in os.environ else 'no-github')"
+    )
+    result = session.execute(
+        ["python3", "-c", program],
+        timeout_seconds=30,
+        extra_env={"GOOGLE_GENERATIVE_AI_API_KEY": "not-a-real-key"},
+    )
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["present", "no-github"]
+
+
+def test_execute_refuses_a_host_credential_as_extra_env(session):
+    with pytest.raises(ValueError, match="allowlist"):
+        session.execute(
+            ["python3", "--version"],
+            timeout_seconds=30,
+            extra_env={"GITHUB_TOKEN": "nope"},
+        )
+
+
 def test_execute_redirects_home_into_the_workspace(session):
     result = session.execute(
         ["python3", "-c", "import os; print(os.environ['HOME']); print(os.environ['TMPDIR'])"],
