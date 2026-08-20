@@ -1,4 +1,8 @@
-import type { ProviderCategory, ProviderProfile } from "@/components/interface/provider/data";
+import {
+  asProviderCategory,
+  type ProviderCategory,
+  type ProviderProfile,
+} from "@/components/interface/provider/data";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -54,7 +58,7 @@ export function profileFromApi(row: Record<string, unknown>): ProviderRecord {
   const connections = (row.connections && typeof row.connections === "object"
     ? row.connections
     : {}) as Record<string, ProviderConnection | null>;
-  const category = String(row.category || "cloud") as ProviderCategory;
+  const category = asProviderCategory(String(row.category || "cloud"));
   return {
     id: String(row.id || ""),
     name: String(row.name || ""),
@@ -100,6 +104,26 @@ export async function fetchProvider(slug: string): Promise<ProviderRecord> {
   const body = await readBody(response);
   if (!response.ok) throw new Error(detail(body, `Provider unavailable (${response.status})`));
   return profileFromApi(body || {});
+}
+
+export async function checkProviderSlug(slug: string): Promise<{
+  available: boolean;
+  slug: string;
+  message?: string;
+}> {
+  const response = await fetch(`${API_URL}/api/providers/check-slug`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug }),
+  });
+  const body = await readBody(response);
+  if (!response.ok) throw new Error(detail(body, `Could not check slug (${response.status})`));
+  return {
+    available: Boolean(body?.available),
+    slug: typeof body?.slug === "string" ? body.slug : slug,
+    message: typeof body?.message === "string" ? body.message : undefined,
+  };
 }
 
 export async function registerProvider(input: RegisterProviderInput): Promise<ProviderRecord> {

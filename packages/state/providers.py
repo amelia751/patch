@@ -21,8 +21,11 @@ if TYPE_CHECKING:
 GOOGLE_PROVIDER_ID: UUID = UUID("00000000-0000-0000-0000-000000000001")
 GOOGLE_SLUG = "google"
 
-_CATEGORIES = frozenset({"ai", "cloud", "payments", "communications", "data", "identity"})
-_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_CATEGORIES = frozenset(
+    {"ai", "cloud", "payments", "communications", "data", "identity", "devtools", "other"}
+)
+_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+_RESERVED_SLUGS = frozenset({GOOGLE_SLUG, "check-slug"})
 
 
 class ProviderStoreError(ValueError):
@@ -183,6 +186,36 @@ async def list_providers(pool: asyncpg.Pool) -> list[dict[str, Any]]:
         return payloads
 
 
+def normalize_provider_slug(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", value.lower().replace("'", "")).strip("-")
+    return cleaned[:48]
+
+
+def validate_provider_slug(slug: str) -> str:
+    cleaned = slug.strip().lower()
+    if len(cleaned) < 3:
+        raise ProviderStoreError("Slug must be at least 3 characters.")
+    if not _SLUG.fullmatch(cleaned):
+        raise ProviderStoreError("Slug must start and end with a letter or number.")
+    if "--" in cleaned:
+        raise ProviderStoreError("Slug cannot contain consecutive hyphens.")
+    if cleaned in _RESERVED_SLUGS:
+        raise ProviderStoreError("That slug is reserved.")
+    return cleaned
+
+
+async def provider_slug_available(pool: asyncpg.Pool, slug: str) -> dict[str, Any]:
+    cleaned = validate_provider_slug(slug)
+    async with pool.acquire() as connection:
+        taken = await connection.fetchval(
+            "SELECT 1 FROM providers WHERE slug = $1 AND retired_at IS NULL",
+            cleaned,
+        )
+    if taken is not None:
+        return {"available": False, "slug": cleaned, "message": "This slug is already taken"}
+    return {"available": True, "slug": cleaned}
+
+
 def _optional_text(value: str) -> str | None:
     cleaned = value.strip()
     return cleaned or None
@@ -218,13 +251,11 @@ async def register_provider(
     status_url: str = "",
 ) -> dict[str, Any]:
     cleaned_name = name.strip()
-    cleaned_slug = slug.strip().lower()
+    cleaned_slug = validate_provider_slug(slug)
     cleaned_category = category.strip().lower()
     cleaned_description = description.strip()
     if not cleaned_name:
         raise ProviderStoreError("Enter an organization name.")
-    if not _SLUG.fullmatch(cleaned_slug):
-        raise ProviderStoreError("Enter a URL slug.")
     if cleaned_category not in _CATEGORIES:
         raise ProviderStoreError("Choose a category.")
     if not cleaned_description:

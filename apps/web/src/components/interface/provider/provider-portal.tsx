@@ -23,7 +23,9 @@ import {
 } from "@/components/ui/pagination";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getGCPCategoryIcon, getGCPServiceIcon } from "@/lib/gcp-icons";
+import { Spinner } from "@/components/ui/spinner";
 import {
+  checkProviderSlug,
   connectProvider,
   disconnectProvider,
   fetchProvider,
@@ -76,11 +78,13 @@ import {
   CHANGE_KIND_LABELS,
   SERVICE_GROUP_LABELS,
   SERVICE_STATUS_LABELS,
+  asProviderCategory,
   catalogChangeFromApi,
   catalogServiceFromApi,
   formatShortDate,
   formatWatchers,
   initials,
+  sanitizeSlugInput,
   slugify,
   type ChangeKind,
   type ProviderCategory,
@@ -1536,7 +1540,7 @@ function ProfileTab({
                     )}
                   </div>
                   <p className="text-[11px] text-[var(--text-secondary)] mt-1">
-                    {CATEGORY_LABELS[profile.category]}
+                    {CATEGORY_LABELS[asProviderCategory(profile.category)]}
                     {profile.since && (
                       <>
                         <span className="mx-1.5">·</span>
@@ -1735,6 +1739,8 @@ function RegisterDialog({
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
+  const [slugError, setSlugError] = useState<string | null>(null);
+  const [slugChecking, setSlugChecking] = useState(false);
   const [website, setWebsite] = useState("");
   const [consoleUrl, setConsoleUrl] = useState("");
   const [docsUrl, setDocsUrl] = useState("");
@@ -1751,6 +1757,8 @@ function RegisterDialog({
     setName("");
     setSlug("");
     setSlugTouched(false);
+    setSlugError(null);
+    setSlugChecking(false);
     setWebsite("");
     setConsoleUrl("");
     setDocsUrl("");
@@ -1764,9 +1772,48 @@ function RegisterDialog({
     setError(null);
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const next = slugify(slug);
+    if (!next) {
+      setSlugError(null);
+      setSlugChecking(false);
+      return;
+    }
+    if (next.length < 3) {
+      setSlugError("Slug must be at least 3 characters");
+      setSlugChecking(false);
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(next)) {
+      setSlugError("Slug must start and end with a letter or number");
+      setSlugChecking(false);
+      return;
+    }
+    if (/--/.test(next)) {
+      setSlugError("Slug cannot contain consecutive hyphens");
+      setSlugChecking(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setSlugChecking(true);
+      try {
+        const result = await checkProviderSlug(next);
+        setSlugError(result.available ? null : result.message || "This slug is already taken");
+      } catch {
+        setSlugError(null);
+      } finally {
+        setSlugChecking(false);
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [open, slug]);
+
   const handleSubmit = async () => {
     if (!name.trim()) return setError("Enter an organization name.");
-    if (!slugify(slug)) return setError("Enter a URL slug.");
+    if (!slugify(slug) || slugError || slugChecking) {
+      return setError(slugError || "Enter a URL slug.");
+    }
     if (email.trim() && email.includes(" ") && !email.includes("@")) {
       return setError("Enter a contact email or URL, or leave it blank.");
     }
@@ -1833,15 +1880,39 @@ function RegisterDialog({
               />
             </Field>
             <Field label="Slug">
-              <Input
-                value={slug}
-                onChange={(e) => {
-                  setSlugTouched(true);
-                  setSlug(slugify(e.target.value));
-                }}
-                placeholder="google"
-                className={cn(fieldClass, "font-mono")}
-              />
+              <div className="flex items-center">
+                <span className="text-xs text-[var(--text-secondary)] px-3 py-2 bg-[var(--bg-tertiary)] border border-r-0 border-[var(--border-color)] rounded-l-md h-9 flex items-center">
+                  providers/
+                </span>
+                <Input
+                  value={slug}
+                  onChange={(e) => {
+                    setSlugTouched(true);
+                    setSlug(sanitizeSlugInput(e.target.value));
+                  }}
+                  placeholder="acme-ai"
+                  className={cn(
+                    fieldClass,
+                    "font-mono rounded-l-none",
+                    slugError && "border-red-500 focus-visible:border-red-500",
+                  )}
+                />
+              </div>
+              {slugChecking && (
+                <p className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1">
+                  <Spinner className="h-3 w-3" />
+                  Checking availability
+                </p>
+              )}
+              {slugError && !slugChecking && (
+                <p className="text-[10px] text-red-500">{slugError}</p>
+              )}
+              {!slugError && !slugChecking && slugify(slug).length >= 3 && (
+                <p className="text-[10px] text-[#10b981] flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
+                  Slug is available
+                </p>
+              )}
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Category">
@@ -1960,7 +2031,8 @@ function RegisterDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            className="h-8 text-xs bg-primary hover:bg-primary-hover text-primary-foreground"
+            disabled={!!slugError || slugChecking}
+            className="h-8 text-xs bg-primary hover:bg-primary-hover text-primary-foreground disabled:opacity-50"
           >
             Register
           </Button>

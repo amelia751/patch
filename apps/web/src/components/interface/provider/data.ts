@@ -4,7 +4,9 @@ export type ProviderCategory =
   | "payments"
   | "communications"
   | "data"
-  | "identity";
+  | "identity"
+  | "devtools"
+  | "other";
 
 export type ServiceStatus = "live" | "preview" | "deprecated";
 
@@ -90,7 +92,13 @@ export const CATEGORY_LABELS: Record<ProviderCategory, string> = {
   communications: "Communications",
   data: "Data",
   identity: "Identity",
+  devtools: "Developer tools",
+  other: "Other",
 };
+
+export function asProviderCategory(value: string): ProviderCategory {
+  return value in CATEGORY_LABELS ? (value as ProviderCategory) : "other";
+}
 
 export const SERVICE_STATUS_LABELS: Record<ServiceStatus, string> = {
   live: "Live",
@@ -279,10 +287,14 @@ export const GOOGLE_CLOUD_CHANGES: PublishedChange[] = [
 export function slugify(value: string): string {
   return value
     .toLowerCase()
-    .trim()
+    .replace(/'/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
+}
+
+export function sanitizeSlugInput(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 48);
 }
 
 export function initials(name: string): string {

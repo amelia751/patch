@@ -25,6 +25,7 @@ from packages.state.providers import (
     list_change_notes,
     list_providers,
     list_services,
+    provider_slug_available,
     register_provider,
     require_pool,
 )
@@ -107,6 +108,22 @@ async def post_provider(request: Request) -> JSONResponse:
     except StateUnavailableError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=503)
     return JSONResponse(provider, status_code=201)
+
+
+@router.post("/check-slug")
+async def post_provider_slug(request: Request) -> JSONResponse:
+    user = _require_user(request)
+    if isinstance(user, JSONResponse):
+        return user
+    body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Expected a JSON object."}, status_code=400)
+    try:
+        return JSONResponse(await provider_slug_available(_pool(request), str(body.get("slug") or "")))
+    except ProviderStoreError as exc:
+        return JSONResponse({"available": False, "slug": str(body.get("slug") or ""), "message": str(exc)})
+    except StateUnavailableError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=503)
 
 
 @router.get("/{slug}/services")
