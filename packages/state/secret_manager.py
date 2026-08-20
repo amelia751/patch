@@ -17,6 +17,7 @@ ENV_PROJECT: Final[str] = "GCP_PROJECT"
 ENV_CREDENTIALS: Final[str] = "GOOGLE_APPLICATION_CREDENTIALS"
 DEFAULT_CREDENTIALS_FILE: Final[str] = ".secrets/gcp-service-account.json"
 SECRET_ID_PREFIX: Final[str] = "patchapi-ps-"
+GCP_CONNECTION_PREFIX: Final[str] = "patchapi-gcp-"
 REPLICA_LOCATION: Final[str] = "us-central1"
 
 
@@ -50,13 +51,21 @@ def secret_id_for(row_id: UUID) -> str:
     return f"{SECRET_ID_PREFIX}{row_id.hex}"
 
 
+def secret_id_for_connection(row_id: UUID) -> str:
+    """Secret Manager id for a stored GCP service-account JSON."""
+    return f"{GCP_CONNECTION_PREFIX}{row_id.hex}"
+
+
 def resource_name(project: str, secret_id: str) -> str:
     return f"projects/{project}/secrets/{secret_id}"
 
 
 def is_managed_resource(resource: str) -> bool:
     """True when this process created the container and may delete it."""
-    return f"/secrets/{SECRET_ID_PREFIX}" in resource
+    return (
+        f"/secrets/{SECRET_ID_PREFIX}" in resource
+        or f"/secrets/{GCP_CONNECTION_PREFIX}" in resource
+    )
 
 
 def gcp_project(*, environ: dict[str, str] | None = None, base_dir: Path | None = None) -> str:
@@ -86,7 +95,7 @@ class GoogleSecretVault:
             raise SecretStoreError("Secret Manager project is empty")
         self._project = project.strip()
 
-    def create(self, secret_id: str, payload: str) -> str:
+    def create(self, secret_id: str, payload: str, *, purpose: str = "project-secret") -> str:
         client = _client()
         parent = f"projects/{self._project}"
         name = resource_name(self._project, secret_id)
@@ -102,7 +111,7 @@ class GoogleSecretVault:
                             }
                         },
                         "labels": {
-                            "purpose": "project-secret",
+                            "purpose": purpose,
                             "managed-by": "patchapi",
                         },
                     },

@@ -144,6 +144,21 @@ function SystemPageContent() {
   const [gcpEnvironmentConnections, setGcpEnvironmentConnections] = useState<
     Record<string, any>
   >({});
+  const [gcpConnections, setGcpConnections] = useState<
+    {
+      id: string;
+      environment: string;
+      gcp_project_id: string;
+      gcp_project_number?: string | null;
+      service_account_email?: string | null;
+      default_region: string;
+      workspace_id?: string | null;
+      repo_full_name?: string | null;
+      last_validated_at?: string | null;
+      created_at?: string | null;
+      is_active?: boolean;
+    }[]
+  >([]);
   const [isCloudLoading, setIsCloudLoading] = useState(true);
   const [requirements, setRequirements] = useState<any[]>([]);
   const [storedSecrets, setStoredSecrets] = useState<
@@ -307,12 +322,19 @@ function SystemPageContent() {
           const response = await fetch(`${API_URL}/api/aws/status?user_id=${userId}`, { credentials: "include" });
           if (response.ok) setAwsStatus(await response.json());
         } else if (cloudProvider === "gcp") {
-          const response = await fetch(`${API_URL}/api/gcp/connections?user_id=${userId}`, { credentials: "include" });
+          const path = currentProject?.id
+            ? `${API_URL}/api/projects/${currentProject.id}/gcp-connections`
+            : `${API_URL}/api/gcp/connections?user_id=${userId}`;
+          const response = await fetch(path, { credentials: "include" });
           if (response.ok) {
-            const connections: any[] = await response.json();
+            const payload = await response.json();
+            const connections: any[] = Array.isArray(payload)
+              ? payload
+              : payload.connections || [];
+            setGcpConnections(connections);
             const envMap: Record<string, any> = {};
             for (const conn of connections) {
-              if (!conn.is_active) continue;
+              if (conn.is_active === false) continue;
               envMap[conn.environment] = {
                 status: "connected",
                 project_id: conn.gcp_project_id,
@@ -323,7 +345,7 @@ function SystemPageContent() {
               };
             }
             setGcpEnvironmentConnections(envMap);
-            const primary = envMap.dev || envMap.default || Object.values(envMap)[0];
+            const primary = envMap.development || envMap.dev || envMap.default || Object.values(envMap)[0];
             setGcpStatus(
               primary
                 ? { connected: true, project_id: primary.project_id, region: primary.region, last_validated: primary.connected_at }
@@ -341,7 +363,7 @@ function SystemPageContent() {
     };
 
     fetchConnectionStatus();
-  }, [isAuthenticated, user?.id, cloudProvider]);
+  }, [isAuthenticated, user?.id, cloudProvider, currentProject?.id]);
 
   // Fetch requirements
   useEffect(() => {
@@ -445,12 +467,19 @@ function SystemPageContent() {
         .then(data => { setAwsStatus(data); setIsCloudLoading(false); })
         .catch(() => { setAwsStatus({ connected: true }); setIsCloudLoading(false); });
     } else if (cloudProvider === "gcp") {
-      fetch(`${API_URL}/api/gcp/connections?user_id=${userId}`, { credentials: "include" })
+      const path = currentProject?.id
+        ? `${API_URL}/api/projects/${currentProject.id}/gcp-connections`
+        : `${API_URL}/api/gcp/connections?user_id=${userId}`;
+      fetch(path, { credentials: "include" })
         .then(res => res.json())
-        .then((connections: any[]) => {
+        .then((payload: any) => {
+          const connections: any[] = Array.isArray(payload)
+            ? payload
+            : payload.connections || [];
+          setGcpConnections(connections);
           const envMap: Record<string, any> = {};
           for (const conn of connections) {
-            if (!conn.is_active) continue;
+            if (conn.is_active === false) continue;
             envMap[conn.environment] = {
               status: "connected",
               project_id: conn.gcp_project_id,
@@ -461,7 +490,7 @@ function SystemPageContent() {
             };
           }
           setGcpEnvironmentConnections(envMap);
-          const primary = envMap.dev || envMap.default || Object.values(envMap)[0];
+          const primary = envMap.development || envMap.dev || envMap.default || Object.values(envMap)[0];
           setGcpStatus(
             primary
               ? { connected: true, project_id: primary.project_id, region: primary.region }
@@ -805,6 +834,7 @@ function SystemPageContent() {
                     : opsData.environment_connections)
                 : undefined
             }
+            gcpConnections={isAuthenticated ? gcpConnections : []}
             secrets={secretsData}
             userId={user?.id || "default"}
             cloudProvider={cloudProvider}

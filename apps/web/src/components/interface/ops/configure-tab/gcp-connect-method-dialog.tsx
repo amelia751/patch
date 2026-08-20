@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,7 +29,11 @@ import {
   X,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import type { SecretRepoOption } from "@/components/interface/secret-managers";
+import { fullNameFromRepoUrl, rootWorkspaceId } from "@/lib/secret-scope";
+import type { WorkspaceRef } from "./secrets-tab";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -49,6 +53,11 @@ interface GCPConnectMethodDialogProps {
   environmentOptions: GcpConnectEnvironmentOption[];
   environmentHelpText?: string;
   onConnectSuccess?: () => void;
+  /** PatchAPI console project — required to persist the pointer. */
+  projectId?: string;
+  workspaces?: WorkspaceRef[];
+  repoFullName?: string | null;
+  repos?: SecretRepoOption[];
 }
 
 const REGION_OPTIONS = [
@@ -99,6 +108,10 @@ export function GCPConnectMethodDialog({
   environmentOptions,
   environmentHelpText,
   onConnectSuccess,
+  projectId,
+  workspaces = [],
+  repoFullName = null,
+  repos = [],
 }: GCPConnectMethodDialogProps) {
   const [authMethod, setAuthMethod] = useState<GcpAuthMethod>("service_account");
   const [selectedRegion, setSelectedRegion] = useState("us-central1");
@@ -119,6 +132,30 @@ export function GCPConnectMethodDialog({
 
   // Shared
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const repoOptions: SecretRepoOption[] = (() => {
+    const fromProp = repos.filter((r) => r.fullName.includes("/"));
+    if (fromProp.length > 0) return fromProp;
+    if (repoFullName?.includes("/")) {
+      return [{ fullName: repoFullName }];
+    }
+    const seen = new Map<string, SecretRepoOption>();
+    for (const w of workspaces) {
+      const fullName = fullNameFromRepoUrl(w.repo_url);
+      if (fullName && !seen.has(fullName)) seen.set(fullName, { fullName });
+    }
+    return [...seen.values()];
+  })();
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState("");
+  const selectedRepo =
+    repoOptions.find((r) => r.fullName === selectedRepoFullName) ??
+    (repoOptions.length === 1 ? repoOptions[0] : undefined);
+  const workspacesForSelectedRepo = selectedRepo
+    ? workspaces.filter((w) => {
+        const fromUrl = fullNameFromRepoUrl(w.repo_url);
+        return !fromUrl || fromUrl === selectedRepo.fullName;
+      })
+    : workspaces;
 
   const projectForConsoleLinks = gcpProjectId.trim();
   /** GCP project id or number for console deep links (SA tab upload or WIF provider resource). */
@@ -152,12 +189,33 @@ export function GCPConnectMethodDialog({
     setWifServiceAccountEmail("");
     setIsConnecting(false);
     setAuthMethod("service_account");
+    setSelectedRepoFullName("");
   };
 
   const handleOpenChange = (next: boolean) => {
     if (!next) resetForm();
     onOpenChange(next);
   };
+
+  const repoOptionKey = repoOptions.map((r) => r.fullName).join("|");
+  useEffect(() => {
+    if (!open) return;
+    if (repoOptions.length === 1) {
+      setSelectedRepoFullName(repoOptions[0].fullName);
+      return;
+    }
+    if (repoOptions.length > 1) {
+      const preferred =
+        repoFullName && repoOptions.some((r) => r.fullName === repoFullName)
+          ? repoFullName
+          : repoOptions[0].fullName;
+      setSelectedRepoFullName((prev) =>
+        prev && repoOptions.some((r) => r.fullName === prev) ? prev : preferred
+      );
+    }
+    // repoOptionKey is the stable identity of the imported-repo list
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, repoOptionKey, repoFullName]);
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -322,26 +380,38 @@ export function GCPConnectMethodDialog({
       setConnectionError("Project ID not found in the JSON file.");
       return;
     }
+    if (!projectId) {
+      setConnectionError("No PatchAPI project is selected.");
+      return;
+    }
+    if (repoOptions.length > 1 && !selectedRepo) {
+      setConnectionError("Select the repository this connection belongs to.");
+      return;
+    }
     setIsConnecting(true);
     setConnectionError(null);
     try {
-      const response = await fetch(`${API_URL}/api/gcp/connect`, {
+      const workspaceId = rootWorkspaceId(workspacesForSelectedRepo);
+      const response = await fetch(`${API_URL}/api/projects/${projectId}/gcp-connections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          project_id: gcpProjectId,
           credentials_json: serviceAccountJson,
-          user_id: userId,
           region: selectedRegion,
           environment,
+          workspace_id: workspaceId,
         }),
       });
       const data = await response.json();
       if (response.ok && data.connected) {
         onSuccess();
       } else {
-        setConnectionError(data.detail || data.error || "Failed to connect.");
+        setConnectionError(
+          typeof data.detail === "string"
+            ? data.detail
+            : data.error || "Failed to connect."
+        );
       }
     } catch {
       setConnectionError(
@@ -361,7 +431,12 @@ export function GCPConnectMethodDialog({
   const isPrimaryDisabled = (() => {
     if (isConnecting || connectionSuccess) return true;
     if (authMethod === "service_account")
-      return !serviceAccountJson.trim() || !gcpProjectId.trim();
+      return (
+        !serviceAccountJson.trim() ||
+        !gcpProjectId.trim() ||
+        !projectId ||
+        (repoOptions.length > 1 && !selectedRepo)
+      );
     if (authMethod === "wif")
       return (
         !wifProviderResource.trim() || !wifServiceAccountEmail.trim()
@@ -466,6 +541,36 @@ export function GCPConnectMethodDialog({
           ) : null}
 
           <div className="space-y-4 mt-3">
+          {repoOptions.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs text-[var(--text-secondary)]">Project</Label>
+              <Select
+                value={selectedRepo?.fullName ?? ""}
+                onValueChange={setSelectedRepoFullName}
+                disabled={repoOptions.length === 1}
+              >
+                <SelectTrigger className="h-8 text-xs font-mono bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+                  <SelectValue placeholder="Select a repository" />
+                </SelectTrigger>
+                <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+                  {repoOptions.map((repo) => (
+                    <SelectItem
+                      key={repo.fullName}
+                      value={repo.fullName}
+                      className="text-xs font-mono text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
+                    >
+                      {repo.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                {repoOptions.length === 1
+                  ? "Only imported repository on this project — the viewer key is scoped here."
+                  : "Imported repository. The viewer key is scoped to the selected repo."}
+              </p>
+            </div>
+          )}
           {/* ---------- WIF ---------- */}
           {SHOW_WIF_OPTION ? (
           <TabsContent value="wif" className="mt-0 space-y-4 focus-visible:outline-none">
@@ -911,7 +1016,7 @@ export function GCPConnectMethodDialog({
                     Service account consent:
                   </span>{" "}
                   You create a dedicated read-only identity in GCP and download a
-                  JSON key. PatchAPI stores it encrypted in AWS Secrets Manager.
+                  JSON key. PatchAPI stores it encrypted in Secret Manager.
                   Stable for small teams, but many organizations{" "}
                   <a
                     href="https://cloud.google.com/resource-manager/docs/organization-policy/restricting-service-accounts#disable_service_account_key_creation"

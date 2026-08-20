@@ -46,6 +46,16 @@ from packages.state.providers import (
     subscribe_project,
     unsubscribe_project,
 )
+from packages.state.gcp_connections import (
+    GcpConnectionError,
+    connection_record,
+    delete_connection,
+    list_connections,
+    reveal_connection,
+    update_connection,
+    upsert_connection,
+)
+from packages.state.gcp_viewer import GcpViewerError, list_cloud_run_services
 from packages.state.secret_manager import GoogleSecretVault, SecretStoreError, gcp_project
 from packages.state.secrets import (
     SecretInputError,
@@ -723,6 +733,186 @@ async def put_project_provider(request: Request, project_id: UUID, slug: str) ->
             status_code=503,
         )
     return JSONResponse({"ok": True})
+
+
+@router.get("/{project_id}/gcp-connections")
+async def list_owned_gcp_connections(request: Request, project_id: UUID) -> JSONResponse:
+    """Connection metadata and Secret Manager pointers. Never the JSON key."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        rows = await list_connections(_pool(request), project_id, user_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if rows is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    return JSONResponse({"connections": rows})
+
+
+@router.post("/{project_id}/gcp-connections")
+async def upsert_owned_gcp_connection(request: Request, project_id: UUID) -> JSONResponse:
+    """Accept a service-account JSON once, write Secret Manager, persist the pointer."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    body = await _json_body(request)
+    raw = body.get("credentials_json")
+    if not isinstance(raw, str):
+        return JSONResponse({"detail": "credentials_json is required"}, status_code=400)
+    workspace_raw = body.get("workspace_id")
+    workspace_id: UUID | None = None
+    if workspace_raw not in (None, "", "__shared__", "_shared"):
+        try:
+            workspace_id = UUID(str(workspace_raw))
+        except ValueError:
+            return JSONResponse({"detail": "workspace_id must be a UUID"}, status_code=400)
+    vault = _vault()
+    if isinstance(vault, JSONResponse):
+        return vault
+    try:
+        row = await upsert_connection(
+            _pool(request),
+            project_id,
+            user_id,
+            credentials_json=raw,
+            vault=vault,
+            workspace_id=workspace_id,
+            environment=str(body.get("environment") or "development"),
+            region=str(body.get("region") or body.get("default_region") or "us-central1"),
+        )
+    except GcpConnectionError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except SecretStoreError as exc:
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "secret_manager",
+                "reason": str(exc),
+            },
+            status_code=503,
+        )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if row is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    return JSONResponse({**row, "connected": True}, status_code=201)
+
+
+@router.patch("/{project_id}/gcp-connections/{connection_id}")
+async def patch_owned_gcp_connection(
+    request: Request, project_id: UUID, connection_id: UUID
+) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    body = await _json_body(request)
+    try:
+        row = await update_connection(
+            _pool(request),
+            project_id,
+            user_id,
+            connection_id,
+            region=str(body["region"]) if body.get("region") else None,
+            environment=str(body["environment"]) if body.get("environment") else None,
+        )
+    except GcpConnectionError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if row is None:
+        return JSONResponse({"detail": "Connection not found"}, status_code=404)
+    return JSONResponse(row)
+
+
+@router.delete("/{project_id}/gcp-connections/{connection_id}")
+async def delete_owned_gcp_connection(
+    request: Request, project_id: UUID, connection_id: UUID
+) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    vault = _vault()
+    if isinstance(vault, JSONResponse):
+        return vault
+    try:
+        deleted = await delete_connection(
+            _pool(request), project_id, user_id, connection_id, vault
+        )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if deleted is None:
+        return JSONResponse({"detail": "Project not found"}, status_code=404)
+    if not deleted:
+        return JSONResponse({"detail": "Connection not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/{project_id}/gcp-connections/{connection_id}/runtime")
+async def inspect_owned_gcp_runtime(
+    request: Request, project_id: UUID, connection_id: UUID
+) -> JSONResponse:
+    """Cloud Run URLs and secret *refs* visible to the stored viewer identity."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    vault = _vault()
+    if isinstance(vault, JSONResponse):
+        return vault
+    try:
+        meta = await connection_record(_pool(request), project_id, user_id, connection_id)
+        if meta is None:
+            owned = await list_connections(_pool(request), project_id, user_id)
+            if owned is None:
+                return JSONResponse({"detail": "Project not found"}, status_code=404)
+            return JSONResponse({"detail": "Connection not found"}, status_code=404)
+        payload = await reveal_connection(
+            _pool(request), project_id, user_id, connection_id, vault
+        )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    except SecretStoreError as exc:
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "secret_manager",
+                "reason": str(exc),
+            },
+            status_code=503,
+        )
+    if payload is None:
+        return JSONResponse({"detail": "Connection not found"}, status_code=404)
+    try:
+        services = list_cloud_run_services(
+            payload,
+            gcp_project_id=str(meta["gcp_project_id"]),
+            region=str(meta["default_region"] or "us-central1"),
+        )
+    except GcpViewerError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=502)
+    return JSONResponse(
+        {
+            "gcp_project_id": meta["gcp_project_id"],
+            "region": meta["default_region"],
+            "repo_full_name": meta.get("repo_full_name"),
+            "services": services,
+        }
+    )
 
 
 @router.delete("/{project_id}/providers/{slug}")

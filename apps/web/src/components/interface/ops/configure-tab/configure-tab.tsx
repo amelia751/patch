@@ -7,7 +7,7 @@ import { SectionRail, SectionRailButton } from "@/components/interface/shared/se
 import { AWSConnectEmptyState } from "./aws-connect-empty-state";
 import { AWSConnectionTab } from "./aws-connection-tab";
 import { GCPConnectEmptyState } from "./gcp-connect-empty-state";
-import { GCPConnectionTab } from "./gcp-connection-tab";
+import { GCPConnectionTab, type GcpStoredConnection } from "./gcp-connection-tab";
 import { SecretsTab, type WorkspaceRef } from "./secrets-tab";
 import type { SecretRepoOption } from "@/components/interface/secret-managers";
 import { AgentIdentityTab } from "./agent-identity-tab";
@@ -51,6 +51,7 @@ interface ConfigureTabProps {
     staging?: any;
     prod?: any;
   };
+  gcpConnections?: GcpStoredConnection[];
   secrets: {
     configured: any[];
     pending: any[];
@@ -88,6 +89,7 @@ interface ConfigureTabProps {
 export function ConfigureTab({
   connection,
   environmentConnections,
+  gcpConnections = [],
   secrets,
   userId = "default",
   cloudProvider,
@@ -223,7 +225,12 @@ export function ConfigureTab({
               cloudAccountConnected ? (
                 <GCPConnectionTab
                   environmentConnections={environmentConnections || {}}
+                  connections={gcpConnections}
                   userId={userId}
+                  projectId={projectId}
+                  workspaces={workspaces}
+                  repoFullName={repoFullName}
+                  repos={repos}
                   openCredentialModalRequest={pendingCredentialModal === "gcp"}
                   onOpenCredentialModalConsumed={onPendingCredentialModalConsumed}
                   onAddCloudProvider={onChooseAnotherCloudProvider}
@@ -234,6 +241,9 @@ export function ConfigureTab({
                   onChooseAnotherCloudProvider={onChooseAnotherCloudProvider}
                   userId={userId}
                   projectId={projectId}
+                  workspaces={workspaces}
+                  repoFullName={repoFullName}
+                  repos={repos}
                   openCredentialModalRequest={pendingCredentialModal === "gcp"}
                   onOpenCredentialModalConsumed={onPendingCredentialModalConsumed}
                 />

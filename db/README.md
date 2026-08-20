@@ -78,6 +78,7 @@ project_provider_subscriptions
 | `project_repositories` | Imported `owner/repo`. Listing live GitHub repos is an API call, not this table. |
 | `workspaces` | `POST …/workspaces/import-repo` — clone URL, branch, optional subfolder. |
 | `project_secrets` | Secret name + remote ARN/resource. Values stay in Secret Manager. |
+| `gcp_connections` | Viewer SA email + Secret Manager pointer, scoped to a repo workspace. |
 
 ## Migration rules
 
@@ -101,6 +102,7 @@ project_provider_subscriptions
 | `github_connections.user_id` unique | One App installation per user for now |
 | `project_repositories.full_name` is `owner/repo` | Import payload shape |
 | `project_secrets` has no value column | Secret payloads never persist here |
+| `gcp_connections` has no credentials column | Service-account JSON never persists here |
 
 ## Seed data
 

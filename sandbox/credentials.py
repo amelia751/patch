@@ -16,6 +16,7 @@ LIVE_VERIFICATION_CREDENTIALS: Final[frozenset[str]] = frozenset(
     {
         "GOOGLE_API_KEY",
         "GOOGLE_GENERATIVE_AI_API_KEY",
+        "GEMINI_API_KEY",
         "GOOGLE_CLOUD_PROJECT",
         "GOOGLE_CLOUD_LOCATION",
         "GOOGLE_GENAI_USE_VERTEXAI",

@@ -6,6 +6,8 @@ import { Cable } from "lucide-react";
 import {
   GCPConnectMethodDialog,
 } from "./gcp-connect-method-dialog";
+import type { SecretRepoOption } from "@/components/interface/secret-managers";
+import type { WorkspaceRef } from "./secrets-tab";
 
 const GCP_ENV_OPTIONS = [
   { value: "development", label: "Development" },
@@ -18,6 +20,9 @@ interface GCPConnectEmptyStateProps {
   onChooseAnotherCloudProvider?: () => void;
   userId?: string;
   projectId?: string;
+  workspaces?: WorkspaceRef[];
+  repoFullName?: string | null;
+  repos?: SecretRepoOption[];
   openCredentialModalRequest?: boolean;
   onOpenCredentialModalConsumed?: () => void;
 }
@@ -26,6 +31,10 @@ export function GCPConnectEmptyState({
   onConnect,
   onChooseAnotherCloudProvider,
   userId = "default",
+  projectId,
+  workspaces = [],
+  repoFullName = null,
+  repos = [],
   openCredentialModalRequest = false,
   onOpenCredentialModalConsumed,
 }: GCPConnectEmptyStateProps) {
@@ -85,8 +94,12 @@ export function GCPConnectEmptyState({
         environment={environment}
         onEnvironmentChange={setEnvironment}
         environmentOptions={GCP_ENV_OPTIONS}
-        environmentHelpText="This will tag your credentials in AWS Secrets Manager for organization."
+        environmentHelpText="This tags the connection in Secret Manager for organization."
         onConnectSuccess={() => onConnect?.()}
+        projectId={projectId}
+        workspaces={workspaces}
+        repoFullName={repoFullName}
+        repos={repos}
       />
     </>
   );

@@ -121,6 +121,7 @@ DECLARE
     expected_tables text[] := ARRAY[
         'users', 'user_identities', 'github_connections',
         'projects', 'project_repositories', 'workspaces', 'project_secrets',
+        'gcp_connections',
         'project_notifications', 'provider_usages', 'repo_index_state',
         'schema_migrations', 'seed_applications'
     ];
@@ -141,7 +142,9 @@ BEGIN
         'github_connections.token', 'github_connections.access_token',
         'github_connections.installation_token',
         'project_secrets.value', 'project_secrets.secret_value',
-        'project_secrets.ciphertext'
+        'project_secrets.ciphertext',
+        'gcp_connections.credentials_json', 'gcp_connections.private_key',
+        'gcp_connections.value', 'gcp_connections.secret_value'
     ]
     LOOP
         IF to_regclass('public.' || split_part(forbidden, '.', 1)) IS NOT NULL
@@ -302,6 +305,7 @@ FROM (
     UNION ALL SELECT 'project_repositories', count(*) FROM project_repositories
     UNION ALL SELECT 'workspaces', count(*) FROM workspaces
     UNION ALL SELECT 'project_secrets', count(*) FROM project_secrets
+    UNION ALL SELECT 'gcp_connections', count(*) FROM gcp_connections
 ) AS counts
 ORDER BY t;
 SQL

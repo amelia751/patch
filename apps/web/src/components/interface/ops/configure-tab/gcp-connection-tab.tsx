@@ -16,6 +16,8 @@ import {
 import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
 import { GCPConnectMethodDialog } from "./gcp-connect-method-dialog";
+import type { SecretRepoOption } from "@/components/interface/secret-managers";
+import type { WorkspaceRef } from "./secrets-tab";
 
 const GCP_REGION_OPTIONS = [
   { value: "us-central1", label: "us-central1 (Iowa)" },
@@ -26,18 +28,39 @@ const GCP_REGION_OPTIONS = [
 ] as const;
 
 const GCP_ENV_OPTIONS = [
-  { value: "dev", label: "Development" },
+  { value: "development", label: "Development" },
   { value: "staging", label: "Staging" },
-  { value: "prod", label: "Production" },
+  { value: "production", label: "Production" },
 ] as const;
+
+export type GcpStoredConnection = {
+  id: string;
+  environment: string;
+  gcp_project_id: string;
+  gcp_project_number?: string | null;
+  service_account_email?: string | null;
+  default_region: string;
+  workspace_id?: string | null;
+  repo_full_name?: string | null;
+  last_validated_at?: string | null;
+  created_at?: string | null;
+  is_active?: boolean;
+};
 
 interface GCPConnectionTabProps {
   environmentConnections: {
     dev?: GCPConnection;
     staging?: GCPConnection;
     prod?: GCPConnection;
+    development?: GCPConnection;
+    production?: GCPConnection;
   };
+  connections?: GcpStoredConnection[];
   userId?: string;
+  projectId?: string;
+  workspaces?: WorkspaceRef[];
+  repoFullName?: string | null;
+  repos?: SecretRepoOption[];
   openCredentialModalRequest?: boolean;
   onOpenCredentialModalConsumed?: () => void;
   onAddCloudProvider?: () => void;
@@ -51,6 +74,8 @@ interface GCPConnection {
   service_account_email?: string;
   connected_at: string;
   required_apis?: RequiredAPI[];
+  id?: string;
+  repo_full_name?: string | null;
 }
 
 interface RequiredAPI {
@@ -61,26 +86,33 @@ interface RequiredAPI {
 }
 
 function getEnvLabel(env: string) {
-  if (env === "dev") return "Development";
+  if (env === "dev" || env === "development") return "Development";
   if (env === "staging") return "Staging";
-  if (env === "prod") return "Production";
+  if (env === "prod" || env === "production") return "Production";
   return env;
 }
 
 function getEnvColor(env: string, theme: string | undefined, mounted: boolean) {
   const colors: Record<string, { dark: string; light: string }> = {
     dev: { dark: "border-blue-500/30 text-blue-400", light: "bg-blue-100 text-blue-700 border-blue-200" },
+    development: { dark: "border-blue-500/30 text-blue-400", light: "bg-blue-100 text-blue-700 border-blue-200" },
     staging: { dark: "border-amber-500/30 text-amber-400", light: "bg-amber-100 text-amber-700 border-amber-200" },
     prod: { dark: "border-emerald-500/30 text-emerald-400", light: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+    production: { dark: "border-emerald-500/30 text-emerald-400", light: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   };
-  const c = colors[env] || colors.dev;
+  const c = colors[env] || colors.development;
   if (!mounted) return "";
   return theme === "dark" ? c.dark : c.light;
 }
 
 export function GCPConnectionTab({
   environmentConnections,
+  connections = [],
   userId = "default",
+  projectId,
+  workspaces = [],
+  repoFullName = null,
+  repos = [],
   openCredentialModalRequest = false,
   onOpenCredentialModalConsumed,
   onAddCloudProvider,
@@ -89,7 +121,7 @@ export function GCPConnectionTab({
   const [mounted, setMounted] = useState(false);
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
   const [showGcpConnectDialog, setShowGcpConnectDialog] = useState(false);
-  const [connectEnv, setConnectEnv] = useState<string>("dev");
+  const [connectEnv, setConnectEnv] = useState<string>("development");
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -115,11 +147,27 @@ export function GCPConnectionTab({
     consumeCredentialModalRef.current?.();
   }, [openCredentialModalRequest]);
 
-  const connectedEntries = (Object.entries(environmentConnections) as [string, GCPConnection | undefined][])
+  const storedCards = connections.filter((c) => c.is_active !== false);
+  const fallbackEntries = (Object.entries(environmentConnections) as [string, GCPConnection | undefined][])
     .filter((e): e is [string, GCPConnection] => !!e[1]);
+  const connectedEntries: [string, GCPConnection & { id?: string; repo_full_name?: string | null }][] =
+    storedCards.length > 0
+      ? storedCards.map((c) => [
+          c.id,
+          {
+            status: "connected",
+            project_id: c.gcp_project_id,
+            region: c.default_region,
+            project_number: c.gcp_project_number ?? undefined,
+            service_account_email: c.service_account_email ?? undefined,
+            connected_at: c.last_validated_at || c.created_at || new Date().toISOString(),
+            id: c.id,
+            repo_full_name: c.repo_full_name,
+          },
+        ])
+      : fallbackEntries;
 
-  const connectedEnvKeys = new Set(connectedEntries.map(([k]) => k));
-  const availableForConnect = GCP_ENV_OPTIONS.filter((o) => !connectedEnvKeys.has(o.value));
+  const availableForConnect = GCP_ENV_OPTIONS;
 
   const toggleExpanded = (env: string) => {
     setExpandedEnvs((prev) => {
@@ -130,9 +178,10 @@ export function GCPConnectionTab({
   };
 
   const openEdit = (envKey: string, conn: GCPConnection) => {
+    const stored = storedCards.find((c) => c.id === envKey);
     setEditEnvKey(envKey);
     setEditRegion(conn.region);
-    setEditEnvironment(envKey);
+    setEditEnvironment(stored?.environment ?? envKey);
     setEditError(null);
     setEditDialogOpen(true);
   };
@@ -142,15 +191,14 @@ export function GCPConnectionTab({
     setEditError(null);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const resp = await fetch(`${API_URL}/api/gcp/update`, {
+      if (!projectId) throw new Error("No PatchAPI project is selected.");
+      const resp = await fetch(`${API_URL}/api/projects/${projectId}/gcp-connections/${editEnvKey}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          user_id: userId,
-          environment: editEnvKey,
           region: editRegion,
-          new_environment: editEnvironment !== editEnvKey ? editEnvironment : undefined,
+          environment: editEnvironment !== editEnvKey ? editEnvironment : undefined,
         }),
       });
       if (!resp.ok) {
@@ -167,6 +215,10 @@ export function GCPConnectionTab({
   };
 
   const editHasChanges = () => {
+    const stored = storedCards.find((c) => c.id === editEnvKey);
+    if (stored) {
+      return editRegion !== stored.default_region || editEnvironment !== stored.environment;
+    }
     const conn = environmentConnections[editEnvKey as keyof typeof environmentConnections];
     if (!conn) return false;
     return editRegion !== conn.region || editEnvironment !== editEnvKey;
@@ -177,7 +229,8 @@ export function GCPConnectionTab({
     setDetachError(null);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const resp = await fetch(`${API_URL}/api/gcp/disconnect?user_id=${userId}&environment=${env}`, {
+      if (!projectId) throw new Error("No PatchAPI project is selected.");
+      const resp = await fetch(`${API_URL}/api/projects/${projectId}/gcp-connections/${env}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -194,7 +247,7 @@ export function GCPConnectionTab({
   };
 
   const handleConnectClick = () => {
-    const firstAvailable = availableForConnect[0]?.value || "dev";
+    const firstAvailable = availableForConnect[0]?.value || "development";
     setConnectEnv(firstAvailable);
     setShowGcpConnectDialog(true);
   };
@@ -236,6 +289,10 @@ export function GCPConnectionTab({
           environment={connectEnv}
           onEnvironmentChange={setConnectEnv}
           environmentOptions={[...GCP_ENV_OPTIONS]}
+          projectId={projectId}
+          workspaces={workspaces}
+          repoFullName={repoFullName}
+          repos={repos}
         />
       </>
     );
@@ -295,10 +352,15 @@ export function GCPConnectionTab({
                     {/* Environment tag */}
                     <span className={cn(
                       "text-[10px] font-semibold px-2 py-0.5 rounded border flex-shrink-0",
-                      getEnvColor(envKey, theme, mounted),
+                      getEnvColor(storedCards.find((c) => c.id === envKey)?.environment ?? envKey, theme, mounted),
                     )}>
-                      {getEnvLabel(envKey)}
+                      {getEnvLabel(storedCards.find((c) => c.id === envKey)?.environment ?? envKey)}
                     </span>
+                    {conn.repo_full_name ? (
+                      <span className="text-[10px] font-mono text-[var(--text-secondary)] truncate max-w-[10rem]">
+                        {conn.repo_full_name}
+                      </span>
+                    ) : null}
 
                     {/* Summary info */}
                     <span className="text-xs text-[var(--text-secondary)] truncate flex-1 min-w-0">
@@ -340,6 +402,12 @@ export function GCPConnectionTab({
                             <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1 block">Project ID</label>
                             <p className="text-xs text-[var(--text-primary)] font-mono truncate">{conn.project_id}</p>
                           </div>
+                          {conn.repo_full_name ? (
+                            <div className="col-span-2 min-w-0">
+                              <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1 block">Repository</label>
+                              <p className="text-xs text-[var(--text-primary)] font-mono truncate">{conn.repo_full_name}</p>
+                            </div>
+                          ) : null}
                           {conn.service_account_email && (
                             <div className="col-span-2 min-w-0">
                               <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-1 block">Service Account</label>
@@ -508,6 +576,10 @@ export function GCPConnectionTab({
         environment={connectEnv}
         onEnvironmentChange={setConnectEnv}
         environmentOptions={[...GCP_ENV_OPTIONS]}
+        projectId={projectId}
+        workspaces={workspaces}
+        repoFullName={repoFullName}
+        repos={repos}
       />
 
       {/* Edit Connection Dialog */}
