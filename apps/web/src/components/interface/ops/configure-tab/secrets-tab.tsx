@@ -86,7 +86,7 @@ interface SecretsTabProps {
 }
 
 function isSharedWorkspaceId(id: string | null | undefined): boolean {
-  return id == null || id === "";
+  return id == null || id === "" || id === "__shared__";
 }
 
 /** Repo-relative import path for display, e.g. `services/orchestrator` → `/services/orchestrator/` */
@@ -103,13 +103,12 @@ function secretScopeBadge(
   secret: { workspace_id?: string | null; workspace_name?: string | null; workspace_path?: string | null },
   workspacesList: WorkspaceRef[]
 ): string {
-  if (isSharedWorkspaceId(secret.workspace_id)) return "/";
   const directPath = workspacePathBadge(secret.workspace_path);
   if (directPath) return directPath;
   const ws = workspacesList.find((w) => w.id === secret.workspace_id);
   const pathBadge = ws ? workspacePathBadge(ws.workspace_path) : null;
   if (pathBadge) return pathBadge;
-  return secret.workspace_name || secret.workspace_id || "Workspace";
+  return "/";
 }
 
 function workspaceChipLabel(ws: WorkspaceRef): { primary: string; title: string } {
@@ -211,8 +210,8 @@ export function SecretsTab({
   >({ type: "idle" });
 
   const secretLifecycleEnabled = Boolean(projectId && !secretsPreviewMode && !secretsUseMockFallback);
-  /** all | __shared__ (/) | workspace id */
-  const [secretsFilter, setSecretsFilter] = useState<"all" | "__shared__" | string>("all");
+  /** all | workspace id */
+  const [secretsFilter, setSecretsFilter] = useState<"all" | string>("all");
 
   const consumeCredentialModalRef = useRef(onOpenCredentialModalConsumed);
   consumeCredentialModalRef.current = onOpenCredentialModalConsumed;
@@ -229,10 +228,20 @@ export function SecretsTab({
 
   const hasWorkspaces = sortedWorkspaces.length > 0;
 
+  const defaultWorkspaceId = useMemo(() => {
+    const atRoot = sortedWorkspaces.find((w) => {
+      const raw = w.workspace_path?.trim() ?? "";
+      return raw.replace(/^\/+|\/+$/g, "") === "";
+    });
+    return (atRoot ?? sortedWorkspaces[0])?.id ?? null;
+  }, [sortedWorkspaces]);
+
   const groupedByWorkspace = useMemo(() => {
     const knownIds = new Set(sortedWorkspaces.map((w) => w.id));
-    const sharedCfg = secrets.configured.filter((s) => isSharedWorkspaceId(s.workspace_id));
-    const sharedPend = secrets.pending.filter((s) => isSharedWorkspaceId(s.workspace_id));
+    const groupIdFor = (workspaceId: string | null | undefined) => {
+      if (!isSharedWorkspaceId(workspaceId) && workspaceId) return workspaceId;
+      return defaultWorkspaceId;
+    };
     const groups: {
       key: string;
       title: string;
@@ -242,42 +251,23 @@ export function SecretsTab({
     }[] = [];
 
     if (hasWorkspaces) {
-      groups.push({
-        key: "__shared__",
-        title: "/",
-        configured: sharedCfg,
-        pending: sharedPend,
-      });
       for (const ws of sortedWorkspaces) {
-        const cfg = secrets.configured.filter((s) => s.workspace_id === ws.id);
-        const pend = secrets.pending.filter((s) => s.workspace_id === ws.id);
-        const pathBadge = workspacePathBadge(ws.workspace_path);
+        const cfg = secrets.configured.filter((s) => groupIdFor(s.workspace_id) === ws.id);
+        const pend = secrets.pending.filter((s) => groupIdFor(s.workspace_id) === ws.id);
         groups.push({
           key: ws.id,
-          title: pathBadge ?? ws.name,
-          subtitle: pathBadge ? ws.name : undefined,
+          title: ws.name,
           configured: cfg,
           pending: pend,
         });
       }
     } else {
-      if (sharedCfg.length > 0 || sharedPend.length > 0) {
+      const cfg = secrets.configured;
+      const pend = secrets.pending;
+      if (cfg.length > 0 || pend.length > 0) {
         groups.push({
-          key: "__shared__",
-          title: "/",
-          configured: sharedCfg,
-          pending: sharedPend,
-        });
-      }
-      for (const ws of sortedWorkspaces) {
-        const cfg = secrets.configured.filter((s) => s.workspace_id === ws.id);
-        const pend = secrets.pending.filter((s) => s.workspace_id === ws.id);
-        if (cfg.length === 0 && pend.length === 0) continue;
-        const pathBadge = workspacePathBadge(ws.workspace_path);
-        groups.push({
-          key: ws.id,
-          title: pathBadge ?? ws.name,
-          subtitle: pathBadge ? ws.name : undefined,
+          key: "__unscoped__",
+          title: "Project",
           configured: cfg,
           pending: pend,
         });
@@ -303,15 +293,12 @@ export function SecretsTab({
     }
 
     return groups;
-  }, [secrets.configured, secrets.pending, sortedWorkspaces, hasWorkspaces]);
+  }, [secrets.configured, secrets.pending, sortedWorkspaces, hasWorkspaces, defaultWorkspaceId]);
 
   const filteredWorkspaceGroups = useMemo(() => {
     if (!hasWorkspaces) return groupedByWorkspace;
-    if (secretsFilter === "all") return groupedByWorkspace;
-    if (secretsFilter === "__shared__") {
-      return groupedByWorkspace.filter((g) => g.key === "__shared__");
-    }
-    return groupedByWorkspace.filter((g) => g.key === "__shared__" || g.key === secretsFilter);
+    if (secretsFilter === "all" || secretsFilter === "__shared__") return groupedByWorkspace;
+    return groupedByWorkspace.filter((g) => g.key === secretsFilter);
   }, [groupedByWorkspace, hasWorkspaces, secretsFilter]);
 
   useEffect(() => {
@@ -642,7 +629,7 @@ export function SecretsTab({
         mode="add"
         projectId={projectId}
         workspaces={workspaces}
-        initialWorkspaceScope="__shared__"
+        initialWorkspaceScope={defaultWorkspaceId ?? "__shared__"}
         repoFullName={repoFullName}
         repoDefaultBranch={repoDefaultBranch}
         repos={repos}
@@ -660,7 +647,7 @@ export function SecretsTab({
           initialWorkspaceScope={
             selectedSecret.workspace_id != null && selectedSecret.workspace_id !== ""
               ? selectedSecret.workspace_id
-              : "__shared__"
+              : defaultWorkspaceId ?? "__shared__"
           }
           repoFullName={repoFullName}
           repoDefaultBranch={repoDefaultBranch}
@@ -683,7 +670,7 @@ export function SecretsTab({
           initialWorkspaceScope={
             rotateTarget.workspace_id != null && rotateTarget.workspace_id !== ""
               ? rotateTarget.workspace_id
-              : "__shared__"
+              : defaultWorkspaceId ?? "__shared__"
           }
           repoFullName={repoFullName}
           repoDefaultBranch={repoDefaultBranch}
@@ -817,8 +804,8 @@ export function SecretsTab({
               </div>
               <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">No secrets yet</h2>
               <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-                Add secrets per workspace (or shared across all). Values stay in your cloud secret store; we only keep
-                references.
+                Add secrets per workspace. Scope `/` is that workspace's repo root. Values stay in your cloud secret
+                store; we only keep references.
               </p>
               <Button
                 size="sm"
@@ -837,7 +824,7 @@ export function SecretsTab({
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">Secrets Management</h2>
                 <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
                   {hasWorkspaces
-                    ? "Grouped by workspace. `/` (root) applies to every workspace."
+                    ? "Grouped by workspace. Scope `/` is that workspace's repo root."
                     : "Store API keys and credentials in your cloud secret store."}
                   {secretsPreviewMode && (
                     <span className="block mt-1.5 text-[10px] text-[var(--text-secondary)] opacity-75">
@@ -904,19 +891,6 @@ export function SecretsTab({
                     </button>
                   );
                 })}
-                <button
-                  type="button"
-                  onClick={() => setSecretsFilter("__shared__")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md text-[10px] font-medium border font-mono transition-colors",
-                    secretsFilter === "__shared__"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-                  )}
-                  title="Root scope — every workspace"
-                >
-                  /
-                </button>
               </div>
             )}
 
@@ -971,7 +945,6 @@ export function SecretsTab({
                         <h3
                           className={cn(
                             "text-xs font-semibold text-[var(--text-primary)] truncate",
-                            group.key === "__shared__" && "font-mono tracking-tight",
                             group.subtitle && "font-mono tracking-tight"
                           )}
                         >

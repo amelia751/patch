@@ -69,12 +69,15 @@ class RecordingConnection:
         self.updated: dict[str, Any] | None = None
         self.deleted_id: UUID | None = None
         self.workspace_ok = True
+        self.default_workspace: UUID | None = None
 
     async def fetchval(self, query: str, *args: Any) -> Any:
         if "FROM projects" in query:
             return 1 if self.owner else None
-        if "FROM workspaces" in query:
+        if "SELECT 1 FROM workspaces" in query:
             return 1 if self.workspace_ok else None
+        if "SELECT id" in query and "FROM workspaces" in query:
+            return self.default_workspace
         if "SELECT secret_arn" in query:
             return None if self.existing is None else self.existing.get("secret_arn")
         return None
@@ -130,6 +133,7 @@ class RecordingConnection:
                 "id": args[0],
                 "secret_name": args[3],
                 "secret_arn": args[4],
+                "workspace_id": args[2],
             }
             return "INSERT 0 1"
         if query.strip().startswith("DELETE"):
@@ -225,3 +229,23 @@ async def test_rotate_adds_a_version_on_the_existing_resource() -> None:
     )
     assert vault.versions[resource] == ["old", "new-value"]
     assert vault.created == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_without_workspace_uses_the_project_root() -> None:
+    from packages.state.secrets import upsert_secret
+
+    workspace = uuid4()
+    vault = MemoryVault()
+    connection = RecordingConnection(owner=True)
+    connection.default_workspace = workspace
+    await upsert_secret(
+        RecordingPool(connection),  # type: ignore[arg-type]
+        uuid4(),
+        uuid4(),
+        secret_name="GOOGLE_GENERATIVE_AI_API_KEY",
+        secret_value="x",
+        vault=vault,
+    )
+    assert connection.inserted is not None
+    assert connection.inserted.get("workspace_id") == workspace

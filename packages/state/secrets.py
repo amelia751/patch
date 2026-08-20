@@ -105,6 +105,23 @@ async def _workspace_in_project(
     return found is not None
 
 
+async def default_workspace_id(connection: asyncpg.Connection, project_id: UUID) -> UUID | None:
+    """The project's repo-root workspace, else the oldest workspace."""
+    found = await connection.fetchval(
+        """
+        SELECT id
+        FROM workspaces
+        WHERE project_id = $1
+        ORDER BY
+            (workspace_path IS NULL OR btrim(coalesce(workspace_path, '')) = '') DESC,
+            created_at ASC
+        LIMIT 1
+        """,
+        project_id,
+    )
+    return found
+
+
 async def list_secrets(
     pool: asyncpg.Pool, project_id: UUID, owner_id: UUID
 ) -> list[dict[str, Any]] | None:
@@ -142,6 +159,8 @@ async def upsert_secret(
         async with pool.acquire() as connection:
             if not await _owned(connection, project_id, owner_id):
                 return None
+            if workspace_id is None:
+                workspace_id = await default_workspace_id(connection, project_id)
             if workspace_id is not None and not await _workspace_in_project(
                 connection, project_id, workspace_id
             ):

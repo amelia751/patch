@@ -34,6 +34,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  normalizeRepoPath,
+  rootWorkspaceId,
+  workspaceIdForSelectedFolder,
+} from "@/lib/secret-scope";
 
 export type SecretWorkspaceOption = {
   id: string;
@@ -75,13 +80,12 @@ interface AddSecretDialogProps {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-function normalizeRepoPath(p: string | null | undefined): string {
-  if (p == null || !String(p).trim()) return "";
-  return String(p).replace(/^\/+/u, "").replace(/\/+$/u, "");
-}
-
-function workspacePathOf(w: SecretWorkspaceOption): string {
-  return normalizeRepoPath(w.workspace_path ?? null);
+function resolveWorkspaceScope(
+  scope: string | null | undefined,
+  workspaces: SecretWorkspaceOption[]
+): string | null {
+  if (scope && scope !== "__shared__") return scope;
+  return rootWorkspaceId(workspaces);
 }
 
 function fullNameFromRepoUrl(url: string | null | undefined): string | null {
@@ -93,40 +97,6 @@ function fullNameFromRepoUrl(url: string | null | undefined): string | null {
   return null;
 }
 
-/**
- * Folder you are in → workspace id for POST /secrets (or shared at repo root).
- * 1) Exact match on workspace_path
- * 2) Else folder is inside some workspace root — use the longest root (most specific)
- * 3) Else one workspace with no path → treat whole repo as that workspace
- */
-function workspaceIdForSelectedFolder(
-  folderSegments: string[],
-  workspaces: SecretWorkspaceOption[]
-): string {
-  const here = folderSegments.join("/");
-  if (!here) return "__shared__";
-
-  const exact = workspaces.find((w) => workspacePathOf(w) === here);
-  if (exact) return exact.id;
-
-  let longestRoot: { id: string; n: number } | null = null;
-  for (const w of workspaces) {
-    const root = workspacePathOf(w);
-    if (!root) continue;
-    const inside = here === root || here.startsWith(`${root}/`);
-    if (!inside) continue;
-    if (!longestRoot || root.length > longestRoot.n) {
-      longestRoot = { id: w.id, n: root.length };
-    }
-  }
-  if (longestRoot) return longestRoot.id;
-
-  if (workspaces.length === 1 && !workspacePathOf(workspaces[0])) {
-    return workspaces[0].id;
-  }
-
-  return "__shared__";
-}
 
 /** Clipboard looks like .env lines (at least one KEY=...) */
 function looksLikeEnvPaste(text: string): boolean {
@@ -189,7 +159,7 @@ export function AddSecretDialog({
   const [secretKey, setSecretKey] = useState("");
   const [showSecretKey, setShowSecretKey] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  /** `__shared__` = all workspaces; otherwise workspace id */
+  /** Workspace id, or `__shared__` until resolved to that repo's root workspace. */
   const [workspaceScope, setWorkspaceScope] = useState<string>("__shared__");
   /**
    * When not using GitHub repo folders: `null` = root list; workspace id = drilled into that workspace.
@@ -390,11 +360,14 @@ export function AddSecretDialog({
   };
 
   /** Repo-browser add mode: scope follows `folderPath` synchronously (avoids init vs sync effect races). */
-  const scopeFromFolderBrowse = workspaceIdForSelectedFolder(folderPath, workspacesForSelectedRepo);
+  const scopeFromFolderBrowse = workspaceIdForSelectedFolder(
+    folderPath,
+    workspacesForSelectedRepo
+  );
   const activeWorkspaceScope =
     open && useRepoBrowser && !scopeLocked && mode === "add"
-      ? scopeFromFolderBrowse
-      : workspaceScope;
+      ? resolveWorkspaceScope(scopeFromFolderBrowse, workspacesForSelectedRepo) ?? "__shared__"
+      : resolveWorkspaceScope(workspaceScope, workspacesForScope) ?? workspaceScope;
 
   const showWorkspaceScope = workspaces.length > 0 || useRepoBrowser;
 
@@ -587,13 +560,16 @@ export function AddSecretDialog({
     if (!projectId) {
       throw new Error("No project selected — cannot store secrets.");
     }
-    const effectiveScope = scope ?? activeWorkspaceScope;
+    const effectiveScope = resolveWorkspaceScope(
+      scope ?? activeWorkspaceScope,
+      workspacesForSelectedRepo.length > 0 ? workspacesForSelectedRepo : workspacesForScope
+    );
     const body: Record<string, unknown> = {
       secret_name: name,
       secret_value: value,
     };
     if (reqId) body.requirement_id = reqId;
-    if (effectiveScope && effectiveScope !== "__shared__") {
+    if (effectiveScope) {
       body.workspace_id = effectiveScope;
     }
     const currentPath = folderPath.join("/");
@@ -668,8 +644,9 @@ export function AddSecretDialog({
       : undefined;
 
   const goToScopePathRoot = () => {
+    const root = rootWorkspaceId(workspacesForScope);
     setScopeBrowseWorkspaceId(null);
-    setWorkspaceScope("__shared__");
+    setWorkspaceScope(root ?? "__shared__");
   };
 
   const configureScopeWs = workspaces.find((w) => w.id === workspaceScope);
@@ -834,11 +811,11 @@ export function AddSecretDialog({
                   >
                     {scopeLocked ? (
                       <div className="px-3 py-4 text-xs text-[var(--text-secondary)] leading-relaxed">
-                        {workspaceScope === "__shared__"
-                          ? "Shared secret — injected for every workspace in this project."
-                          : configurePathNorm
-                            ? `Secrets at this path apply to the workspace whose folder is ${configurePathNorm}/`
-                            : `Workspace: ${configureScopeWs?.name ?? workspaceScope}`}
+                        {configurePathNorm
+                          ? `Secrets at this path apply to the workspace whose folder is ${configurePathNorm}/`
+                          : `Workspace root (` +
+                            `/` +
+                            `) — ${configureScopeWs?.name ?? "this workspace"}`}
                       </div>
                     ) : repoFoldersLoading ? (
                       <div className="h-32 rounded-lg flex items-center justify-center">
@@ -881,8 +858,10 @@ export function AddSecretDialog({
                     )}
                   </div>
                   <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-                    {activeWorkspaceScope === "__shared__"
-                      ? "Repository root (`/`) — shared with every workspace. Open a subfolder to scope to one import path."
+                    {folderPath.length === 0
+                      ? `Repository root (` +
+                        `/` +
+                        `) — ${workspacesForSelectedRepo.find((w) => w.id === activeWorkspaceScope)?.name ?? "this workspace"}.`
                       : `These credentials will apply to your ${repoFolderLabel} folder.`}
                   </p>
                 </>
@@ -993,7 +972,8 @@ export function AddSecretDialog({
                         <button
                           type="button"
                           onClick={() => {
-                            setWorkspaceScope("__shared__");
+                            const root = rootWorkspaceId(workspacesForScope);
+                            setWorkspaceScope(root ?? "__shared__");
                             setScopeBrowseWorkspaceId(null);
                           }}
                           className={cn(
@@ -1032,9 +1012,9 @@ export function AddSecretDialog({
                     )}
                   </div>
                   <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-                    {workspaceScope === "__shared__"
-                      ? "Root scope (`/`) — injected for every workspace in this project."
-                      : `Only injected when running in the “${workspaces.find((w) => w.id === workspaceScope)?.name ?? workspaceScope}” workspace.`}
+                    {`Injected for the “${workspaces.find((w) => w.id === activeWorkspaceScope)?.name ?? "selected"}” workspace at repo root (` +
+                      `/` +
+                      `).`}
                   </p>
                 </>
               )}
