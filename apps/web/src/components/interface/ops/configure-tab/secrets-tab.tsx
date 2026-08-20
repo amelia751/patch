@@ -27,6 +27,18 @@ import { Spinner } from "@/components/ui/spinner";
 import { Key, Plus, RefreshCw, AlertTriangle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddSecretDialog, type SecretRepoOption } from "@/components/interface/secret-managers";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  fullNameFromRepoUrl,
+  rootWorkspaceId,
+  workspacePathBadge,
+} from "@/lib/secret-scope";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -89,34 +101,23 @@ function isSharedWorkspaceId(id: string | null | undefined): boolean {
   return id == null || id === "" || id === "__shared__";
 }
 
-/** Repo-relative import path for display, e.g. `services/orchestrator` → `/services/orchestrator/` */
-function workspacePathBadge(path: string | null | undefined): string | null {
-  const raw = path?.trim() ?? "";
-  if (!raw) return null;
-  const p = raw.replace(/^\/+|\/+$/g, "");
-  if (!p) return null;
-  return `/${p}/`;
-}
-
-/** Badge on a secret row: prefer import path (matches folder picker), else API workspace name. */
+/** Badge on a secret row: folder path in that repo (`/` = repo root). */
 function secretScopeBadge(
   secret: { workspace_id?: string | null; workspace_name?: string | null; workspace_path?: string | null },
   workspacesList: WorkspaceRef[]
 ): string {
-  const directPath = workspacePathBadge(secret.workspace_path);
-  if (directPath) return directPath;
+  if (secret.workspace_path != null && String(secret.workspace_path).trim()) {
+    return workspacePathBadge(secret.workspace_path);
+  }
   const ws = workspacesList.find((w) => w.id === secret.workspace_id);
-  const pathBadge = ws ? workspacePathBadge(ws.workspace_path) : null;
-  if (pathBadge) return pathBadge;
+  if (ws) return workspacePathBadge(ws.workspace_path);
   return "/";
 }
 
-function workspaceChipLabel(ws: WorkspaceRef): { primary: string; title: string } {
-  const pathBadge = workspacePathBadge(ws.workspace_path);
-  if (pathBadge) {
-    return { primary: pathBadge, title: `${pathBadge} (${ws.name})` };
-  }
-  return { primary: ws.name, title: ws.name };
+function workspaceBelongsToRepo(ws: WorkspaceRef, repoFullName: string | null | undefined): boolean {
+  if (!repoFullName) return true;
+  const fromUrl = fullNameFromRepoUrl(ws.repo_url);
+  return !fromUrl || fromUrl === repoFullName;
 }
 
 /** Teal checked/indeterminate + white glyph — matches table selection; works in light/dark. */
@@ -210,8 +211,9 @@ export function SecretsTab({
   >({ type: "idle" });
 
   const secretLifecycleEnabled = Boolean(projectId && !secretsPreviewMode && !secretsUseMockFallback);
-  /** all | workspace id */
+  /** all | path badge (`/`, `/cli/`) */
   const [secretsFilter, setSecretsFilter] = useState<"all" | string>("all");
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState("");
 
   const consumeCredentialModalRef = useRef(onOpenCredentialModalConsumed);
   consumeCredentialModalRef.current = onOpenCredentialModalConsumed;
@@ -221,27 +223,96 @@ export function SecretsTab({
     consumeCredentialModalRef.current?.();
   }, [openCredentialModalRequest]);
 
-  const sortedWorkspaces = useMemo(
-    () => [...workspaces].sort((a, b) => a.name.localeCompare(b.name)),
-    [workspaces]
+  const repoOptions = useMemo<SecretRepoOption[]>(() => {
+    const fromProp = repos.filter((r) => r.fullName.includes("/"));
+    if (fromProp.length > 0) return fromProp;
+    const seen = new Map<string, SecretRepoOption>();
+    for (const w of workspaces) {
+      const fullName = fullNameFromRepoUrl(w.repo_url);
+      if (fullName && !seen.has(fullName)) seen.set(fullName, { fullName });
+    }
+    if (repoFullName?.includes("/")) {
+      return [{ fullName: repoFullName, defaultBranch: repoDefaultBranch }];
+    }
+    return [...seen.values()];
+  }, [repos, workspaces, repoFullName, repoDefaultBranch]);
+
+  const showRepoPicker = repoOptions.length > 1;
+
+  useEffect(() => {
+    if (repoOptions.length === 0) {
+      setSelectedRepoFullName("");
+      return;
+    }
+    setSelectedRepoFullName((prev) => {
+      if (prev && repoOptions.some((r) => r.fullName === prev)) return prev;
+      if (repoFullName && repoOptions.some((r) => r.fullName === repoFullName)) {
+        return repoFullName;
+      }
+      return repoOptions[0].fullName;
+    });
+  }, [repoOptions, repoFullName]);
+
+  const selectedRepo =
+    repoOptions.find((r) => r.fullName === selectedRepoFullName) ?? repoOptions[0] ?? null;
+
+  const workspacesForSelectedRepo = useMemo(
+    () =>
+      selectedRepo
+        ? workspaces.filter((w) => workspaceBelongsToRepo(w, selectedRepo.fullName))
+        : workspaces,
+    [workspaces, selectedRepo]
   );
 
-  const hasWorkspaces = sortedWorkspaces.length > 0;
+  const sortedWorkspaces = useMemo(
+    () =>
+      [...workspacesForSelectedRepo].sort((a, b) =>
+        workspacePathBadge(a.workspace_path).localeCompare(workspacePathBadge(b.workspace_path))
+      ),
+    [workspacesForSelectedRepo]
+  );
 
-  const defaultWorkspaceId = useMemo(() => {
-    const atRoot = sortedWorkspaces.find((w) => {
-      const raw = w.workspace_path?.trim() ?? "";
-      return raw.replace(/^\/+|\/+$/g, "") === "";
+  const hasWorkspaces = workspaces.length > 0;
+  const hasRepoWorkspaces = sortedWorkspaces.length > 0;
+
+  const defaultWorkspaceId = useMemo(
+    () => rootWorkspaceId(sortedWorkspaces),
+    [sortedWorkspaces]
+  );
+
+  const projectRootWorkspaceId = useMemo(() => rootWorkspaceId(workspaces), [workspaces]);
+
+  const secretInSelectedRepo = useCallback(
+    (secret: { workspace_id?: string | null }) => {
+      const knownIds = new Set(sortedWorkspaces.map((w) => w.id));
+      if (!isSharedWorkspaceId(secret.workspace_id) && secret.workspace_id) {
+        return knownIds.has(secret.workspace_id);
+      }
+      if (!projectRootWorkspaceId) return true;
+      return knownIds.has(projectRootWorkspaceId);
+    },
+    [sortedWorkspaces, projectRootWorkspaceId]
+  );
+
+  const configuredInRepo = useMemo(
+    () => secrets.configured.filter(secretInSelectedRepo),
+    [secrets.configured, secretInSelectedRepo]
+  );
+  const pendingInRepo = useMemo(
+    () => secrets.pending.filter(secretInSelectedRepo),
+    [secrets.pending, secretInSelectedRepo]
+  );
+
+  const pathChips = useMemo(() => {
+    const keys = new Set(sortedWorkspaces.map((w) => workspacePathBadge(w.workspace_path)));
+    return [...keys].sort((a, b) => {
+      if (a === "/") return -1;
+      if (b === "/") return 1;
+      return a.localeCompare(b);
     });
-    return (atRoot ?? sortedWorkspaces[0])?.id ?? null;
   }, [sortedWorkspaces]);
 
-  const groupedByWorkspace = useMemo(() => {
-    const knownIds = new Set(sortedWorkspaces.map((w) => w.id));
-    const groupIdFor = (workspaceId: string | null | undefined) => {
-      if (!isSharedWorkspaceId(workspaceId) && workspaceId) return workspaceId;
-      return defaultWorkspaceId;
-    };
+  const groupedByPath = useMemo(() => {
     const groups: {
       key: string;
       title: string;
@@ -250,36 +321,42 @@ export function SecretsTab({
       pending: PendingSecretRow[];
     }[] = [];
 
-    if (hasWorkspaces) {
-      for (const ws of sortedWorkspaces) {
-        const cfg = secrets.configured.filter((s) => groupIdFor(s.workspace_id) === ws.id);
-        const pend = secrets.pending.filter((s) => groupIdFor(s.workspace_id) === ws.id);
+    if (hasRepoWorkspaces) {
+      for (const pathKey of pathChips) {
+        const ids = new Set(
+          sortedWorkspaces
+            .filter((w) => workspacePathBadge(w.workspace_path) === pathKey)
+            .map((w) => w.id)
+        );
+        const belongs = (workspaceId: string | null | undefined) => {
+          if (!isSharedWorkspaceId(workspaceId) && workspaceId) return ids.has(workspaceId);
+          return pathKey === "/" && defaultWorkspaceId != null && ids.has(defaultWorkspaceId);
+        };
         groups.push({
-          key: ws.id,
-          title: ws.name,
-          configured: cfg,
-          pending: pend,
+          key: pathKey,
+          title: pathKey,
+          configured: configuredInRepo.filter((s) => belongs(s.workspace_id)),
+          pending: pendingInRepo.filter((s) => belongs(s.workspace_id)),
         });
       }
     } else {
-      const cfg = secrets.configured;
-      const pend = secrets.pending;
-      if (cfg.length > 0 || pend.length > 0) {
+      if (configuredInRepo.length > 0 || pendingInRepo.length > 0) {
         groups.push({
           key: "__unscoped__",
-          title: "Project",
-          configured: cfg,
-          pending: pend,
+          title: "/",
+          configured: configuredInRepo,
+          pending: pendingInRepo,
         });
       }
     }
 
+    const knownIds = new Set(workspaces.map((w) => w.id));
     const orphanIds = new Set<string>();
-    for (const s of secrets.configured) {
+    for (const s of configuredInRepo) {
       const wid = s.workspace_id;
       if (!isSharedWorkspaceId(wid) && wid && !knownIds.has(wid)) orphanIds.add(wid);
     }
-    for (const s of secrets.pending) {
+    for (const s of pendingInRepo) {
       const wid = s.workspace_id;
       if (!isSharedWorkspaceId(wid) && wid && !knownIds.has(wid)) orphanIds.add(wid);
     }
@@ -287,19 +364,31 @@ export function SecretsTab({
       groups.push({
         key: oid,
         title: "Removed workspace",
-        configured: secrets.configured.filter((s) => s.workspace_id === oid),
-        pending: secrets.pending.filter((s) => s.workspace_id === oid),
+        configured: configuredInRepo.filter((s) => s.workspace_id === oid),
+        pending: pendingInRepo.filter((s) => s.workspace_id === oid),
       });
     }
 
     return groups;
-  }, [secrets.configured, secrets.pending, sortedWorkspaces, hasWorkspaces, defaultWorkspaceId]);
+  }, [
+    hasRepoWorkspaces,
+    pathChips,
+    sortedWorkspaces,
+    configuredInRepo,
+    pendingInRepo,
+    defaultWorkspaceId,
+    workspaces,
+  ]);
 
-  const filteredWorkspaceGroups = useMemo(() => {
-    if (!hasWorkspaces) return groupedByWorkspace;
-    if (secretsFilter === "all" || secretsFilter === "__shared__") return groupedByWorkspace;
-    return groupedByWorkspace.filter((g) => g.key === secretsFilter);
-  }, [groupedByWorkspace, hasWorkspaces, secretsFilter]);
+  const filteredPathGroups = useMemo(() => {
+    if (secretsFilter === "all" || secretsFilter === "__shared__") return groupedByPath;
+    return groupedByPath.filter((g) => g.key === secretsFilter);
+  }, [groupedByPath, secretsFilter]);
+
+  useEffect(() => {
+    if (secretsFilter === "all") return;
+    if (!pathChips.includes(secretsFilter)) setSecretsFilter("all");
+  }, [pathChips, secretsFilter]);
 
   useEffect(() => {
     const valid = new Set(secrets.configured.map((s) => s.id));
@@ -446,7 +535,31 @@ export function SecretsTab({
     }
   };
 
-  const hasNoSecrets = secrets.pending.length === 0 && secrets.configured.length === 0;
+  const projectHasNoSecrets = secrets.pending.length === 0 && secrets.configured.length === 0;
+  const repoHasNoSecrets = pendingInRepo.length === 0 && configuredInRepo.length === 0;
+
+  const repoPicker =
+    showRepoPicker ? (
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">Repository</span>
+        <Select value={selectedRepo?.fullName ?? ""} onValueChange={setSelectedRepoFullName}>
+          <SelectTrigger className="h-8 w-[min(100%,18rem)] text-xs font-mono bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+            <SelectValue placeholder="Select a repository" />
+          </SelectTrigger>
+          <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+            {repoOptions.map((repo) => (
+              <SelectItem
+                key={repo.fullName}
+                value={repo.fullName}
+                className="text-xs font-mono text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
+              >
+                {repo.fullName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : null;
 
   const renderSecretRow = (secret: ConfiguredSecretRow) => {
     const isSelected = selectedConfiguredIds.has(secret.id);
@@ -475,9 +588,9 @@ export function SecretsTab({
           <td className="py-2 px-2 align-middle max-w-[10rem] truncate">
             <span
               className={cn(
-                "text-[10px]",
-                isSharedWorkspaceId(secret.workspace_id)
-                  ? "font-mono text-primary"
+                "text-[10px] font-mono tracking-tight",
+                secretScopeBadge(secret, sortedWorkspaces) === "/"
+                  ? "text-primary"
                   : "text-[var(--text-secondary)]"
               )}
             >
@@ -593,9 +706,12 @@ export function SecretsTab({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xs font-medium text-[var(--text-primary)]">{secret.name}</p>
-                      {hasWorkspaces && secret.workspace_name && (
-                        <Badge variant="outline" className="text-[9px] text-[var(--text-secondary)]">
-                          {secret.workspace_name}
+                      {hasWorkspaces && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] font-mono tracking-tight text-[var(--text-secondary)]"
+                        >
+                          {secretScopeBadge(secret, sortedWorkspaces)}
                         </Badge>
                       )}
                     </div>
@@ -630,8 +746,8 @@ export function SecretsTab({
         projectId={projectId}
         workspaces={workspaces}
         initialWorkspaceScope={defaultWorkspaceId ?? "__shared__"}
-        repoFullName={repoFullName}
-        repoDefaultBranch={repoDefaultBranch}
+        repoFullName={selectedRepo?.fullName ?? repoFullName}
+        repoDefaultBranch={selectedRepo?.defaultBranch ?? repoDefaultBranch}
         repos={repos}
         secretsPreviewMode={secretsPreviewMode}
         onSaved={() => onRequirementSatisfied?.()}
@@ -649,8 +765,8 @@ export function SecretsTab({
               ? selectedSecret.workspace_id
               : defaultWorkspaceId ?? "__shared__"
           }
-          repoFullName={repoFullName}
-          repoDefaultBranch={repoDefaultBranch}
+          repoFullName={selectedRepo?.fullName ?? repoFullName}
+          repoDefaultBranch={selectedRepo?.defaultBranch ?? repoDefaultBranch}
           repos={repos}
           requirementId={selectedSecret.id}
           secretsPreviewMode={secretsPreviewMode}
@@ -672,8 +788,8 @@ export function SecretsTab({
               ? rotateTarget.workspace_id
               : defaultWorkspaceId ?? "__shared__"
           }
-          repoFullName={repoFullName}
-          repoDefaultBranch={repoDefaultBranch}
+          repoFullName={selectedRepo?.fullName ?? repoFullName}
+          repoDefaultBranch={selectedRepo?.defaultBranch ?? repoDefaultBranch}
           repos={repos}
           secretsPreviewMode={secretsPreviewMode}
           onSaved={() => {
@@ -796,35 +912,38 @@ export function SecretsTab({
       </AlertDialog>
 
       <div className="h-full overflow-y-auto bg-[var(--bg-primary)] min-w-0">
-        {hasNoSecrets ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center max-w-md px-4">
-              <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
-                <Key className="h-5 w-5 text-[var(--text-secondary)]" />
+        {projectHasNoSecrets ? (
+          <div className="h-full flex flex-col">
+            {repoPicker ? <div className="px-6 pt-6">{repoPicker}</div> : null}
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-md px-4">
+                <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
+                  <Key className="h-5 w-5 text-[var(--text-secondary)]" />
+                </div>
+                <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">No secrets yet</h2>
+                <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
+                  Add secrets per folder. Scope `/` is this repository&apos;s root. Values stay in your cloud secret
+                  store; we only keep references.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={openAddSecret}
+                  className="h-8 text-xs bg-primary hover:bg-primary/90 text-white"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Secret
+                </Button>
               </div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">No secrets yet</h2>
-              <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-                Add secrets per workspace. Scope `/` is that workspace's repo root. Values stay in your cloud secret
-                store; we only keep references.
-              </p>
-              <Button
-                size="sm"
-                onClick={openAddSecret}
-                className="h-8 text-xs bg-primary hover:bg-primary/90 text-white"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add Secret
-              </Button>
             </div>
           </div>
         ) : (
           <div className="p-6 space-y-6">
             <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">Secrets Management</h2>
                 <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
                   {hasWorkspaces
-                    ? "Grouped by workspace. Scope `/` is that workspace's repo root."
+                    ? "Scope `/` is this repository's root. Narrower scopes use the folder path."
                     : "Store API keys and credentials in your cloud secret store."}
                   {secretsPreviewMode && (
                     <span className="block mt-1.5 text-[10px] text-[var(--text-secondary)] opacity-75">
@@ -856,7 +975,9 @@ export function SecretsTab({
               </div>
             </div>
 
-            {hasWorkspaces && (
+            {repoPicker}
+
+            {!repoHasNoSecrets && hasRepoWorkspaces && pathChips.length > 1 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] text-[var(--text-tertiary)] mr-1">View:</span>
                 <button
@@ -871,26 +992,22 @@ export function SecretsTab({
                 >
                   All
                 </button>
-                {sortedWorkspaces.map((ws) => {
-                  const chip = workspaceChipLabel(ws);
-                  return (
-                    <button
-                      key={ws.id}
-                      type="button"
-                      onClick={() => setSecretsFilter(ws.id)}
-                      className={cn(
-                        "px-2.5 py-1 rounded-md text-[10px] font-medium border transition-colors max-w-[12rem] truncate",
-                        secretsFilter === ws.id
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]",
-                        chip.primary.startsWith("/") && "font-mono tracking-tight"
-                      )}
-                      title={chip.title}
-                    >
-                      {chip.primary}
-                    </button>
-                  );
-                })}
+                {pathChips.map((pathKey) => (
+                  <button
+                    key={pathKey}
+                    type="button"
+                    onClick={() => setSecretsFilter(pathKey)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-[10px] font-medium font-mono tracking-tight border transition-colors max-w-[12rem] truncate",
+                      secretsFilter === pathKey
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                    )}
+                    title={pathKey}
+                  >
+                    {pathKey}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -936,16 +1053,29 @@ export function SecretsTab({
               </div>
             ) : null}
 
-            {hasWorkspaces ? (
+            {repoHasNoSecrets ? (
+              <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mb-4">
+                  <Key className="h-5 w-5 text-[var(--text-secondary)]" />
+                </div>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
+                  No secrets in this repository
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] max-w-md leading-relaxed">
+                  Add secrets per folder. Scope `/` is this repository&apos;s root. Values stay in your cloud secret
+                  store; we only keep references.
+                </p>
+              </div>
+            ) : hasRepoWorkspaces ? (
               <div className="space-y-8">
-                {filteredWorkspaceGroups.map((group) => (
+                {filteredPathGroups.map((group) => (
                   <section key={group.key} className="space-y-3">
                     <div className="flex items-center justify-between gap-2 border-b border-[var(--border-color)] pb-2">
                       <div className="min-w-0">
                         <h3
                           className={cn(
                             "text-xs font-semibold text-[var(--text-primary)] truncate",
-                            group.subtitle && "font-mono tracking-tight"
+                            group.title.startsWith("/") && "font-mono tracking-tight"
                           )}
                         >
                           {group.title}
@@ -968,8 +1098,8 @@ export function SecretsTab({
               </div>
             ) : (
               <>
-                {renderPendingBlock(secrets.pending)}
-                {renderSecretTable(secrets.configured)}
+                {renderPendingBlock(pendingInRepo)}
+                {renderSecretTable(configuredInRepo)}
               </>
             )}
           </div>

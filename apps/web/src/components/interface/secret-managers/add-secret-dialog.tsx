@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  fullNameFromRepoUrl,
   normalizeRepoPath,
   rootWorkspaceId,
   workspaceIdForSelectedFolder,
@@ -86,15 +87,6 @@ function resolveWorkspaceScope(
 ): string | null {
   if (scope && scope !== "__shared__") return scope;
   return rootWorkspaceId(workspaces);
-}
-
-function fullNameFromRepoUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const trimmed = url.trim().replace(/\.git$/u, "");
-  const match = /github\.com[:/]([^/]+\/[^/]+)/iu.exec(trimmed);
-  if (match?.[1]) return match[1];
-  if (/^[^/]+\/[^/]+$/u.test(trimmed)) return trimmed;
-  return null;
 }
 
 
@@ -342,13 +334,17 @@ export function AddSecretDialog({
       return;
     }
     if (repoOptions.length > 1) {
+      const preferred =
+        repoFullName && repoOptions.some((r) => r.fullName === repoFullName)
+          ? repoFullName
+          : repoOptions[0].fullName;
       setSelectedRepoFullName((prev) =>
-        repoOptions.some((r) => r.fullName === prev) ? prev : repoOptions[0].fullName
+        prev && repoOptions.some((r) => r.fullName === prev) ? prev : preferred
       );
     }
     // repoOptionKey is the stable identity of the imported-repo list
     // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid resetting on new array identity
-  }, [open, repoOptionKey]);
+  }, [open, repoOptionKey, repoFullName]);
 
   const pickRepo = (fullName: string) => {
     if (fullName === selectedRepoFullName) return;

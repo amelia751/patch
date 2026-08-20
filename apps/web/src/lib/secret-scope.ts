@@ -3,11 +3,28 @@
 export type SecretWorkspaceRef = {
   id: string;
   workspace_path?: string | null;
+  repo_url?: string | null;
 };
 
 export function normalizeRepoPath(path: string | null | undefined): string {
   if (path == null || !String(path).trim()) return "";
   return String(path).replace(/^\/+/u, "").replace(/\/+$/u, "");
+}
+
+/** `owner/repo` from a GitHub URL, SSH remote, or already-normalized full name. */
+export function fullNameFromRepoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim().replace(/\.git$/u, "");
+  const match = /github\.com[:/]([^/]+\/[^/]+)/iu.exec(trimmed);
+  if (match?.[1]) return match[1];
+  if (/^[^/]+\/[^/]+$/u.test(trimmed)) return trimmed;
+  return null;
+}
+
+/** Repo-relative import path for display, e.g. `cli` → `/cli/`. Empty path is `/`. */
+export function workspacePathBadge(path: string | null | undefined): string {
+  const n = normalizeRepoPath(path);
+  return n ? `/${n}/` : "/";
 }
 
 /** Prefer the whole-repo workspace (empty path), else the first workspace. */
