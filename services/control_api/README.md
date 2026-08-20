@@ -11,7 +11,8 @@ keys. `tests/test_no_code_execution.py` enforces that against the source tree.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/healthz` | Liveness. Touches no dependency; always 200 while serving. |
+| `GET` | `/health` | Liveness. Touches no dependency; always 200 while serving. Use this on Cloud Run — the frontend reserves `/healthz`. |
+| `GET` | `/healthz` | Same payload as `/health`. Reachable locally and in-container. |
 | `GET` | `/readyz` | Readiness per dependency. 503 until every probe is satisfied. |
 | `POST` | `/v1/provider-checks` | Manual trigger to look for changes from one provider. |
 | `GET` | `/v1/runs/{run_id}` | Deterministic run state plus the transitions still allowed. |

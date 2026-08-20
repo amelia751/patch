@@ -15,6 +15,11 @@ def test_healthz_is_ok_without_any_dependency(unwired_client: TestClient) -> Non
     }
 
 
+def test_health_matches_healthz(unwired_client: TestClient) -> None:
+    """Cloud Run's frontend intercepts `/healthz`; `/health` is the public alias."""
+    assert unwired_client.get("/health").json() == unwired_client.get("/healthz").json()
+
+
 def test_readyz_fails_closed_when_dependencies_are_missing(unwired_client: TestClient) -> None:
     response = unwired_client.get("/readyz")
 
@@ -75,6 +80,7 @@ def test_openapi_document_describes_the_whole_surface(unwired_client: TestClient
     document = unwired_client.get("/openapi.json").json()
 
     assert set(document["paths"]) == {
+        "/health",
         "/healthz",
         "/readyz",
         "/v1/provider-checks",

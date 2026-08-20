@@ -13,8 +13,7 @@ from patchapi_control_api.readiness import evaluate
 router = APIRouter(tags=["health"])
 
 
-@router.get("/healthz", response_model=HealthResponse, summary="Liveness probe")
-async def healthz() -> HealthResponse:
+def _liveness() -> HealthResponse:
     """Report that the process is serving. Touches no dependency."""
     return HealthResponse(
         status="ok",
@@ -22,6 +21,18 @@ async def healthz() -> HealthResponse:
         version=SERVICE_VERSION,
         environment=environment(),
     )
+
+
+@router.get("/health", response_model=HealthResponse, summary="Liveness probe")
+async def health() -> HealthResponse:
+    """Public liveness. Cloud Run reserves `/healthz` at the frontend."""
+    return _liveness()
+
+
+@router.get("/healthz", response_model=HealthResponse, summary="Liveness probe")
+async def healthz() -> HealthResponse:
+    """Local / in-container liveness. The public Cloud Run URL 404s this path."""
+    return _liveness()
 
 
 @router.get(
