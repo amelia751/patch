@@ -97,6 +97,9 @@ const fieldClass =
 const textareaClass =
   "min-h-[88px] text-sm bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary/25";
 
+const rowInputClass =
+  "h-8 text-xs bg-transparent border-0 shadow-none px-0 focus-visible:ring-0 focus-visible:border-0 text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/45";
+
 const selectTriggerClass = cn(
   "h-9 w-full text-sm shadow-sm transition-colors",
   "bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]",
@@ -1803,18 +1806,21 @@ function RegisterDialog({
         if (!v) reset();
       }}
     >
-      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-            Register as provider
-          </DialogTitle>
-          <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            These fields are the public profile — same layout as Google Cloud. Organization,
-            slug, category, and description are required.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3.5 py-1">
-          <div className="grid grid-cols-2 gap-3">
+      <DialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] max-w-xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
+          <DialogHeader className="space-y-0 text-left">
+            <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+              Register as provider
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[var(--text-secondary)] leading-relaxed pt-2">
+              Public profile for this publisher. Organization, slug, category, and
+              description are required.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
+          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-5 space-y-4">
             <Field label="Organization">
               <Input
                 value={name}
@@ -1837,101 +1843,99 @@ function RegisterDialog({
                 className={cn(fieldClass, "font-mono")}
               />
             </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Category">
-              <Select value={category} onValueChange={(v) => setCategory(v as ProviderCategory)}>
-                <SelectTrigger className={selectTriggerClass}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent
-                  position="popper"
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                  className={cn(selectContentClass, "w-[var(--radix-select-trigger-width)]")}
-                >
-                  {(Object.keys(CATEGORY_LABELS) as ProviderCategory[]).map((key) => (
-                    <SelectItem key={key} value={key} className={selectItemClass}>
-                      {CATEGORY_LABELS[key]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Since" hint="Optional">
-              <Input
-                value={since}
-                onChange={(e) => setSince(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                placeholder="2008"
-                inputMode="numeric"
-                className={fieldClass}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Category">
+                <Select value={category} onValueChange={(v) => setCategory(v as ProviderCategory)}>
+                  <SelectTrigger className={selectTriggerClass}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    align="start"
+                    side="bottom"
+                    sideOffset={4}
+                    className={cn(selectContentClass, "w-[var(--radix-select-trigger-width)]")}
+                  >
+                    {(Object.keys(CATEGORY_LABELS) as ProviderCategory[]).map((key) => (
+                      <SelectItem key={key} value={key} className={selectItemClass}>
+                        {CATEGORY_LABELS[key]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Since">
+                <Input
+                  value={since}
+                  onChange={(e) => setSince(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="2008"
+                  inputMode="numeric"
+                  className={fieldClass}
+                />
+              </Field>
+            </div>
+            <Field label="Description">
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="A suite of cloud services for compute, storage, data analytics, and machine learning."
+                className={textareaClass}
               />
             </Field>
           </div>
-          <Field label="Description">
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="A suite of cloud services for compute, storage, data analytics, and machine learning."
-              className={textareaClass}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Website" hint="Optional">
+
+          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] divide-y divide-[var(--border-color)]">
+            <LinkRow icon={Globe} label="Website">
               <Input
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
-                placeholder="https://cloud.google.com"
-                className={fieldClass}
+                placeholder="cloud.google.com"
+                className={rowInputClass}
               />
-            </Field>
-            <Field label="Console" hint="Optional">
+            </LinkRow>
+            <LinkRow icon={ExternalLink} label="Console">
               <Input
                 value={consoleUrl}
                 onChange={(e) => setConsoleUrl(e.target.value)}
-                placeholder="https://console.cloud.google.com"
-                className={fieldClass}
+                placeholder="console.cloud.google.com"
+                className={rowInputClass}
               />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Docs" hint="Optional">
+            </LinkRow>
+            <LinkRow icon={Layers} label="Docs">
               <Input
                 value={docsUrl}
                 onChange={(e) => setDocsUrl(e.target.value)}
-                placeholder="https://cloud.google.com/docs"
-                className={fieldClass}
+                placeholder="cloud.google.com/docs"
+                className={rowInputClass}
               />
-            </Field>
-            <Field label="Status" hint="Optional">
+            </LinkRow>
+            <LinkRow icon={Eye} label="Status">
               <Input
                 value={statusUrl}
                 onChange={(e) => setStatusUrl(e.target.value)}
-                placeholder="https://status.cloud.google.com"
-                className={fieldClass}
+                placeholder="status.cloud.google.com"
+                className={rowInputClass}
               />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Contact" hint="Optional">
+            </LinkRow>
+            <LinkRow icon={Mail} label="Contact">
               <Input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="api@acme.ai or https://cloud.google.com/contact"
-                className={fieldClass}
+                placeholder="cloud.google.com/contact"
+                className={rowInputClass}
               />
-            </Field>
-            <Field label="Headquarters" hint="Optional">
+            </LinkRow>
+            <LinkRow icon={MapPin} label="Headquarters">
               <Input
                 value={hq}
                 onChange={(e) => setHq(e.target.value)}
                 placeholder="1600 Amphitheatre Parkway, Mountain View, CA"
-                className={fieldClass}
+                className={rowInputClass}
               />
-            </Field>
+            </LinkRow>
           </div>
-          <label className="flex items-start gap-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5 cursor-pointer">
+
+          <label className="flex items-start gap-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3 cursor-pointer">
             <input
               type="checkbox"
               checked={attested}
@@ -1945,17 +1949,18 @@ function RegisterDialog({
           </label>
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
-        <DialogFooter>
+
+        <DialogFooter className="shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-primary)] px-6 py-4 gap-2">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className={cn("h-7 text-xs", outlineMutedButtonClass)}
+            className={cn("h-8 text-xs", outlineMutedButtonClass)}
           >
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
-            className="h-7 text-xs bg-primary hover:bg-primary-hover text-primary-foreground"
+            className="h-8 text-xs bg-primary hover:bg-primary-hover text-primary-foreground"
           >
             Register
           </Button>
@@ -2050,20 +2055,35 @@ function ChangeClusterRow({ cluster }: { cluster: ChangeCluster }) {
 
 function Field({
   label,
-  hint,
   children,
 }: {
   label: string;
-  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="grid gap-1.5 min-w-0">
-      <div className="flex items-baseline justify-between gap-2">
-        <Label className="text-xs text-[var(--text-secondary)]">{label}</Label>
-        {hint && <span className="text-[10px] text-[var(--text-secondary)]">{hint}</span>}
-      </div>
+      <Label className="text-xs text-[var(--text-secondary)]">{label}</Label>
       {children}
+    </div>
+  );
+}
+
+function LinkRow({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: typeof Globe;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-4 px-4 py-3">
+      <span className="inline-flex items-center gap-2 w-32 shrink-0 text-xs text-[var(--text-secondary)]">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
