@@ -79,6 +79,7 @@ crash.log
 # ---------------------------------------------------------------------------
 # Demo / sandbox artifacts (generated; not source)
 # ---------------------------------------------------------------------------
+/demo/
 /artifacts/
 /sandbox-workspaces/
 /tmp-patchapi/
