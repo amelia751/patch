@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -11,296 +11,529 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Fingerprint, Plus, Shield } from "lucide-react";
+import {
+  Cable,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  ExternalLink,
+  Fingerprint,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
-type Grant = "aiplatform.user" | "aiplatform.memoryUser" | "sandbox.allocate";
-
-type PrincipalRow = {
-  id: string;
-  agent: string;
+type Binding = {
   role: string;
-  principal: string;
-  grants: Grant[];
+  label: string;
+  validated: boolean;
 };
 
-const GRANT_OPTIONS: { id: Grant; label: string; hint: string }[] = [
-  { id: "aiplatform.user", label: "aiplatform.user", hint: "Vertex accepts this principal. No API key." },
-  { id: "aiplatform.memoryUser", label: "aiplatform.memoryUser", hint: "Memory Bank read/write for this agent." },
-  { id: "sandbox.allocate", label: "sandbox.allocate", hint: "Claim a sandbox. Still no control-plane key." },
-];
+type FleetAgent = {
+  id: string;
+  name: string;
+  job: string;
+  principal: string;
+  bindings: Binding[];
+};
 
-const INITIAL: PrincipalRow[] = [
+const FLEET: Omit<FleetAgent, "bindings">[] = [
   {
     id: "change",
-    agent: "Change Intelligence",
-    role: "Detects provider notices",
+    name: "Change Intelligence",
+    job: "Reads provider notices on Vertex",
     principal:
       "principal://agents.global.org-patchapi.system.id.goog/resources/aiplatform/projects/913371146929/locations/us-central1/reasoningEngines/change",
-    grants: ["aiplatform.user"],
   },
   {
     id: "impact",
-    agent: "Impact",
-    role: "Maps a notice onto imported repos",
+    name: "Impact",
+    job: "Reads Memory Bank for the imported repo",
     principal:
       "principal://agents.global.org-patchapi.system.id.goog/resources/aiplatform/projects/913371146929/locations/us-central1/reasoningEngines/impact",
-    grants: ["aiplatform.user", "aiplatform.memoryUser"],
   },
   {
     id: "patch",
-    agent: "Patch",
-    role: "Edits a sandbox workspace only",
+    name: "Patch",
+    job: "Reasons on Vertex; writes only inside a sandbox",
     principal:
       "principal://agents.global.org-patchapi.system.id.goog/resources/aiplatform/projects/913371146929/locations/us-central1/reasoningEngines/patch",
-    grants: ["aiplatform.user", "sandbox.allocate"],
   },
   {
     id: "verification",
-    agent: "Verification",
-    role: "Grades a clean sandbox, not its own work",
+    name: "Verification",
+    job: "Grades a clean sandbox on Vertex",
     principal:
       "principal://agents.global.org-patchapi.system.id.goog/resources/aiplatform/projects/913371146929/locations/us-central1/reasoningEngines/verification",
-    grants: ["aiplatform.user"],
   },
 ];
 
-function shortPrincipal(spiffe: string): string {
-  const tail = spiffe.split("/").pop() ?? spiffe;
-  return `…/reasoningEngines/${tail}`;
+const BINDINGS_FOR: Record<string, { role: string; label: string }[]> = {
+  change: [{ role: "roles/aiplatform.user", label: "Vertex AI User" }],
+  impact: [
+    { role: "roles/aiplatform.user", label: "Vertex AI User" },
+    { role: "roles/aiplatform.memoryUser", label: "Vertex AI Memory User" },
+  ],
+  patch: [{ role: "roles/aiplatform.user", label: "Vertex AI User" }],
+  verification: [{ role: "roles/aiplatform.user", label: "Vertex AI User" }],
+};
+
+const IAM_URL =
+  "https://console.cloud.google.com/iam-admin/iam?project=patch-505223";
+const AGENT_IDENTITY_URL =
+  "https://console.cloud.google.com/vertex-ai?project=patch-505223";
+
+function seedAgents(validated: boolean): FleetAgent[] {
+  return FLEET.map((agent) => ({
+    ...agent,
+    bindings: BINDINGS_FOR[agent.id].map((b, i) => ({
+      ...b,
+      validated: validated && !(agent.id === "impact" && i === 1),
+    })),
+  }));
+}
+
+function Copyable({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-start gap-1.5 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-md px-2.5 py-1.5">
+      <span className="flex-1 text-[10px] font-mono text-[var(--text-primary)] break-all select-all">
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard.writeText(value);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        }}
+        className="shrink-0 p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        title="Copy"
+      >
+        {copied ? <Check className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </div>
+  );
+}
+
+function ConsoleChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-primary/35 bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--text-primary)]">
+      {children}
+    </span>
+  );
 }
 
 export function AgentIdentityTab() {
-  const [rows, setRows] = useState(INITIAL);
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [grants, setGrants] = useState<Set<Grant>>(() => new Set(["aiplatform.user"]));
+  const [connected, setConnected] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [agents, setAgents] = useState<FleetAgent[]>(() => seedAgents(false));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [validating, setValidating] = useState<string | null>(null);
+  const [detachOpen, setDetachOpen] = useState(false);
+  const [detachConfirm, setDetachConfirm] = useState("");
 
-  const resetDialog = () => {
-    setName("");
-    setGrants(new Set(["aiplatform.user"]));
+  const bindingStats = agents.reduce(
+    (acc, a) => {
+      acc.total += a.bindings.length;
+      acc.ok += a.bindings.filter((b) => b.validated).length;
+      return acc;
+    },
+    { ok: 0, total: 0 },
+  );
+  const allValid = bindingStats.ok === bindingStats.total && bindingStats.total > 0;
+
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
-  const previewId = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
-  const previewPrincipal =
-    `principal://agents.global.org-patchapi.system.id.goog/resources/aiplatform/projects/913371146929/locations/us-central1/reasoningEngines/${previewId}`;
+  const mockConnect = () => {
+    setConnecting(true);
+    window.setTimeout(() => {
+      setAgents(seedAgents(true));
+      setConnected(true);
+      setConnecting(false);
+      setConnectOpen(false);
+    }, 700);
+  };
 
-  const register = () => {
-    const agent = name.trim();
-    if (!agent) return;
-    const id = `${previewId}-${rows.length + 1}`;
-    setRows((prev) => [
-      ...prev,
-      {
-        id,
-        agent,
-        role: "Registered locally — mock only",
-        principal: previewPrincipal,
-        grants: GRANT_OPTIONS.map((g) => g.id).filter((g) => grants.has(g)),
-      },
-    ]);
-    setOpen(false);
-    resetDialog();
+  const mockValidate = (agentId: string, role: string) => {
+    const key = `${agentId}:${role}`;
+    setValidating(key);
+    window.setTimeout(() => {
+      setAgents((prev) =>
+        prev.map((a) =>
+          a.id !== agentId
+            ? a
+            : {
+                ...a,
+                bindings: a.bindings.map((b) => (b.role === role ? { ...b, validated: true } : b)),
+              },
+        ),
+      );
+      setValidating(null);
+    }, 500);
+  };
+
+  const disconnect = () => {
+    setConnected(false);
+    setAgents(seedAgents(false));
+    setDetachOpen(false);
+    setDetachConfirm("");
+    setExpanded(new Set());
   };
 
   return (
     <>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) resetDialog();
-        }}
-      >
-        <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)]">
-          <DialogHeader>
-            <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-              Register principal
-            </DialogTitle>
-            <DialogDescription className="text-xs text-[var(--text-secondary)]">
-              This is who the agent is. Vertex accepts the SPIFFE id. There is no API key on this tab.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-1">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-[var(--text-secondary)]">Agent name</Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Policy"
-                className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-[var(--text-secondary)]">IAM grants</Label>
-              <div className="rounded-lg border border-[var(--border-color)] divide-y divide-[var(--border-color)]">
-                {GRANT_OPTIONS.map((opt) => (
-                  <label
-                    key={opt.id}
-                    className="flex items-start gap-2.5 px-3 py-2 text-xs cursor-pointer hover:bg-[var(--bg-tertiary)]"
-                  >
-                    <Checkbox
-                      checked={grants.has(opt.id)}
-                      onCheckedChange={(v) => {
-                        setGrants((prev) => {
-                          const next = new Set(prev);
-                          if (v === true) next.add(opt.id);
-                          else next.delete(opt.id);
-                          return next;
-                        });
-                      }}
-                      className="mt-0.5 border-[var(--border-color)] data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                    />
-                    <span>
-                      <span className="font-mono text-[var(--text-primary)]">{opt.label}</span>
-                      <span className="block text-[10px] text-[var(--text-secondary)] mt-0.5">{opt.hint}</span>
-                    </span>
-                  </label>
+      <Dialog open={connectOpen} onOpenChange={setConnectOpen}>
+        <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col max-h-[min(90dvh,40rem)] gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
+            <DialogHeader className="space-y-0 text-left">
+              <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
+                Connect Agent Identity
+              </DialogTitle>
+              <DialogDescription className="text-xs text-[var(--text-secondary)] pt-2">
+                The four PatchAPI agents already exist. Bind their principals on this GCP project.
+                No JSON key. Same idea as WIF: you grant IAM, we validate.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="border border-[var(--border-color)] rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-medium text-[var(--text-primary)]">
+                  Step 1: Copy each agent principal
+                </h3>
+                <a
+                  href={AGENT_IDENTITY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  Open Vertex AI
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                These SPIFFE ids are issued by Gemini Enterprise Agent Platform. You do not create
+                them here.
+              </p>
+              <div className="space-y-2">
+                {FLEET.map((agent) => (
+                  <div key={agent.id} className="space-y-1">
+                    <p className="text-[10px] font-medium text-[var(--text-primary)]">{agent.name}</p>
+                    <Copyable value={agent.principal} />
+                  </div>
                 ))}
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-[var(--text-secondary)]">Principal preview</Label>
-              <p className="font-mono text-[10px] leading-relaxed text-[var(--text-secondary)] bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-md px-2.5 py-2 break-all">
-                {previewPrincipal}
+
+            <div className="border border-[var(--border-color)] rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-medium text-[var(--text-primary)]">
+                  Step 2: Grant IAM on this project
+                </h3>
+                <a
+                  href={IAM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  Open IAM
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-3">
+                <ol className="text-[10px] text-[var(--text-primary)] space-y-2 list-decimal list-inside">
+                  <li>
+                    Open <ConsoleChip>IAM</ConsoleChip> → <ConsoleChip>Grant access</ConsoleChip>
+                  </li>
+                  <li>Paste one principal as the new principal</li>
+                  <li>
+                    Assign <span className="font-mono">Vertex AI User</span>{" "}
+                    <span className="font-mono text-[var(--text-secondary)]">(roles/aiplatform.user)</span>
+                  </li>
+                  <li>
+                    For Impact only, also assign{" "}
+                    <span className="font-mono">Vertex AI Memory User</span>
+                  </li>
+                  <li>
+                    Save. Repeat for the other three agents. No API key, no JSON download.
+                  </li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="border border-[var(--border-color)] rounded-lg p-4 space-y-2">
+              <h3 className="text-xs font-medium text-[var(--text-primary)]">
+                Step 3: Validate
+              </h3>
+              <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                PatchAPI calls Vertex as each principal. If IAM is correct, the agent is attested.
+                Mock: Connect marks the fleet connected and re-checks bindings.
               </p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-[var(--border-color)] px-6 py-4">
             <Button
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => setConnectOpen(false)}
               className="text-xs border-[var(--border-color)] text-[var(--text-primary)]"
             >
               Cancel
             </Button>
             <Button
-              onClick={register}
-              disabled={!name.trim() || grants.size === 0}
+              onClick={mockConnect}
+              disabled={connecting}
               className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              Register
+              {connecting ? (
+                <>
+                  <Spinner className="h-3.5 w-3.5 mr-2" />
+                  Validating…
+                </>
+              ) : (
+                <>
+                  <Cable className="h-3.5 w-3.5 mr-1.5" />
+                  Connect and validate
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <div className="h-full overflow-y-auto bg-[var(--bg-primary)] min-w-0">
-        <div className="p-6 space-y-6">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
+        {!connected ? (
+          <div className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <Fingerprint className="h-5 w-5 text-[var(--text-primary)]" />
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agent Identity</h2>
-              <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
-                Who the agent is. A SPIFFE principal. You grant that principal{" "}
-                <span className="font-mono">aiplatform.user</span>. Vertex accepts the agent itself.
-              </p>
             </div>
-            <Button
-              size="sm"
-              onClick={() => setOpen(true)}
-              className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Register principal
-            </Button>
-          </div>
-
-          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-            <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-              <span className="font-medium text-primary">No API key on this tab.</span> The badge is the
-              principal. The model never receives a credential. Mock layout — nothing is written to IAM yet.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Project
+            <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-12 text-center">
+              <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
+                <Fingerprint className="h-5 w-5 text-[var(--text-secondary)]" />
+              </div>
+              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">
+                Identity not connected
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] mb-4 max-w-sm mx-auto leading-relaxed">
+                Change, Impact, Patch, and Verification already have SPIFFE principals. Connect
+                them to this GCP project and validate IAM — same pattern as WIF, no key file.
               </p>
-              <p className="mt-1 font-mono text-[12px] text-[var(--text-primary)]">patch-505223</p>
-            </div>
-            <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Runtime
-              </p>
-              <p className="mt-1 text-[12px] text-[var(--text-primary)]">Gemini 3.5 Flash · global</p>
+              <Button
+                onClick={() => setConnectOpen(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                <Cable className="h-4 w-4 mr-2" />
+                Connect Agent Identity
+              </Button>
             </div>
           </div>
+        ) : (
+          <div className="p-6 space-y-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Fingerprint className="h-5 w-5 text-[var(--text-primary)]" />
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agent Identity</h2>
+              </div>
+            </div>
 
-          <div className="rounded-lg border border-[var(--border-color)] overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
-                  <th className="py-1.5 px-3 text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                    Agent
-                  </th>
-                  <th className="py-1.5 px-3 text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                    Principal
-                  </th>
-                  <th className="py-1.5 px-3 text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
-                    Grants
-                  </th>
-                  <th className="py-1.5 px-3 text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider w-20">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-[var(--border-color)] last:border-b-0 hover:bg-[var(--bg-tertiary)] text-xs"
+            <div className="border border-[var(--border-color)] rounded-lg overflow-hidden bg-[var(--bg-secondary)]">
+              <div className="p-4 bg-[var(--bg-primary)] flex items-center gap-3">
+                {allValid ? (
+                  <CheckCircle2 className="h-4 w-4 text-[#10b981] shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-[var(--text-primary)]">
+                    Fleet principals · patch-505223
+                  </p>
+                  <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+                    Gemini 3.5 Flash · global · {bindingStats.ok}/{bindingStats.total} bindings
+                    validated
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {agents.map((agent) => {
+                const open = expanded.has(agent.id);
+                const ok = agent.bindings.every((b) => b.validated);
+                return (
+                  <div
+                    key={agent.id}
+                    className="border border-[var(--border-color)] rounded-lg overflow-hidden bg-[var(--bg-secondary)]"
                   >
-                    <td className="py-2.5 px-3 align-top">
-                      <div className="flex items-start gap-2">
-                        <Fingerprint className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--text-secondary)]" />
+                    <button
+                      type="button"
+                      onClick={() => toggle(agent.id)}
+                      className="w-full p-4 bg-[var(--bg-primary)] flex items-center gap-3 text-left hover:bg-[var(--bg-tertiary)]/50 transition-colors"
+                    >
+                      {ok ? (
+                        <CheckCircle2 className="h-4 w-4 text-[#10b981] shrink-0" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                      )}
+                      <span className="text-xs font-medium text-[var(--text-primary)] shrink-0">
+                        {agent.name}
+                      </span>
+                      <span className="text-[10px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
+                        {agent.job}
+                      </span>
+                      {open ? (
+                        <ChevronUp className="h-4 w-4 text-[var(--text-secondary)] shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-[var(--text-secondary)] shrink-0" />
+                      )}
+                    </button>
+                    {open && (
+                      <div className="border-t border-[var(--border-color)] p-5 space-y-4">
                         <div>
-                          <p className="font-medium text-[var(--text-primary)]">{row.agent}</p>
-                          <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{row.role}</p>
+                          <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                            Principal
+                          </p>
+                          <Copyable value={agent.principal} />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-xs font-semibold text-[var(--text-primary)]">
+                              Required IAM
+                            </h4>
+                            <span className="text-[10px] text-[var(--text-secondary)]">
+                              {agent.bindings.filter((b) => b.validated).length}/{agent.bindings.length}{" "}
+                              validated
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {agent.bindings.map((b) => {
+                              const key = `${agent.id}:${b.role}`;
+                              return (
+                                <div
+                                  key={b.role}
+                                  className="flex items-center justify-between gap-3 p-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {b.validated ? (
+                                      <CheckCircle2 className="h-3.5 w-3.5 text-[#10b981] shrink-0" />
+                                    ) : (
+                                      <XCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                    )}
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-medium text-[var(--text-primary)]">
+                                        {b.label}
+                                      </p>
+                                      <p className="text-[10px] font-mono text-[var(--text-secondary)]">
+                                        {b.role}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {!b.validated && (
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => window.open(IAM_URL, "_blank")}
+                                        className="text-[10px] h-7 border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                                      >
+                                        Grant
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => mockValidate(agent.id, b.role)}
+                                        disabled={validating === key}
+                                        className="text-[10px] h-7 border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                                      >
+                                        {validating === key ? (
+                                          <Spinner className="h-3 w-3" />
+                                        ) : (
+                                          "Validate"
+                                        )}
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
-                    </td>
-                    <td className="py-2.5 px-3 align-top">
-                      <p
-                        className="font-mono text-[10px] text-[var(--text-secondary)] truncate max-w-[16rem]"
-                        title={row.principal}
-                      >
-                        {shortPrincipal(row.principal)}
-                      </p>
-                    </td>
-                    <td className="py-2.5 px-3 align-top">
-                      <div className="flex flex-wrap gap-1">
-                        {row.grants.map((g) => (
-                          <Badge
-                            key={g}
-                            variant="outline"
-                            className="text-[9px] font-mono font-normal text-[var(--text-secondary)]"
-                          >
-                            {g}
-                          </Badge>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3 align-top whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1 text-[10px] text-[#10b981]">
-                        <Shield className="h-3 w-3" />
-                        Attested
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-          <p className={cn("text-[10px] text-[var(--text-secondary)] leading-relaxed")}>
-            Denied by default: merge, admin, secret rotation, and any raw token. Extra grants are explicit IAM
-            bindings on the principal, not prompt instructions.
-          </p>
-        </div>
+            {!allValid && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-[10px] text-amber-600 dark:text-amber-500">
+                  <strong>Warning:</strong> Some principals are missing IAM. Vertex will reject those
+                  agents until you grant and validate.
+                </p>
+              </div>
+            )}
+
+            <div className="border-t border-[var(--border-color)] pt-5">
+              {!detachOpen ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-[10px] h-7 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-500"
+                  onClick={() => {
+                    setDetachOpen(true);
+                    setDetachConfirm("");
+                  }}
+                >
+                  <Trash2 className="h-3 w-3 mr-1.5" />
+                  Disconnect
+                </Button>
+              ) : (
+                <div className="space-y-3 max-w-sm">
+                  <p className="text-[10px] text-[var(--text-secondary)]">
+                    Type <strong className="text-red-500">DISCONNECT</strong> to confirm. Principals
+                    stay issued; only this project binding is dropped.
+                  </p>
+                  <Input
+                    value={detachConfirm}
+                    onChange={(e) => setDetachConfirm(e.target.value)}
+                    placeholder="Type DISCONNECT"
+                    className="h-8 text-xs bg-[var(--bg-primary)] border-red-500/30 text-[var(--text-primary)]"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-[10px] h-7 border-[var(--border-color)]"
+                      onClick={() => setDetachOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="text-[10px] h-7 bg-red-500 hover:bg-red-600 text-white"
+                      disabled={detachConfirm !== "DISCONNECT"}
+                      onClick={disconnect}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

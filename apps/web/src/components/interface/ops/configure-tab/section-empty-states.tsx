@@ -100,7 +100,7 @@ export function IdentityEmptyState() {
           No agent identity
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Select a project to register SPIFFE principals. Agents authenticate as themselves — no API key.
+          Select a project to connect the existing PatchAPI principals and validate IAM. No API key.
         </p>
         <Button
           size="sm"
