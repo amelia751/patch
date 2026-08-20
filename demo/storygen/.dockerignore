@@ -1,0 +1,10 @@
+node_modules
+.next
+.env
+.env.local
+.env.example
+generate.py
+test_generate.py
+expected-findings.yaml
+README.md
+*.md
