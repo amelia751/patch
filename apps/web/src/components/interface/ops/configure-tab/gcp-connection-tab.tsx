@@ -168,6 +168,17 @@ export function GCPConnectionTab({
       : fallbackEntries;
 
   const availableForConnect = GCP_ENV_OPTIONS;
+  const editingConnection = storedCards.find((c) => c.id === editEnvKey);
+  const connectedEnvKeys = new Set(
+    storedCards.length > 0
+      ? storedCards
+          .filter((c) => {
+            if (!editingConnection) return true;
+            return (c.workspace_id ?? "") === (editingConnection.workspace_id ?? "");
+          })
+          .map((c) => c.environment)
+      : fallbackEntries.map(([env]) => env)
+  );
 
   const toggleExpanded = (env: string) => {
     setExpandedEnvs((prev) => {
@@ -605,7 +616,8 @@ export function GCPConnectionTab({
                 </SelectTrigger>
                 <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
                   {GCP_ENV_OPTIONS.map((o) => {
-                    const taken = connectedEnvKeys.has(o.value) && o.value !== editEnvKey;
+                    const currentEnv = editingConnection?.environment ?? editEnvKey;
+                    const taken = connectedEnvKeys.has(o.value) && o.value !== currentEnv;
                     return (
                       <SelectItem
                         key={o.value}
