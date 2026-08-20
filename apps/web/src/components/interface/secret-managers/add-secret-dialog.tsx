@@ -720,7 +720,7 @@ export function AddSecretDialog({
                   value={selectedRepo?.fullName ?? ""}
                   onValueChange={pickRepo}
                 >
-                  <SelectTrigger className="h-8 w-full text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+                  <SelectTrigger className="h-8 w-full text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors [&>span]:text-[var(--text-primary)] focus:ring-0 focus:ring-offset-0 focus-visible:ring-1 focus-visible:ring-[var(--border-color)]">
                     <SelectValue placeholder="Select a repository" />
                   </SelectTrigger>
                   <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
