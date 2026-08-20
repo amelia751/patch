@@ -12,7 +12,9 @@ Built for the [All Things Agentic Hackathon](https://allthingsagentichackathon.d
 Early scaffold. Authoritative plan: [`roadmap.md`](./roadmap.md).
 
 Flagship demo target: pinned fork of [`remorses/egaki`](https://github.com/remorses/egaki),
-migrating Google Imagen 4 → Gemini 3.1 Flash Image.
+migrating Google Imagen 4 → Gemini 3.1 Flash Image. Second demo:
+[`amelia751/storygen`](https://github.com/amelia751/storygen) (retired
+`gemini-2.0-flash` + `imagen-4.0-generate-001`).
 
 ## Hosted console (stable Cloud Run)
 
@@ -23,10 +25,14 @@ These names are the URL. Do not rename or delete the services.
 | Frontend | https://patchapi-web-913371146929.us-central1.run.app |
 | Backend | https://patchapi-api-913371146929.us-central1.run.app |
 | GitHub webhook | https://patchapi-api-913371146929.us-central1.run.app/v1/github/webhooks |
+| Storygen (artful-journey) | https://storygen-1005432364863.us-central1.run.app |
 
 Same services also answer at the classic `*.a.run.app` aliases. Prefer the
-links above. Region is `us-central1`. Push to `main` deploys into these names
-(`.github/workflows/deploy-cloud-run.yml`).
+links above. Region is `us-central1`. Push to `main` deploys the PatchAPI
+names (`.github/workflows/deploy-cloud-run.yml`). Storygen lives in project
+`artful-journey-486915-a8`; deploy with
+`demo/artful-journey-486915-a8-fc72d9d68c0b.json` via
+[`demo/storygen/deploy.sh`](./demo/storygen/deploy.sh).
 
 Local remains `http://localhost:3000` (dashboard) and `http://localhost:8080`
 (control API).

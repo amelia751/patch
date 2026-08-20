@@ -18,17 +18,35 @@ Service name is the URL. Do not rename or delete it.
 | Service | `storygen` |
 | URL | https://storygen-1005432364863.us-central1.run.app |
 | Deploy key | `demo/artful-journey-486915-a8-fc72d9d68c0b.json` (`development@…`) |
+| Secret name | `storygen-gemini-api-key` |
 
 Same shape as PatchAPI (`https://<service>-<project-number>.us-central1.run.app`).
+The `*.a.run.app` alias also answers; prefer the stable link.
 
-Billing is currently off on this project, so a new Cloud Run service cannot be
-created. After billing is enabled:
+Redeploy with the **development** key, not the viewer key:
 
 ```bash
 ./demo/storygen/deploy.sh
 ```
 
-That script authenticates as the **development** key, not the viewer key.
+The Gemini key is Secret Manager `storygen-gemini-api-key`, not a literal
+on the service. `jetrun-viewer@` has `roles/run.viewer`, so it can see that
+**name** on the Cloud Run service (not a secret list — it has no
+`secretmanager.secrets.list`):
+
+```bash
+export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=demo/artful-journey-486915-a8-c0699c9e2545.json
+gcloud run services describe storygen \
+  --project=artful-journey-486915-a8 \
+  --region=us-central1 \
+  --format='yaml(spec.template.spec.containers[0].env)'
+```
+
+That prints `name: GEMINI_API_KEY` and
+`secretKeyRef.name: storygen-gemini-api-key`. It does not print the payload.
+
+A live `POST /api/story` returns 502 with both retired-model errors until
+those identifiers are migrated.
 
 ## Local
 
