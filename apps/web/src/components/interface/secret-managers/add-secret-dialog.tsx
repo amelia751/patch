@@ -1055,7 +1055,7 @@ export function AddSecretDialog({
               onPaste={onEnvPaste}
               placeholder="e.g. DATABASE_URL or paste FOO=bar"
               disabled={scopeLocked || isParsingEnv}
-              className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] disabled:opacity-60"
+              className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] disabled:opacity-60 focus-visible:ring-1 focus-visible:ring-[var(--border-color)]"
             />
           </div>
 
@@ -1069,7 +1069,7 @@ export function AddSecretDialog({
                 onPaste={onEnvPaste}
                 placeholder="Value or paste multiple KEY=value lines"
                 disabled={isParsingEnv}
-                className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] pr-10"
+                className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] pr-10 focus-visible:ring-1 focus-visible:ring-[var(--border-color)]"
               />
               <button
                 type="button"
