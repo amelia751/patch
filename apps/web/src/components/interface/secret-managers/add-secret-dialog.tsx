@@ -25,7 +25,6 @@ import {
   ChevronRight,
   FolderOpen,
   Layers,
-  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -682,7 +681,10 @@ export function AddSecretDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col max-h-[min(90dvh,40rem)] gap-0 overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="max-w-lg bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col max-h-[min(90dvh,40rem)] gap-0 overflow-hidden p-0 sm:max-w-lg"
+      >
         <div className="shrink-0 px-6 pt-6 pb-4 border-b border-[var(--border-color)]">
           <DialogHeader className="space-y-0 text-left">
             <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
@@ -708,34 +710,26 @@ export function AddSecretDialog({
           {repoOptions.length > 0 && (
             <div className="space-y-2">
               <Label className="text-xs text-[var(--text-secondary)]">Project</Label>
-              {repoOptions.length === 1 || scopeLocked ? (
-                <div className="flex items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1.5 text-xs text-[var(--text-primary)]">
-                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
-                  <span className="font-mono truncate">
-                    {selectedRepo?.fullName ?? repoOptions[0].fullName}
-                  </span>
-                </div>
-              ) : (
-                <Select
-                  value={selectedRepo?.fullName ?? ""}
-                  onValueChange={pickRepo}
-                >
-                  <SelectTrigger className="h-8 w-full text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors [&>span]:text-[var(--text-primary)] focus:ring-0 focus:ring-offset-0 focus-visible:ring-1 focus-visible:ring-[var(--border-color)]">
-                    <SelectValue placeholder="Select a repository" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
-                    {repoOptions.map((repo) => (
-                      <SelectItem
-                        key={repo.fullName}
-                        value={repo.fullName}
-                        className="text-xs font-mono"
-                      >
-                        {repo.fullName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <Select
+                value={selectedRepo?.fullName ?? ""}
+                onValueChange={pickRepo}
+                disabled={scopeLocked || repoOptions.length === 1}
+              >
+                <SelectTrigger className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]">
+                  <SelectValue placeholder="Select a repository" />
+                </SelectTrigger>
+                <SelectContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
+                  {repoOptions.map((repo) => (
+                    <SelectItem
+                      key={repo.fullName}
+                      value={repo.fullName}
+                      className="text-xs font-mono text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)] focus:text-[var(--text-primary)]"
+                    >
+                      {repo.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
                 {repoOptions.length === 1
                   ? "Only imported repository on this project — folder scope below applies here."
