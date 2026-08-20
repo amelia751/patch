@@ -817,9 +817,14 @@ function SystemPageContent() {
             threadId={activeThreadId}
             mockData={codebaseMockData}
             hasProject={!!configureProject || !isAuthenticated}
-            onAddRepository={isAuthenticated && configureProject ? () => {
+            onAddRepository={isAuthenticated ? () => {
               if (!isGitHubLinked) { setShowLinkGitHub(true); return; }
-              setShowAddRepository(true);
+              if (configureProject) {
+                setShowAddRepository(true);
+                return;
+              }
+              setGitHubImportMode("backend");
+              setShowGitHubImport(true);
             } : undefined}
           />
         </TabsContent>

@@ -1308,7 +1308,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   // Loading state
   // No project selected - show empty state
   if (!hasProject) {
-    return withCodebaseIndexingSign(<NoProjectEmptyState />, indexing);
+    return withCodebaseIndexingSign(<NoProjectEmptyState onImport={onAddRepository} />, indexing);
   }
 
   if (isLoading) {
@@ -1318,7 +1318,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   // Error state or empty state - both show the nice empty state
   // (Unauthorized errors in demo mode should show empty state, not error)
   if (error || !codebaseData || fileTree.length === 0) {
-    return withCodebaseIndexingSign(<CodebaseEmptyState />, indexing);
+    return withCodebaseIndexingSign(<CodebaseEmptyState onImport={onAddRepository} />, indexing);
   }
 
   return withCodebaseIndexingSign(

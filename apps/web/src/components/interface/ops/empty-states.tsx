@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { FolderPlus, Code2, Server, Sparkles, FileBraces, PackageOpen } from "lucide-react";
+import { FolderPlus, Code2, Server, Sparkles, FileBraces, PackageOpen, Github } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export function NoProjectEmptyState() {
@@ -97,7 +97,7 @@ export function ConfigureEmptyState() {
   );
 }
 
-export function CodebaseEmptyState() {
+export function CodebaseEmptyState({ onImport }: { onImport?: () => void }) {
   return (
     <div className="h-full flex items-center justify-center">
       <div className="text-center max-w-md px-4">
@@ -110,6 +110,16 @@ export function CodebaseEmptyState() {
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
           Import a GitHub repository to browse the source PatchAPI will scan when an API provider changes.
         </p>
+        {onImport ? (
+          <Button
+            size="sm"
+            onClick={onImport}
+            className="mt-6 h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+          >
+            <Github className="h-3 w-3 mr-1" />
+            Import from GitHub
+          </Button>
+        ) : null}
       </div>
     </div>
   );
