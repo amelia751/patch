@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Cloud, Fingerprint, Key, Vault } from "lucide-react";
+import { Cloud, Key } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 // import { AuthTab } from "./auth-tab";
 import { AWSConnectEmptyState } from "./aws-connect-empty-state";
@@ -10,17 +10,13 @@ import { GCPConnectEmptyState } from "./gcp-connect-empty-state";
 import { GCPConnectionTab, type GcpStoredConnection } from "./gcp-connection-tab";
 import { SecretsTab, type WorkspaceRef } from "./secrets-tab";
 import type { SecretRepoOption } from "@/components/interface/secret-managers";
-import { AgentIdentityTab } from "./agent-identity-tab";
-import { AuthManagerTab } from "./auth-manager-tab";
 import {
-  AuthManagerEmptyState,
   ChooseCloudProviderEmptyState,
   ConnectionEmptyState,
-  IdentityEmptyState,
   SecretsEmptyState,
 } from "./section-empty-states";
 
-type ConfigureSection = "connection" | "secrets" | "identity" | "auth_manager";
+type ConfigureSection = "connection" | "secrets";
 
 function isResolvedCloudProvider(p: string | null | undefined): p is "aws" | "gcp" {
   return p === "aws" || p === "gcp";
@@ -79,7 +75,7 @@ interface ConfigureTabProps {
   /** When set, shown for projects with no cloud_provider (null/unknown) on the Connection section */
   onChooseCloudProvider?: () => void;
   onCloudDisconnected?: () => void;
-  /** Deep-link from e.g. /?configureSection=auth or /ops?configureSection=auth */
+  /** Deep-link from e.g. /?configureSection=secrets */
   initialSection?: "connection" | "secrets" | "auth" | "identity" | "auth_manager";
   /** Thread / URL: open Add Secret or GCP connect dialog once Configure is showing the right section. */
   pendingCredentialModal?: null | "secret" | "gcp";
@@ -112,19 +108,13 @@ export function ConfigureTab({
   pendingCredentialModal = null,
   onPendingCredentialModalConsumed,
 }: ConfigureTabProps) {
-  const [activeSection, setActiveSection] = useState<ConfigureSection>(() => {
-    const s = initialSection ?? "connection";
-    if (s === "identity" || s === "auth_manager" || s === "secrets") return s;
-    return "connection";
-  });
+  const [activeSection, setActiveSection] = useState<ConfigureSection>(() =>
+    initialSection === "secrets" ? "secrets" : "connection",
+  );
 
   useEffect(() => {
     if (!initialSection) return;
-    if (initialSection === "identity" || initialSection === "auth_manager" || initialSection === "secrets") {
-      setActiveSection(initialSection);
-      return;
-    }
-    setActiveSection("connection");
+    setActiveSection(initialSection === "secrets" ? "secrets" : "connection");
   }, [initialSection]);
 
   // Do not default to "aws": undefined/null must mean "no provider chosen" so we
@@ -181,18 +171,6 @@ export function ConfigureTab({
           count={pendingSecretsCount > 0 ? pendingSecretsCount : undefined}
           onClick={() => setActiveSection("secrets")}
         />
-        <SectionRailButton
-          active={activeSection === "identity"}
-          icon={Fingerprint}
-          label="Identity"
-          onClick={() => setActiveSection("identity")}
-        />
-        <SectionRailButton
-          active={activeSection === "auth_manager"}
-          icon={Vault}
-          label="Auth manager"
-          onClick={() => setActiveSection("auth_manager")}
-        />
       </SectionRail>
 
       {/* Main Content */}
@@ -201,8 +179,6 @@ export function ConfigureTab({
           <>
             {activeSection === "connection" && <ConnectionEmptyState />}
             {activeSection === "secrets" && <SecretsEmptyState />}
-            {activeSection === "identity" && <IdentityEmptyState />}
-            {activeSection === "auth_manager" && <AuthManagerEmptyState />}
             {/* {activeSection === "auth" && <AuthTab />} */}
           </>
         ) : (
@@ -264,8 +240,6 @@ export function ConfigureTab({
                 onOpenCredentialModalConsumed={onPendingCredentialModalConsumed}
               />
             )}
-            {activeSection === "identity" && <AgentIdentityTab />}
-            {activeSection === "auth_manager" && <AuthManagerTab />}
             {/* {activeSection === "auth" && <AuthTab />} */}
           </>
         )}

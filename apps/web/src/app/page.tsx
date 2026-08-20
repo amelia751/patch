@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { CodebaseTab } from "@/components/interface/ops/codebase-tab";
 import { ConfigureTab } from "@/components/interface/ops/configure-tab";
-import { ChangesTab, HARDCODED_AFFECTED_COUNT } from "@/components/interface/ops/changes-tab";
+import { ChangesTab } from "@/components/interface/ops/changes-tab";
 import { SubscriptionTab } from "@/components/interface/ops/subscription-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -683,7 +683,7 @@ function SystemPageContent() {
   const missingPoliciesCount = connectionData?.required_policies?.filter((p: any) => !p.validated).length || 0;
   const configBadgeCount = missingPoliciesCount + pendingSecretsCount;
 
-  const changesBadgeCount = HARDCODED_AFFECTED_COUNT;
+  const changesBadgeCount = 0;
 
   if (!isAuthenticated) {
     return null;
