@@ -23,7 +23,10 @@ Service name is the URL. Do not rename or delete it.
 Same shape as PatchAPI (`https://<service>-<project-number>.us-central1.run.app`).
 The `*.a.run.app` alias also answers; prefer the stable link.
 
-Redeploy with the **development** key, not the viewer key:
+Pushes to `main` on [`amelia751/storygen`](https://github.com/amelia751/storygen)
+deploy through GitHub Actions as the **development** key (repo secret
+`GCP_SA_KEY` = `demo/artful-journey-486915-a8-fc72d9d68c0b.json`). Manual
+redeploy uses the same key, not the viewer key:
 
 ```bash
 ./demo/storygen/deploy.sh

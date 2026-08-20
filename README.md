@@ -30,8 +30,9 @@ These names are the URL. Do not rename or delete the services.
 Same services also answer at the classic `*.a.run.app` aliases. Prefer the
 links above. Region is `us-central1`. Push to `main` deploys the PatchAPI
 names (`.github/workflows/deploy-cloud-run.yml`). Storygen lives in project
-`artful-journey-486915-a8`; deploy with
-`demo/artful-journey-486915-a8-fc72d9d68c0b.json` via
+`artful-journey-486915-a8`. Pushes to `main` on
+[`amelia751/storygen`](https://github.com/amelia751/storygen) deploy with
+the development key (`GCP_SA_KEY`). Manual:
 [`demo/storygen/deploy.sh`](./demo/storygen/deploy.sh).
 
 Local remains `http://localhost:3000` (dashboard) and `http://localhost:8080`

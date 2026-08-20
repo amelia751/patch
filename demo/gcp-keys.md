@@ -8,7 +8,7 @@ Project **`artful-journey-486915-a8`** (number `1005432364863`).
 | File | Service account | Role |
 |---|---|---|
 | `artful-journey-486915-a8-c0699c9e2545.json` | `jetrun-viewer@…` | Viewer. `roles/run.viewer` can list Cloud Run services and see env **names** / Secret Manager **refs** on `storygen` (`GEMINI_API_KEY` → `storygen-gemini-api-key`). Cannot list secrets (`secretmanager.secrets.list` denied). Cannot create services or list service-account keys. |
-| `artful-journey-486915-a8-fc72d9d68c0b.json` | `development@…` | Development. Use this to deploy Storygen (`./demo/storygen/deploy.sh`). |
+| `artful-journey-486915-a8-fc72d9d68c0b.json` | `development@…` | Development. GitHub Actions secret `GCP_SA_KEY` on `amelia751/storygen`. Also `./demo/storygen/deploy.sh`. |
 
 Point `GOOGLE_APPLICATION_CREDENTIALS` at the development file unless you
 explicitly need the viewer key.
