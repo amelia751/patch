@@ -6,8 +6,8 @@
   },
   "defaultOrganization": {
     "id": "",
-    "name": "Demo Organization",
-    "slug": "demo-org",
+    "name": "First Organization",
+    "slug": "first-organization",
     "type": "personal",
     "role": "owner"
   },

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
 import { useAuth } from "@/lib/auth-context";
+import { organizationNameFromUser } from "@/lib/organization-name";
 import { UserAvatar } from "@/components/interface/shared/user-avatar";
 import mockInfo from "./mock-aws/mock-info.json";
 import {
@@ -208,7 +209,7 @@ function OrganizationSwitcher() {
   const [showCreateTeam, setShowCreateTeam] = useState(false);
   const [organization, setOrganization] = useState<OrganizationData>(defaultOrganization);
   const [orgCount, setOrgCount] = useState(1);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   // Fetch organization from API when authenticated
   useEffect(() => {
@@ -217,6 +218,15 @@ function OrganizationSwitcher() {
       setOrgCount(1);
       return;
     }
+
+    const derived = organizationNameFromUser(user?.display_name, user?.email);
+    setOrganization({
+      id: user?.id ?? "",
+      name: derived.name,
+      slug: derived.slug,
+      type: "personal",
+      role: "owner",
+    });
 
     const fetchOrganization = async () => {
       try {
@@ -253,7 +263,7 @@ function OrganizationSwitcher() {
     };
 
     fetchOrganization();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.id, user?.display_name, user?.email]);
 
   return (
     <>

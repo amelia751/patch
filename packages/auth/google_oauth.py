@@ -47,6 +47,7 @@ class GoogleProfile:
     email: str
     email_verified: bool
     name: str | None
+    given_name: str | None
     picture: str | None
 
 
@@ -110,6 +111,7 @@ async def exchange_code(config: IdentityPlatformConfig, code: str) -> GoogleProf
         email=email,
         email_verified=bool(body.get("email_verified", False)),
         name=(body.get("name") or "").strip() or None,
+        given_name=(body.get("given_name") or "").strip() or None,
         picture=(body.get("picture") or "").strip() or None,
     )
 

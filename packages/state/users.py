@@ -11,6 +11,7 @@ from uuid import UUID
 
 from packages.auth.github_oauth import GitHubProfile
 from packages.auth.google_oauth import GoogleProfile
+from packages.state.organizations import read_personal_organization
 from packages.state.pool import StateUnavailableError
 
 if TYPE_CHECKING:
@@ -74,7 +75,11 @@ async def upsert_google_user(pool: asyncpg.Pool, profile: GoogleProfile) -> dict
                     display_name,
                     profile.email,
                 )
-            return await read_user(pool, row["id"])
+            user = await read_user(pool, row["id"])
+            await read_personal_organization(
+                pool, row["id"], given_name=profile.given_name
+            )
+            return user
     except Exception as exc:
         raise StateUnavailableError(f"could not persist Google user: {type(exc).__name__}") from exc
 
@@ -162,7 +167,9 @@ async def upsert_github_user(
                         account_login=profile.account_login or profile.login,
                         account_type=profile.account_type or "User",
                     )
-            return await read_user(pool, user_id)
+            user = await read_user(pool, user_id)
+            await read_personal_organization(pool, user_id)
+            return user
     except ValueError:
         raise
     except Exception as exc:
