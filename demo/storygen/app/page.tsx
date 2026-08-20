@@ -4,12 +4,17 @@ import { FormEvent, KeyboardEvent, useState } from "react";
 
 const EXAMPLE_PROMPT = "A lighthouse keeper who receives letters from the future";
 
+type Errors = {
+  story?: string;
+  cover?: string;
+};
+
 export default function HomePage() {
   const [prompt, setPrompt] = useState("");
   const [story, setStory] = useState("");
   const [title, setTitle] = useState("");
   const [cover, setCover] = useState("");
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState<Errors>({});
   const [pending, setPending] = useState(false);
 
   function onPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -24,13 +29,13 @@ export default function HomePage() {
     setStory("");
     setTitle("");
     setCover("");
-    setError("");
+    setErrors({});
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    setError("");
+    setErrors({});
     setStory("");
     setTitle("");
     setCover("");
@@ -46,15 +51,23 @@ export default function HomePage() {
         title?: string;
         cover?: string | null;
         error?: string;
+        errors?: Errors;
       };
+      const nextErrors: Errors = { ...payload.errors };
+      if (payload.error && !nextErrors.story) {
+        nextErrors.story = payload.error;
+      }
+      setErrors(nextErrors);
       if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to generate story.");
+        return;
       }
       setStory(payload.story ?? "");
       setTitle(payload.title ?? "");
       setCover(payload.cover ?? "");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate story.");
+      setErrors({
+        story: err instanceof Error ? err.message : "Failed to generate story.",
+      });
     } finally {
       setPending(false);
     }
@@ -78,6 +91,7 @@ export default function HomePage() {
               <img src={cover} alt="Story cover" />
             </div>
           ) : null}
+          <ErrorList errors={errors} />
           {title ? <h1 className="title">{title}</h1> : null}
           <article className="story">{story}</article>
         </section>
@@ -101,9 +115,31 @@ export default function HomePage() {
           <button className="submit" type="submit" disabled={pending || !prompt.trim()}>
             {pending ? "Generating..." : "Generate story"}
           </button>
-          {error ? <p className="error">{error}</p> : null}
+          <ErrorList errors={errors} />
         </form>
       )}
     </main>
+  );
+}
+
+function ErrorList({ errors }: { errors: Errors }) {
+  if (!errors.story && !errors.cover) {
+    return null;
+  }
+  return (
+    <dl className="errors">
+      {errors.story ? (
+        <div className="error">
+          <dt>Story · gemini-2.0-flash</dt>
+          <dd>{errors.story}</dd>
+        </div>
+      ) : null}
+      {errors.cover ? (
+        <div className="error">
+          <dt>Cover · imagen-4.0-generate-001</dt>
+          <dd>{errors.cover}</dd>
+        </div>
+      ) : null}
+    </dl>
   );
 }
