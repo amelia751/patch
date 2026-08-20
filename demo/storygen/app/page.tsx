@@ -1,12 +1,22 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useState } from "react";
+
+const EXAMPLE_PROMPT = "A lighthouse keeper who receives letters from the future";
 
 export default function HomePage() {
   const [prompt, setPrompt] = useState("");
   const [story, setStory] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+
+  function onPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Tab" || prompt.trim()) {
+      return;
+    }
+    event.preventDefault();
+    setPrompt(EXAMPLE_PROMPT);
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,9 +47,6 @@ export default function HomePage() {
       <header>
         <p className="eyebrow">Storygen</p>
         <h1>Write a prompt. Get a story.</h1>
-        <p className="lede">
-          A one-page writer that sends your idea to Gemini and prints the result.
-        </p>
       </header>
 
       <form onSubmit={onSubmit}>
@@ -50,7 +57,8 @@ export default function HomePage() {
           rows={6}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          placeholder="A lighthouse keeper who receives letters from the future"
+          onKeyDown={onPromptKeyDown}
+          placeholder={EXAMPLE_PROMPT}
           required
         />
         <button type="submit" disabled={pending || !prompt.trim()}>
