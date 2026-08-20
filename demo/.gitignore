@@ -5,3 +5,7 @@ egaki/checkout/
 egaki/artifacts/
 storygen/node_modules/
 storygen/.next/
+
+# Local GCP key. Never commit.
+artful-journey-486915-a8-c0699c9e2545.json
+artful-journey-*.json
