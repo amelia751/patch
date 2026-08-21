@@ -149,7 +149,6 @@ ON CONFLICT (repository, branch) DO UPDATE SET
     status           = EXCLUDED.status,
     progress_percent = EXCLUDED.progress_percent,
     error_message    = NULL
-WHERE repo_index_state.status IN ('idle', 'error')
 """
 
 
@@ -160,7 +159,9 @@ async def mark_import_queued(
 
     The worker still owns the real pass. This write is what the dashboard
     reads in the gap between Pub/Sub publish and the first progress ping.
-    Missing tables are ignored: the import itself already succeeded.
+    A shared shard that is already `ready` is still flipped: otherwise a
+    second project importing the same repo never sees the overlay, and the
+    worker's reference-only ack is invisible. Missing tables are ignored.
     """
     try:
         async with pool.acquire() as connection:

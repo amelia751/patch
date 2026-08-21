@@ -523,6 +523,7 @@ async def test_repo_added_to_an_indexed_target_only_takes_a_reference(
     assert world.checkouts == []
     assert world.inventories == []
     assert fake_store.persisted == []
+    assert fake_store.progress[-1][2:4] == ("ready", 100)
     # The importing project still learns the repository is ready to read.
     assert [envelope.payload["indexed_sha"] for envelope in world.published] == [AFTER_SHA]
 

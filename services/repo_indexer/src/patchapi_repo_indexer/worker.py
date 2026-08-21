@@ -411,6 +411,11 @@ async def handle_repo_added(
     previous = await store.load_state(conn, repository, branch)
     if previous is not None and previous.status == "ready" and previous.indexed_sha:
         notified = await _fan_out(conn, repository, branch, previous.indexed_sha, effects)
+        # Import may have flipped the row to `indexing` for the banner. Put
+        # `ready` back and wake consoles so the overlay does not stick at 0%.
+        await store.set_index_progress(
+            conn, repository, branch, status="ready", progress_percent=PROGRESS_DONE
+        )
         return HandlerResult(
             action=ACTION_REFERENCED,
             repository=repository,

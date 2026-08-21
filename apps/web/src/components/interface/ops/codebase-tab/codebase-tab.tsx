@@ -1312,7 +1312,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   }
 
   if (isLoading) {
-    return withCodebaseIndexingSign(<CodebaseTabSkeleton />, indexing);
+    return withCodebaseIndexingSign(<CodebaseTabSkeleton />, indexing, true);
   }
 
   // Error state or empty state - both show the nice empty state

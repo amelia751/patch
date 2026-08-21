@@ -80,9 +80,11 @@ export function CodebaseIndexingSign({
  */
 export function withCodebaseIndexingSign(
   body: ReactNode,
-  indexing?: ProjectIndexingState | null
+  indexing?: ProjectIndexingState | null,
+  force = false
 ) {
   const queued =
+    force ||
     indexing?.status === "indexing" ||
     (indexing?.status === "idle" && (indexing.repositories?.length ?? 0) > 0);
   if (!queued && !FORCE_SHOW_CODEBASE_INDEXING) {
