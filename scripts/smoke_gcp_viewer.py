@@ -30,7 +30,7 @@ EXIT_PASS: Final[int] = 0
 EXIT_FAIL: Final[int] = 1
 EXIT_SKIP: Final[int] = 3
 
-DEFAULT_VIEWER: Final[Path] = REPO_ROOT / "demo" / "artful-journey-486915-a8-c0699c9e2545.json"
+DEFAULT_VIEWER: Final[Path] = REPO_ROOT / "demo" / "artful-journey-486915-a8-patchapi-viewer.json"
 DEFAULT_PROJECT: Final[str] = "artful-journey-486915-a8"
 DEFAULT_REGION: Final[str] = "us-central1"
 DEFAULT_URL: Final[str] = "https://storygen-1005432364863.us-central1.run.app"

@@ -18,7 +18,7 @@ from packages.state.secret_manager import is_managed_resource, secret_id_for_con
 _SA = {
     "type": "service_account",
     "project_id": "artful-journey-486915-a8",
-    "client_email": "jetrun-viewer@artful-journey-486915-a8.iam.gserviceaccount.com",
+    "client_email": "patchapi-viewer@artful-journey-486915-a8.iam.gserviceaccount.com",
     "private_key": "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n",
 }
 _SA_JSON = json.dumps(_SA)
@@ -27,7 +27,7 @@ _SA_JSON = json.dumps(_SA)
 def test_parse_accepts_a_service_account_object() -> None:
     project, email = parse_service_account_json(_SA_JSON)
     assert project == "artful-journey-486915-a8"
-    assert email.startswith("jetrun-viewer@")
+    assert email.startswith("patchapi-viewer@")
 
 
 def test_parse_rejects_a_non_service_account() -> None:
