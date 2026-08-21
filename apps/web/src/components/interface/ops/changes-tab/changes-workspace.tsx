@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Radio, ScanSearch } from "lucide-react";
+import { Bell, Radio } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
-import { Spinner } from "@/components/ui/spinner";
+import { ChangesScanScreen } from "./changes-scan-screen";
 import {
   MOCK_CHANGES_SCAN_KEY,
   MOCK_CHANGES_SCAN_MS,
@@ -178,29 +178,7 @@ export function ChangesTab({
 
       <div className="flex-1 min-w-0 overflow-hidden">
         {scanning ? (
-          <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
-            <div className="w-full max-w-sm px-6 text-center">
-              <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-                <ScanSearch className="h-5 w-5 text-primary" />
-              </div>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">
-                Scanning your codebase
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
-                Looking for relevant Google Cloud usage
-              </p>
-              <div className="mt-5 h-1 overflow-hidden rounded-full bg-[var(--bg-secondary)]">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${scanPct}%` }}
-                />
-              </div>
-              <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-                <Spinner className="h-3 w-3" />
-                {Math.round(scanPct)}%
-              </div>
-            </div>
-          </div>
+          <ChangesScanScreen progress={scanPct} />
         ) : section === "releases" ? (
           <ChangesInbox
             hasProject={hasProject}
