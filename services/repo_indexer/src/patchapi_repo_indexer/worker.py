@@ -421,6 +421,9 @@ async def handle_repo_added(
             notified_projects=notified,
         )
 
+    await store.set_index_progress(
+        conn, repository, branch, status="indexing", progress_percent=PROGRESS_START
+    )
     try:
         head = effects.resolve_head(repository, branch)
     except Exception as exc:
@@ -504,6 +507,15 @@ async def handle_push(
 
     state = await store.load_state(conn, repository, branch)
     references = state.reference_count if state else len(scopes)
+    if state is not None and state.status == "ready" and state.indexed_sha == after:
+        return HandlerResult(
+            action=ACTION_DROPPED,
+            repository=repository,
+            branch=branch,
+            reason="already indexed at this sha",
+            indexed_sha=after,
+            reference_count=references,
+        )
 
     changed: list[str] | None = None
     if _SHA_RE.match(before) and before != NULL_SHA:

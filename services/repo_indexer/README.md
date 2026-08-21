@@ -41,7 +41,14 @@ uv run --package patchapi-repo-indexer python -m patchapi_repo_indexer \
 uv run --package patchapi-repo-indexer python -m patchapi_repo_indexer \
   --root . --repository amelia751/egaki --sha <sha> \
   --changed-path src/image.ts
+
+# Cloud Run worker (Pub/Sub push). Two repositories queue independently.
+uv run --package patchapi-repo-indexer patchapi-repo-indexer-serve
 ```
+
+The live worker is `patchapi-indexer` on Cloud Run. GitHub `push` and console
+import publish to Pub/Sub; this service is the subscriber. Same
+`(repository, branch)` is serialized; different repositories run in parallel.
 
 An inventory with no usages is a successful run — that repository does not use
 the watched identifiers. Only a scan that could not be performed exits non-zero.

@@ -13,11 +13,15 @@ dependencies = [
     "asyncpg>=0.30,<0.31",
     "httpx>=0.27,<0.29",
     "google-cloud-pubsub>=2.27,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<0.40",
+    "cryptography>=43,<46",
 ]
 
 [project.scripts]
 patchapi-repo-indexer = "patchapi_repo_indexer.__main__:main"
 patchapi-repo-indexer-worker = "patchapi_repo_indexer.pubsub:main"
+patchapi-repo-indexer-serve = "patchapi_repo_indexer.serve:main"
 
 [tool.uv.sources]
 patchapi-repo-scan = { workspace = true }

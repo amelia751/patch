@@ -378,6 +378,20 @@ async def test_push_deleting_a_branch_is_dropped(
     assert not world.touched
 
 
+async def test_push_to_an_already_indexed_sha_is_dropped(
+    conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
+) -> None:
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope()]
+    fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA)
+
+    result = await worker.handle_push(conn, push_event(), effects=effects)
+
+    assert result.action == worker.ACTION_DROPPED
+    assert result.reason == "already indexed at this sha"
+    assert not world.touched
+    assert fake_store.persisted == []
+
+
 async def test_push_delta_indexes_retires_and_fans_out(
     conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
 ) -> None:
@@ -863,8 +877,8 @@ async def test_state_machine_against_postgres(world: FakeWorld, effects: worker.
 
         # Replay: at-least-once delivery must not double-write or re-retire.
         replayed = await worker.handle_push(connection, push, effects=effects)
-        assert replayed.action == worker.ACTION_INDEXED
-        assert replayed.paths_retired == 0
+        assert replayed.action == worker.ACTION_DROPPED
+        assert replayed.reason == "already indexed at this sha"
         assert await live_paths(connection, repository) == ["src/app.ts"]
 
         # A branch no project imported is dropped, and leaves no state behind.

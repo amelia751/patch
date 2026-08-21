@@ -26,12 +26,15 @@ env:
   AR_REPO: patchapi
   WEB_SERVICE: patchapi-web
   API_SERVICE: patchapi-api
+  INDEXER_SERVICE: patchapi-indexer
   WEB_SA: patchapi-web@patch-505223.iam.gserviceaccount.com
   API_SA: patchapi-api@patch-505223.iam.gserviceaccount.com
+  INDEXER_SA: patchapi-indexer@patch-505223.iam.gserviceaccount.com
   # Stable Cloud Run URLs (name + project number + region). Confirmed by
   # scripts/bootstrap_cloud_run.sh; changing any of the three changes the URL.
   WEB_URL: https://patchapi-web-913371146929.us-central1.run.app
   API_URL: https://patchapi-api-913371146929.us-central1.run.app
+  INDEXER_URL: https://patchapi-indexer-913371146929.us-central1.run.app
   WEB_URL_CLASSIC: https://patchapi-web-uhkx74fgmq-uc.a.run.app
 
 jobs:
@@ -135,6 +138,82 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|PATCHAPI_ENV=cloud|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=${API_URL}/api/auth/github/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action|GITHUB_APP_SLUG=patchapi|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem|PATCHAPI_GITHUB_APP=/var/github-json/app.json" \
+            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=${API_URL}/api/auth/github/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action|GITHUB_APP_SLUG=patchapi|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem|PATCHAPI_GITHUB_APP=/var/github-json/app.json" \
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
             --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest,PATCHAPI_GITHUB_WEBHOOK_SECRET=patchapi-github-webhook-secret:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_ID=patchapi-github-oauth-client-id:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET=patchapi-github-oauth-client-secret:latest,GITHUB_APP_ID=patchapi-github-app-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest,/var/github-json/app.json=patchapi-github-app:latest"
+
+  indexer:
+    name: patchapi-indexer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/913371146929/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: patchapi-github-deploy@patch-505223.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Skip until DATABASE_URL is a real DSN
+        id: db
+        run: |
+          dsn="$(gcloud secrets versions access latest --secret=patchapi-database-url 2>/dev/null || true)"
+          if printf '%s' "${dsn}" | grep -q '^postgres'; then
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Auth Docker to Artifact Registry
+        if: steps.db.outputs.ready == 'true'
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push indexer
+        if: steps.db.outputs.ready == 'true'
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/indexer:${{ github.sha }}
+        run: |
+          docker build -f services/repo_indexer/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy indexer
+        if: steps.db.outputs.ready == 'true'
+        run: |
+          if ! gcloud iam service-accounts describe "${INDEXER_SA}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+            gcloud iam service-accounts create patchapi-indexer \
+              --project="${PROJECT_ID}" \
+              --display-name="PatchAPI repo indexer"
+          fi
+          gcloud iam service-accounts add-iam-policy-binding "${INDEXER_SA}" \
+            --project="${PROJECT_ID}" \
+            --member="serviceAccount:patchapi-github-deploy@patch-505223.iam.gserviceaccount.com" \
+            --role="roles/iam.serviceAccountUser" \
+            --quiet >/dev/null
+          for secret in patchapi-database-url patchapi-github-app-id patchapi-github-app-private-key; do
+            gcloud secrets add-iam-policy-binding "${secret}" \
+              --project="${PROJECT_ID}" \
+              --member="serviceAccount:${INDEXER_SA}" \
+              --role="roles/secretmanager.secretAccessor" \
+              --quiet >/dev/null
+          done
+          gcloud run deploy "${INDEXER_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --service-account="${INDEXER_SA}" \
+            --no-allow-unauthenticated \
+            --ingress=all \
+            --port=8080 \
+            --memory=2Gi \
+            --cpu=2 \
+            --timeout=900 \
+            --concurrency=4 \
+            --min-instances=0 \
+            --max-instances=4 \
+            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_INDEX_BACKEND=zoekt|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem" \
+            --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
+            --set-secrets="DATABASE_URL=patchapi-database-url:latest,GITHUB_APP_ID=patchapi-github-app-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest"
+          chmod +x scripts/bootstrap_repo_indexer.sh
+          ./scripts/bootstrap_repo_indexer.sh
