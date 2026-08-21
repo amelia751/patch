@@ -2154,22 +2154,6 @@ function acceptHintKey(
   fill(hint);
 }
 
-function HintTab({ onFill }: { onFill: () => void }) {
-  return (
-    <button
-      type="button"
-      tabIndex={-1}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onFill();
-      }}
-      className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-    >
-      Tab
-    </button>
-  );
-}
-
 function HintInput({
   value,
   hint,
@@ -2181,19 +2165,15 @@ function HintInput({
   hint: string;
   onValueChange: (next: string) => void;
 }) {
-  const open = canAcceptHint(value, hint);
   return (
-    <div className="relative min-w-0">
-      <Input
-        {...props}
-        value={value}
-        placeholder={hint}
-        onChange={(event) => onValueChange(event.target.value)}
-        onKeyDownCapture={(event) => acceptHintKey(event, value, hint, onValueChange)}
-        className={cn(className, open && "pr-11")}
-      />
-      {open && <HintTab onFill={() => onValueChange(hint)} />}
-    </div>
+    <Input
+      {...props}
+      value={value}
+      placeholder={hint}
+      onChange={(event) => onValueChange(event.target.value)}
+      onKeyDownCapture={(event) => acceptHintKey(event, value, hint, onValueChange)}
+      className={className}
+    />
   );
 }
 
@@ -2208,18 +2188,14 @@ function HintTextarea({
   onValueChange: (next: string) => void;
   className?: string;
 }) {
-  const open = canAcceptHint(value, hint);
   return (
-    <div className="relative min-w-0">
-      <Textarea
-        value={value}
-        placeholder={hint}
-        onChange={(event) => onValueChange(event.target.value)}
-        onKeyDownCapture={(event) => acceptHintKey(event, value, hint, onValueChange)}
-        className={cn(className, open && "pr-11")}
-      />
-      {open && <HintTab onFill={() => onValueChange(hint)} />}
-    </div>
+    <Textarea
+      value={value}
+      placeholder={hint}
+      onChange={(event) => onValueChange(event.target.value)}
+      onKeyDownCapture={(event) => acceptHintKey(event, value, hint, onValueChange)}
+      className={className}
+    />
   );
 }
 
