@@ -24,6 +24,7 @@ These names are the URL. Do not rename or delete the services.
 |---|---|
 | Frontend | https://patchapi-web-913371146929.us-central1.run.app |
 | Backend | https://patchapi-api-913371146929.us-central1.run.app |
+| Repo indexer | https://patchapi-indexer-913371146929.us-central1.run.app |
 | GitHub webhook | https://patchapi-api-913371146929.us-central1.run.app/v1/github/webhooks |
 | Storygen (artful-journey) | https://storygen-1005432364863.us-central1.run.app |
 
@@ -37,6 +38,52 @@ the development key (`GCP_SA_KEY`). Manual:
 
 Local remains `http://localhost:3000` (dashboard) and `http://localhost:8080`
 (control API).
+
+### Repository indexer (Cloud Run + Pub/Sub)
+
+`patchapi-indexer` is an always-on **push worker**, not a Cloud Run Job and not
+a laptop process. Closing the dashboard does not stop it. Code:
+[`services/repo_indexer/`](./services/repo_indexer/). Bootstrap:
+[`scripts/bootstrap_repo_indexer.sh`](./scripts/bootstrap_repo_indexer.sh).
+
+| | |
+|---|---|
+| Service | `patchapi-indexer` (`us-central1`) |
+| Push URL | `https://patchapi-indexer-uhkx74fgmq-uc.a.run.app/v1/events` |
+| SA | `patchapi-indexer@patch-505223.iam.gserviceaccount.com` |
+| Invoker | `patchapi-pubsub-push@patch-505223.iam.gserviceaccount.com` |
+| Image | `us-central1-docker.pkg.dev/patch-505223/patchapi/indexer` |
+| SQL | Same instance `patchapi-console` (`provider_usages`, `repo_index_state`) |
+| Git clone | Short-lived GitHub App installation token (PEM mounted; App key never in git) |
+
+**Queue.** One Pub/Sub message is one `(repository, branch)` job. Importing a
+second repo while the first is indexing, or pushes to both, waits in the
+subscription. Cloud Run concurrency is 4; different repos run in parallel.
+The same repo+branch takes a Postgres advisory lock so two deltas cannot
+interleave.
+
+| Event | Publisher | Worker |
+|---|---|---|
+| `project-repo-added` | Console after an import row commits | Full index of that branch |
+| `repo-push` | `POST /v1/github/webhooks` (`push`) | Delta index; drop if no project imports the ref |
+| `project-repo-removed` | Console after the row is gone | Decrement shard `reference_count` |
+
+**What the UI shows.** The orange **Indexing codebase** bar is on a **project
+Code tab**, not `/provider`. The file tree still loads from GitHub immediately;
+the bar is `repo_index_state` over SSE (`GET /api/projects/{id}/events`) with
+a poll fallback. Import marks the target `indexing` at 0% so the bar appears
+before the first clone.
+
+**Durable vs local.** Inventory rows live in Cloud SQL. Zoekt shards and git
+mirrors live on the container disk for that revision; a cold start rebuilds
+them. Postgres remains the source of truth.
+
+**Local worker** (needs `DATABASE_URL` and the same topics, or a publish you
+drive by hand):
+
+```bash
+uv run --package patchapi-repo-indexer patchapi-repo-indexer-serve
+```
 
 ## Google Cloud
 
@@ -53,17 +100,17 @@ target: **Imagen 4 → Gemini 3.1 Flash Image**.
 
 | Service | What |
 |---|---|
-| Cloud Run | `patchapi-web` (dashboard) and `patchapi-api` (control plane). Push to `main` deploys via `.github/workflows/deploy-cloud-run.yml`. |
-| Artifact Registry | `us-central1-docker.pkg.dev/patch-505223/patchapi` — web and api images. |
+| Cloud Run | `patchapi-web` (dashboard), `patchapi-api` (control plane), `patchapi-indexer` (Pub/Sub push worker). Push to `main` deploys via `.github/workflows/deploy-cloud-run.yml`. |
+| Artifact Registry | `us-central1-docker.pkg.dev/patch-505223/patchapi` — web, api, and indexer images. |
 | Cloud SQL (Postgres 16) | Instance `patchapi-console`. Authoritative workflow state (constraint 7). Local talks to it through the Cloud SQL Auth Proxy (`127.0.0.1:5433`). |
 | Secret Manager | Platform: `patchapi-database-url`, `patchapi-identity-api-key`, `patchapi-session-secret`, Google OAuth client id/secret, GitHub webhook HMAC, GitHub App client id/secret/App ID/PEM. Customer payloads: `patchapi-ps-*` (project secrets) and `patchapi-gcp-*` (Connect GCP JSON). Values never land in the repo. |
 | Identity Platform | Email/password and Google sign-in (`identitytoolkit.googleapis.com`). Firebase auth domain `patch-505223.firebaseapp.com`. |
 | Google OAuth | Web client in APIs & Services → Credentials. Continue with Google; origins/redirects below. |
-| IAM + Workload Identity Federation | Pool `github-actions` / provider `github`. GitHub Actions impersonates `patchapi-github-deploy@…` — no JSON key in CI. Workload SAs: `patchapi-web@…`, `patchapi-api@…`. |
+| IAM + Workload Identity Federation | Pool `github-actions` / provider `github`. GitHub Actions impersonates `patchapi-github-deploy@…` — no JSON key in CI. Workload SAs: `patchapi-web@…`, `patchapi-api@…`, `patchapi-indexer@…`. Pub/Sub push uses `patchapi-pubsub-push@…`. |
 | Vertex AI / Gemini Enterprise Agent Platform | `aiplatform.googleapis.com`. `gemini-3.5-flash` (agent reasoning) and `gemini-3.1-flash-image` (demo image path). |
 | Memory Bank | Agent Engine resource created; name in `.secrets/memory_bank_name.txt`. Institutional context, not run state. |
 | Cloud Logging | Cloud Run service accounts write logs. |
-| Pub/Sub | GitHub webhook publishes `repo-push` (and the console publishes repository membership events) onto `patchapi-dev-*` topics. |
+| Pub/Sub | Topics `patchapi-dev-{repo-push,project-repo-added,project-repo-removed,index-updated}`. Push subscriptions `*-sub` deliver to the indexer. |
 
 ### Enabled, not on the request path yet
 
