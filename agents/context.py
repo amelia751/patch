@@ -72,6 +72,8 @@ class RunContext:
     workspace_root: Path | None = None
     evidence_root: Path | None = None
     sandbox: Any | None = None
+    project_id: str | None = None
+    index_usages: list[dict[str, Any]] = field(default_factory=list)
     outputs: dict[str, RecordedOutput] = field(default_factory=dict)
     human_required: list[dict[str, str]] = field(default_factory=list)
 

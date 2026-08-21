@@ -80,6 +80,31 @@ def test_normalization_is_the_authoritative_parse(feed_tools):
     assert result["effective_at"] == "2026-08-17"
 
 
+def test_gemini20_captured_excerpt_resolves_from_the_repo_root(feed_tools):
+    result = feed_tools["normalize_provider_notice"]("gemini20-flash-shutdown-2026-06-01")
+    assert result["status"] == "ok"
+    assert result["has_verifiable_evidence"] is True
+    assert "gemini-2.0-flash" in result["affected_identifiers"]
+
+
+def test_gemini20_manifest_records_the_captured_excerpt(run_context, feed_tools):
+    result = feed_tools["record_change_manifest"](
+        change_id="gemini20-flash-shutdown-2026-06-01",
+        affected_identifiers=[
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-001",
+            "gemini-2.0-flash-lite",
+            "gemini-2.0-flash-lite-001",
+        ],
+        recommended_replacement="gemini-3.5-flash",
+        effective_at="2026-06-01",
+        semantic_migration_required=False,
+        rationale="The deprecations table names the four identifiers and the June 1 shutdown.",
+    )
+    assert result["status"] == "ok"
+    assert result["has_verifiable_evidence"] is True
+
+
 def test_the_uncaptured_demo_snapshot_is_reported_not_hidden(feed_tools):
     result = feed_tools["normalize_provider_notice"](DEMO_CHANGE_ID)
     assert result["has_verifiable_evidence"] is False
@@ -157,6 +182,28 @@ def test_provider_text_that_issues_instructions_is_refused(tmp_path, repo_root):
     assert is_refusal(result)
     assert result["reason_code"] == "injection_detected"
     assert result["findings"]
+
+
+def test_lookup_index_usages_is_a_hint_not_a_scan(repo_root):
+    context = RunContext(
+        run_id="run-index-hint",
+        repo_root=repo_root,
+        feed_dir=repo_root / "demo" / "fixtures",
+        project_id="7b8d0954-58ed-4df3-9290-76fb34a32b13",
+        index_usages=[
+            {
+                "identifier": RETIRED,
+                "repository": "amelia751/mcp-image-gen",
+                "file_path": "src/image_gen/server.py",
+                "usage_kind": "runtime_source",
+            }
+        ],
+    )
+    tools = {f.__name__: f for f in build_repo_inventory_tools(context)}
+    result = tools["lookup_index_usages"]([RETIRED])
+    assert result["status"] == "ok"
+    assert result["count"] == 1
+    assert result["usages"][0]["repository"] == "amelia751/mcp-image-gen"
 
 
 def test_impact_cannot_report_affected_without_a_scan_hit(tmp_path, repo_root):

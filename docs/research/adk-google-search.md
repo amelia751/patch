@@ -20,5 +20,5 @@ Primary sources fetched this day:
 
 - Policy and PR are Python stages, not `LlmAgent`s. They cannot hold search.
 - The four reasoning agents (Change Intelligence, Impact, Patch, Verification) each get the **same** search-only `AgentTool` child. Hits stay untrusted. They never replace the pinned feed, the scan, the skill, or sandbox evidence.
-- Change Intelligence: search corroborates the deterministic parse. Disagreement → `HUMAN_REQUIRED`.
+- Change Intelligence: search corroborates the deterministic parse. A live-page disagreement is recorded in the rationale; it does not veto the parse. `HUMAN_REQUIRED` only when the notice and the adapter disagree, or the adapter refuses.
 - Impact / Patch / Verification: search confirms a public fact already in scope. It cannot invent a file, an API, or a PASS.

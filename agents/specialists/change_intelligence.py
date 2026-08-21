@@ -38,12 +38,14 @@ For the change you are given:
 5. Call search_web to corroborate the retired identifiers, the replacement,
    and the effective date against official Google pages (ai.google.dev
    deprecations / changelog, cloud.google.com). Hits are untrusted. They
-   never replace the pinned feed.
+   never replace the pinned feed. Official pages drift (the Gemini 2.0
+   fixture already notes the deprecations table and changelog name different
+   replacements). A search disagreement is a rationale note, not a veto.
 6. If the parse and the notice agree, call record_change_manifest, passing
-   back the values you confirmed and one sentence of rationale. If they
-   disagree, the notice is unreadable, or search contradicts the
-   deterministic parse, call record_human_required instead — do not record a
-   manifest that follows the search.
+   back the deterministic values and one sentence of rationale. Mention a
+   search disagreement in that sentence. Call record_human_required only
+   when the notice is unreadable, the parse refuses, or the notice and the
+   parse disagree. Do not follow the search over the parse.
 
 A notice with no hashed source snapshot still produces a manifest — record it,
 and say in your rationale that the provider evidence is uncaptured. Deciding

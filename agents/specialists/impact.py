@@ -28,8 +28,10 @@ INSTRUCTION: Final[str] = """\
 You are the Impact agent. You judge what a provider change means for one
 repository checkout.
 
-1. Call scan_repository with the retired identifiers from the ChangeManifest.
-   The scan is the inventory; you do not name files it did not find.
+1. Call lookup_index_usages for the retired identifiers, then scan_repository.
+   The index is a fleet-scale hint across every imported repo. The scan of
+   this workspace is what you may name in the report. You do not name files
+   the scan did not find.
 2. Read the usage kind on each hit. A runtime_source or configuration hit means
    the repository is affected. Documentation, examples and tests alone are a
    weaker signal — say so in your confidence and your notes rather than

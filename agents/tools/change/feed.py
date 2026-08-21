@@ -97,6 +97,12 @@ def _manifest_summary(manifest: ChangeManifest) -> dict[str, Any]:
 def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
     """Build the Change Intelligence tool set bound to `context`."""
 
+    def _manifest(path: Path) -> ChangeManifest:
+        # Fixture snapshot paths are repository-relative (`demo/fixtures/...`).
+        # Resolving them against the feed directory doubled the prefix and
+        # made a captured Gemini 2.0 excerpt look missing.
+        return manifest_from_feed_file(path, base_dir=context.repo_root)
+
     def list_provider_notices() -> dict[str, Any]:
         """List the provider change notices available to this run.
 
@@ -174,7 +180,7 @@ def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
                 available=sorted(notices),
             )
         try:
-            manifest = manifest_from_feed_file(path)
+            manifest = _manifest(path)
         except GoogleProviderError as exc:
             return refusal(ReasonCode.EVIDENCE_UNVERIFIABLE, str(exc))
         except ValueError as exc:
@@ -219,7 +225,7 @@ def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
                 available=sorted(notices),
             )
         try:
-            manifest = manifest_from_feed_file(path)
+            manifest = _manifest(path)
         except (GoogleProviderError, ValueError) as exc:
             return refusal(ReasonCode.EVIDENCE_UNVERIFIABLE, str(exc))
 

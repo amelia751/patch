@@ -232,7 +232,31 @@ def build_repo_inventory_tools(context: RunContext) -> list[Callable[..., Any]]:
             finding_count=len(report.findings),
         )
 
-    return [scan_repository, classify_repository_path, record_impact_report]
+    def lookup_index_usages(identifiers: list[str] | None = None) -> dict[str, Any]:
+        """Read the project's indexed inventory for these identifiers.
+
+        This is the fleet-scale hint from `project_provider_usages`, not a
+        replacement for `scan_repository`. The sandbox scan is still what
+        `record_impact_report` may name. Empty means this run was not bound
+        to a project inventory, or the index has no rows for those ids.
+        """
+        wanted = {item.strip() for item in (identifiers or []) if item and item.strip()}
+        rows = list(context.index_usages)
+        if wanted:
+            rows = [row for row in rows if str(row.get("identifier") or "") in wanted]
+        return ok(
+            project_id=context.project_id,
+            count=len(rows),
+            usages=rows[:MAX_HITS_RETURNED],
+            source="project_provider_usages",
+        )
+
+    return [
+        scan_repository,
+        lookup_index_usages,
+        classify_repository_path,
+        record_impact_report,
+    ]
 
 
 __all__ = ["AGENT", "CONTRACT", "MAX_HITS_RETURNED", "build_repo_inventory_tools"]

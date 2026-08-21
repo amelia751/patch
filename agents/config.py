@@ -22,7 +22,7 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.5.0"
+FLEET_VERSION: Final[str] = "1.5.1"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
@@ -67,6 +67,7 @@ class ToolName(StrEnum):
 
     # Impact — deterministic repository inventory, no provider fetch, no writes.
     SCAN_REPOSITORY = "scan_repository"
+    LOOKUP_INDEX_USAGES = "lookup_index_usages"
     CLASSIFY_REPOSITORY_PATH = "classify_repository_path"
     RECORD_IMPACT_REPORT = "record_impact_report"
 
@@ -119,6 +120,7 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
     AgentId.IMPACT: frozenset(
         {
             ToolName.SCAN_REPOSITORY,
+            ToolName.LOOKUP_INDEX_USAGES,
             ToolName.CLASSIFY_REPOSITORY_PATH,
             ToolName.RECORD_IMPACT_REPORT,
             ToolName.SEARCH_WEB,
@@ -161,6 +163,7 @@ ADK_ATTACHED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.SEARCH_WEB}
 PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
     {
         **dict.fromkeys(AgentId, "1.1.0"),
+        AgentId.CHANGE_INTELLIGENCE: "1.2.0",
         AgentId.PATCH: "1.3.0",
     }
 )

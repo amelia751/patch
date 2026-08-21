@@ -174,7 +174,7 @@ No `read_file`, no GitHub, no MCP filesystem.
 | Tool | Kind | Notes |
 |---|---|---|
 | `scan_repository` | ours | **session-first** (GKE or local). Host `Path` only when `LocalSession.working_dir` is a real directory. Identifiers come from the manifest, not the Imagen-only watchlist. |
-| `lookup_index_usages` *(add)* | ours | `repo_indexer.store.usages_for_project` — fleet-scale hint; scan still authoritative for the sandbox copy |
+| `lookup_index_usages` | ours | `RunContext.index_usages` from `project_provider_usages`. Fleet-scale hint; the sandbox scan is still what the report may name. |
 | `classify_repository_path` | ours | path-derived kind |
 | `record_impact_report` | ours | findings = last scan, never the model’s list |
 
