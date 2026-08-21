@@ -29,7 +29,7 @@ export const SUBSCRIBE_SCAN_STEPS = [
   "Opening the repository…",
   "Scanning for Google Cloud APIs and models…",
   "Matching services to the catalog…",
-  "Checking deprecations and replacements…",
+  "Checking API and service releases…",
 ] as const;
 
 export const MOCK_SUBSCRIBED_KEY = "patch.subscription.mock.google";

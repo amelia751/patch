@@ -178,8 +178,8 @@ export function SubscriptionTab({
               </h2>
               <p className="mt-1 max-w-xl text-xs text-[var(--text-secondary)] leading-relaxed">
                 {section === "subscribed"
-                  ? "Providers this project watches for deprecations and replacements."
-                  : "Providers you can watch for deprecations and replacements."}
+                  ? "Providers this project watches for API and service releases."
+                  : "Providers you can watch for API and service releases."}
               </p>
             </div>
 
@@ -280,10 +280,9 @@ export function SubscriptionTab({
                   Watch Google Cloud in this project?
                 </DialogTitle>
                 <DialogDescription className="text-[var(--text-secondary)] leading-relaxed">
-                  We will scan this repository for Google Cloud APIs and models, then match
-                  them against the catalog. Matches — including deprecations and replacements —
-                  show up on Changes. Nothing is written to the repo until you review a pull
-                  request.
+                  We will scan this repository for Google Cloud APIs and services, then match
+                  them against published API and service releases. Matches show up on Changes.
+                  Nothing is written to the repo until you review a pull request.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="gap-2 sm:gap-0">
@@ -316,7 +315,7 @@ export function SubscriptionTab({
               Unsubscribe from Google Cloud?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-[var(--text-secondary)] leading-relaxed">
-              This project will stop watching Google Cloud for deprecations and replacements.
+              This project will stop watching Google Cloud for API and service releases.
               You can subscribe again anytime.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -17,7 +17,7 @@ export function NoProjectEmptyState() {
           No subscriptions
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Select a project to subscribe to Google Cloud and watch it for deprecations and replacements.
+          Select a project to subscribe to Google Cloud and watch it for API and service releases.
         </p>
         <Button
           size="sm"
@@ -43,7 +43,7 @@ export function SubscribedEmptyState({ onBrowse }: { onBrowse: () => void }) {
           No subscriptions
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Subscribe to Google Cloud from the marketplace to watch it for deprecations and replacements.
+          Subscribe to Google Cloud from the marketplace to watch it for API and service releases.
         </p>
         <Button
           size="sm"
