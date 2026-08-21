@@ -32,7 +32,7 @@ sa_email() {
 INDEXER_SA="$(sa_email "$INDEXER_SA_ID")"
 PUSH_SA="$(sa_email "$PUSH_SA_ID")"
 API_SA="$(sa_email "$API_SA_ID")"
-INDEXER_URL="https://${INDEXER_SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+INDEXER_URL="${PATCHAPI_INDEXER_URL:-https://${INDEXER_SERVICE}-uhkx74fgmq-uc.a.run.app}"
 
 ensure_api() {
   gcloud services enable "$1" --project="$PROJECT_ID"

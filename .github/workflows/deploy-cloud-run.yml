@@ -34,7 +34,7 @@ env:
   # scripts/bootstrap_cloud_run.sh; changing any of the three changes the URL.
   WEB_URL: https://patchapi-web-913371146929.us-central1.run.app
   API_URL: https://patchapi-api-913371146929.us-central1.run.app
-  INDEXER_URL: https://patchapi-indexer-913371146929.us-central1.run.app
+  INDEXER_URL: https://patchapi-indexer-uhkx74fgmq-uc.a.run.app
   WEB_URL_CLASSIC: https://patchapi-web-uhkx74fgmq-uc.a.run.app
 
 jobs:
@@ -181,23 +181,6 @@ jobs:
       - name: Deploy indexer
         if: steps.db.outputs.ready == 'true'
         run: |
-          if ! gcloud iam service-accounts describe "${INDEXER_SA}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-            gcloud iam service-accounts create patchapi-indexer \
-              --project="${PROJECT_ID}" \
-              --display-name="PatchAPI repo indexer"
-          fi
-          gcloud iam service-accounts add-iam-policy-binding "${INDEXER_SA}" \
-            --project="${PROJECT_ID}" \
-            --member="serviceAccount:patchapi-github-deploy@patch-505223.iam.gserviceaccount.com" \
-            --role="roles/iam.serviceAccountUser" \
-            --quiet >/dev/null
-          for secret in patchapi-database-url patchapi-github-app-id patchapi-github-app-private-key; do
-            gcloud secrets add-iam-policy-binding "${secret}" \
-              --project="${PROJECT_ID}" \
-              --member="serviceAccount:${INDEXER_SA}" \
-              --role="roles/secretmanager.secretAccessor" \
-              --quiet >/dev/null
-          done
           gcloud run deploy "${INDEXER_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
@@ -215,5 +198,17 @@ jobs:
             --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_INDEX_BACKEND=zoekt|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem" \
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
             --set-secrets="DATABASE_URL=patchapi-database-url:latest,GITHUB_APP_ID=patchapi-github-app-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest"
-          chmod +x scripts/bootstrap_repo_indexer.sh
-          ./scripts/bootstrap_repo_indexer.sh
+          gcloud run services add-iam-policy-binding "${INDEXER_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --member="serviceAccount:patchapi-pubsub-push@patch-505223.iam.gserviceaccount.com" \
+            --role="roles/run.invoker" \
+            --quiet
+          for event in repo-push project-repo-added project-repo-removed; do
+            gcloud pubsub subscriptions update "patchapi-dev-${event}-sub" \
+              --project="${PROJECT_ID}" \
+              --push-endpoint="${INDEXER_URL}/v1/events" \
+              --push-auth-service-account="patchapi-pubsub-push@patch-505223.iam.gserviceaccount.com" \
+              --ack-deadline=600 \
+              --quiet
+          done
