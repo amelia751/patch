@@ -22,32 +22,45 @@ def render(evidence_payload, *, run_id="run-000000000001", title="Migrate Imagen
 
 def test_body_contains_every_required_section(evidence):
     _key, body = render(evidence)
-    for heading in (
-        "## PatchAPI migration",
-        "### Why",
-        "### Affected usage",
-        "### Migration",
-        "### Verification",
-        "### Risk",
-        "### Evidence",
-        "### Automation boundary",
-    ):
+    for heading in ("## Changes", "## Files", "## Checks"):
         assert heading in body
+    assert "<details>" in body
+    assert "Evidence" in body
 
 
 def test_body_states_the_automation_boundary(evidence):
     _key, body = render(evidence)
-    assert "did not merge this pull request and cannot" in body
+    assert "cannot merge" in body
     assert "CODEOWNERS" in body
     assert "branch protection" in body
+    assert "patchbot" in body
 
 
 def test_body_links_the_run_the_commit_and_the_trace(evidence):
     _key, body = render(evidence)
-    assert f"base commit `{BASE_SHA}`" in body
-    assert "PatchAPI run `run-000000000001`" in body
-    assert "PatchAPI trace `trace-abc123`" in body
+    assert f"Base `{BASE_SHA}`" in body
+    assert "Run `run-000000000001`" in body
+    assert "Trace `trace-abc123`" in body
     assert "gs://patchapi-evidence/run-1/build.txt" in body
+
+
+def test_body_drops_local_file_uris_and_collapses_duplicate_files(evidence):
+    evidence["why"] = "Deterministic slice: the risk tier follows the manifest."
+    evidence["affected_usage"] = [
+        "generate.py — runtime_source",
+        "generate.py — runtime_source",
+        "README.md — documentation_example",
+    ]
+    evidence["evidence_links"] = [
+        "file:///var/folders/tmp/build.log",
+        "gs://patchapi-evidence/run-1/build.txt",
+    ]
+    _key, body = render(evidence)
+    assert "file:///var/folders" not in body
+    assert body.count("`generate.py`") == 1
+    assert "| `README.md` | Docs |" in body
+    assert "Deterministic slice" not in body
+    assert "Call gemini-3.1-flash-image through the same client" in body
 
 
 def test_idempotency_key_round_trips_through_the_body(evidence):

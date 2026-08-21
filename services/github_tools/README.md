@@ -54,9 +54,12 @@ merge is refused as forbidden whether or not the App is wired.
   after verification produces a 409, never a commit onto an unverified tree.
 - `open_pull_request` is idempotent on (run, base SHA, title): a replay updates
   its own pull request instead of opening a duplicate.
-- The pull request body is **rendered from evidence**, not supplied. Every body
-  carries why / affected usage / migration / verification / risk / evidence and
-  the automation boundary — PatchAPI did not merge, and cannot.
+- The pull request body is **rendered from**
+  `src/patchapi_github_tools/templates/migration_pr.md`, never supplied. The
+  template is the Dependabot-style layout: one-line lead, tables, `<details>`
+  for evidence, and a note that **patchbot** cannot merge. Local `file://`
+  paths are dropped. Rename the GitHub App display name to `patchbot` so
+  comments read `patchbot[bot]` — GitHub always appends that suffix.
 - Evidence with a failed verification check is rejected before GitHub is
   contacted (roadmap §8.6, CLAUDE.md §6).
 

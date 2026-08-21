@@ -205,15 +205,25 @@ def build_pull_request_tools(context: RunContext) -> list[Callable[..., Any]]:
         impact = context.output("impact_report")
         plan = context.output("patch_plan")
         usage = (
-            [f"{finding.file} — {finding.kind}" for finding in impact.findings[:20]]
+            [f"{finding.file} — {finding.kind}" for finding in impact.findings]
             if isinstance(impact, ImpactReport)
-            else ["(no findings recorded)"]
+            else []
         )
         migration = (
-            [plan.migration_summary] if isinstance(plan, PatchPlan) else ["(no plan recorded)"]
+            [plan.migration_summary] if isinstance(plan, PatchPlan) else []
         )
+        manifest = context.output("change_manifest")
+        why = (
+            plan.migration_summary
+            if isinstance(plan, PatchPlan) and plan.migration_summary.strip()
+            else decision.reason
+        )
+        if isinstance(manifest, ChangeManifest) and manifest.affected_identifiers:
+            retired = ", ".join(f"`{item}`" for item in manifest.affected_identifiers[:4])
+            if not why or "deterministic slice" in why.lower():
+                why = f"{manifest.provider} is retiring {retired}."
         evidence = {
-            "why": decision.reason,
+            "why": why,
             "affected_usage": usage,
             "migration": migration,
             "verification": [

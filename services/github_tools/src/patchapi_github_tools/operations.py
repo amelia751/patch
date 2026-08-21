@@ -37,6 +37,7 @@ from patchapi_github_tools.models import (
     OpenPullRequestArgs,
 )
 from patchapi_github_tools.pr_body import (
+    BOT_COMMITTER,
     pull_request_idempotency_key,
     render_pull_request_body,
 )
@@ -231,7 +232,13 @@ async def commit_verified_patch(client: GitHubRest, args: CommitVerifiedPatchArg
     commit = await client.request(
         "POST",
         f"{base}/git/commits",
-        json={"message": args.message, "tree": tree["sha"], "parents": [head_sha]},
+        json={
+            "message": args.message,
+            "tree": tree["sha"],
+            "parents": [head_sha],
+            "author": BOT_COMMITTER,
+            "committer": BOT_COMMITTER,
+        },
         expected=(201,),
     )
     # `force` stays false: this service only ever fast-forwards a branch it

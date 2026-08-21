@@ -77,8 +77,8 @@ def test_branch_from_sha_then_commit_then_pull_request(
     assert pull["merged"] is False
 
     body = fake_github.pulls[0]["body"]
-    assert "### Automation boundary" in body
-    assert "did not merge" in body
+    assert "cannot merge" in body
+    assert "patchbot" in body
     assert pull["idempotency_key"] in body
 
     # Nothing in the whole flow touched a merge, admin, or secret endpoint.

@@ -40,6 +40,7 @@ from agents.trace import ToolStatus, ToolTrace
 from packages.providers.google.normalize import manifest_from_feed_file
 from packages.schemas.change_manifest import ChangeManifest
 from packages.schemas.impact_report import ImpactReport
+from packages.schemas.patch_plan import PatchPlan
 from packages.schemas.policy_decision import PolicyDecision
 from packages.schemas.run_state import RunState, assert_transition, is_terminal
 from packages.schemas.verification_report import VerificationReport
@@ -822,7 +823,11 @@ class Orchestrator:
                 arguments={
                     "repo": slice_.repo,
                     "branch": head,
-                    "message": f"Migrate {slice_.repo} off retired identifiers",
+                    "message": (
+                        plan.migration_summary
+                        if isinstance(plan, PatchPlan) and plan.migration_summary.strip()
+                        else f"Migrate {slice_.repo} off retired identifiers"
+                    ),
                     "files": files,
                     "expected_head_sha": head_sha,
                 },
@@ -831,7 +836,11 @@ class Orchestrator:
         opened = self._call(
             "open_pull_request",
             on_behalf_of=agent,
-            title=f"Migrate {slice_.repo} off retired API identifiers",
+            title=(
+                plan.migration_summary.strip()[:72]
+                if isinstance(plan, PatchPlan) and plan.migration_summary.strip()
+                else f"Migrate {slice_.repo} off retired API identifiers"
+            ),
             head_branch=head,
             base_branch="main",
         )
