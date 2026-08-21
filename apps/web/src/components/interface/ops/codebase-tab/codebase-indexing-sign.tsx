@@ -27,16 +27,34 @@ export interface ProjectIndexingState {
   repositories: IndexingRepository[];
 }
 
+function indexingLabel(repositories: IndexingRepository[] | undefined): string {
+  const inFlight = (repositories ?? []).filter(
+    (repo) =>
+      repo.full_name &&
+      (repo.status === "indexing" || repo.status === "idle" || repo.status === "error")
+  );
+  const names = (inFlight.length > 0 ? inFlight : repositories ?? [])
+    .map((repo) => repo.full_name)
+    .filter(Boolean);
+  if (names.length === 0) return "Indexing codebase";
+  if (names.length === 1) return `Indexing ${names[0]} codebase`;
+  if (names.length === 2) return `Indexing ${names[0]}, ${names[1]} codebase`;
+  return `Indexing ${names[0]} +${names.length - 1} codebase`;
+}
+
 export function CodebaseIndexingSign({
   className,
   progress,
+  label,
 }: {
   className?: string;
   /** 0–100. Omit for the preview loop. */
   progress?: number;
+  label?: string;
 }) {
   const [previewProgress, setPreviewProgress] = useState(18);
   const value = progress ?? previewProgress;
+  const text = label?.trim() || "Indexing codebase";
 
   useEffect(() => {
     if (progress != null) return;
@@ -50,7 +68,7 @@ export function CodebaseIndexingSign({
     <div
       role="status"
       aria-live="polite"
-      aria-label={`Indexing codebase, ${value}%`}
+      aria-label={`${text}, ${value}%`}
       className={cn(
         "shrink-0 border-b border-primary/20 bg-primary/[0.06]",
         className
@@ -58,8 +76,8 @@ export function CodebaseIndexingSign({
     >
       <div className="flex items-center gap-2 px-4 py-1.5">
         <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-hidden />
-        <p className="min-w-0 flex-1 text-[11px] font-medium text-[var(--text-primary)]">
-          Indexing codebase
+        <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">
+          {text}
         </p>
         <span className="text-[11px] tabular-nums text-primary/80">{value}%</span>
       </div>
@@ -94,7 +112,10 @@ export function withCodebaseIndexingSign(
     indexing?.status === "indexing" ? indexing.progress_percent : queued ? 0 : undefined;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-primary)]">
-      <CodebaseIndexingSign progress={progress} />
+      <CodebaseIndexingSign
+        progress={progress}
+        label={indexingLabel(indexing?.repositories)}
+      />
       <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
     </div>
   );
