@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   AlertDialog,
@@ -12,17 +12,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { getGCPServiceIcon } from "@/lib/gcp-icons";
-import { CheckCircle2, Rss, Search, Store, Unplug } from "lucide-react";
+import { CheckCircle2, Rss, ScanSearch, Search, Store, Unplug } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 import {
-  fetchProjectProviders,
-  subscribeProjectProvider,
-  unsubscribeProjectProvider,
-} from "@/lib/providers";
-import { type MarketplaceOffer } from "./data";
+  MOCK_GOOGLE_OFFER,
+  MOCK_SUBSCRIBED_KEY,
+  SUBSCRIBE_SCAN_STEPS,
+  type MarketplaceOffer,
+} from "./data";
 import {
   MarketplaceEmptyState,
   NoProjectEmptyState,
@@ -31,58 +40,61 @@ import {
 
 type Section = "subscribed" | "marketplace";
 
+function readMockSubscribed(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(MOCK_SUBSCRIBED_KEY) === "1";
+}
+
+function writeMockSubscribed(next: boolean) {
+  if (typeof window === "undefined") return;
+  if (next) window.sessionStorage.setItem(MOCK_SUBSCRIBED_KEY, "1");
+  else window.sessionStorage.removeItem(MOCK_SUBSCRIBED_KEY);
+}
+
+function mockOffer(subscribed: boolean): MarketplaceOffer {
+  return {
+    ...MOCK_GOOGLE_OFFER,
+    subscribed,
+    watchingSince: subscribed
+      ? new Date().toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : undefined,
+  };
+}
+
 export function SubscriptionTab({
   hasProject = true,
-  projectId,
+  onOpenChanges,
 }: {
   hasProject?: boolean;
   projectId?: string;
+  onOpenChanges?: () => void;
 }) {
-  const [section, setSection] = useState<Section>("subscribed");
-  const [offers, setOffers] = useState<MarketplaceOffer[]>([]);
+  const [section, setSection] = useState<Section>("marketplace");
+  const [subscribed, setSubscribed] = useState(false);
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState<{
-    offer: MarketplaceOffer;
-    action: "subscribe" | "unsubscribe";
-  } | null>(null);
-
-  const loadOffers = async (id: string) => {
-    const rows = await fetchProjectProviders(id);
-    setOffers(
-      rows.map((row) => ({
-        id: row.slug,
-        slug: row.slug,
-        name: row.name,
-        provider: row.name,
-        product: row.slug,
-        description: row.description,
-        category: row.category,
-        logoUrl: row.logoUrl,
-        subscribed: row.subscribed,
-        watchingSince: row.subscribed_at
-          ? new Date(row.subscribed_at).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })
-          : undefined,
-      })),
-    );
-  };
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanStep, setScanStep] = useState(0);
+  const [unsubscribeOpen, setUnsubscribeOpen] = useState(false);
+  const scanTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!projectId) {
-      setOffers([]);
-      return;
-    }
-    void loadOffers(projectId).catch(() => setOffers([]));
-  }, [projectId]);
+    setSubscribed(readMockSubscribed());
+    return () => {
+      if (scanTimer.current !== null) window.clearInterval(scanTimer.current);
+    };
+  }, []);
 
-  const subscribed = offers.filter((offer) => offer.subscribed);
+  const offers = useMemo(() => [mockOffer(subscribed)], [subscribed]);
+  const watching = offers.filter((offer) => offer.subscribed);
   const available = offers.filter((offer) => !offer.subscribed);
 
   const visible = useMemo(() => {
-    const pool = section === "subscribed" ? subscribed : offers;
+    const pool = section === "subscribed" ? watching : offers;
     const q = query.trim().toLowerCase();
     if (!q) return pool;
     return pool.filter(
@@ -92,21 +104,43 @@ export function SubscriptionTab({
         offer.category.toLowerCase().includes(q) ||
         offer.description.toLowerCase().includes(q),
     );
-  }, [offers, query, section, subscribed]);
+  }, [offers, query, section, watching]);
 
-  const toggle = (slug: string, next: boolean) => {
-    if (!projectId) return;
-    const action = next
-      ? subscribeProjectProvider(projectId, slug)
-      : unsubscribeProjectProvider(projectId, slug);
-    void action.then(() => loadOffers(projectId)).catch(() => undefined);
+  const startScan = () => {
+    setScanning(true);
+    setScanStep(0);
+    let step = 0;
+    if (scanTimer.current !== null) window.clearInterval(scanTimer.current);
+    scanTimer.current = window.setInterval(() => {
+      step += 1;
+      if (step >= SUBSCRIBE_SCAN_STEPS.length) {
+        if (scanTimer.current !== null) window.clearInterval(scanTimer.current);
+        scanTimer.current = null;
+        writeMockSubscribed(true);
+        setSubscribed(true);
+        setScanning(false);
+        setConfirmOpen(false);
+        setScanStep(0);
+        setSection("subscribed");
+        onOpenChanges?.();
+        return;
+      }
+      setScanStep(step);
+    }, 850);
+  };
+
+  const unsubscribe = () => {
+    writeMockSubscribed(false);
+    setSubscribed(false);
+    setUnsubscribeOpen(false);
+    setSection("marketplace");
   };
 
   if (!hasProject) {
     return <NoProjectEmptyState />;
   }
 
-  const poolEmpty = section === "subscribed" ? subscribed.length === 0 : offers.length === 0;
+  const poolEmpty = section === "subscribed" ? watching.length === 0 : offers.length === 0;
 
   return (
     <div className="h-full flex min-w-0 overflow-hidden bg-[var(--bg-primary)]">
@@ -115,7 +149,7 @@ export function SubscriptionTab({
           active={section === "subscribed"}
           icon={Rss}
           label="Subscribed"
-          count={subscribed.length > 0 ? subscribed.length : undefined}
+          count={watching.length > 0 ? watching.length : undefined}
           countTone="green"
           onClick={() => setSection("subscribed")}
         />
@@ -174,8 +208,8 @@ export function SubscriptionTab({
                   <OfferCard
                     key={offer.id}
                     offer={offer}
-                    onSubscribe={() => setPending({ offer, action: "subscribe" })}
-                    onUnsubscribe={() => setPending({ offer, action: "unsubscribe" })}
+                    onSubscribe={() => setConfirmOpen(true)}
+                    onUnsubscribe={() => setUnsubscribeOpen(true)}
                   />
                 ))}
               </div>
@@ -184,35 +218,115 @@ export function SubscriptionTab({
         )}
       </div>
 
-      <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (scanning) return;
+          setConfirmOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-[440px] bg-[var(--bg-primary)] border-[var(--border-color)]">
+          {scanning ? (
+            <div className="py-4">
+              <div className="flex items-center justify-center mb-4">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Spinner className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <DialogHeader className="text-center sm:text-center">
+                <DialogTitle className="text-[var(--text-primary)]">
+                  Scanning your codebase
+                </DialogTitle>
+                <DialogDescription className="text-[var(--text-secondary)]">
+                  {SUBSCRIBE_SCAN_STEPS[scanStep]}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-5 space-y-2">
+                {SUBSCRIBE_SCAN_STEPS.map((label, index) => {
+                  const done = index < scanStep;
+                  const current = index === scanStep;
+                  return (
+                    <div
+                      key={label}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      {done ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                      ) : current ? (
+                        <Spinner className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                      ) : (
+                        <span className="h-3.5 w-3.5 rounded-full border border-[var(--border-color)] flex-shrink-0" />
+                      )}
+                      <span
+                        className={
+                          current
+                            ? "text-[var(--text-primary)]"
+                            : done
+                              ? "text-[var(--text-secondary)]"
+                              : "text-[var(--text-secondary)]/50"
+                        }
+                      >
+                        {label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-[var(--text-primary)]">
+                  Watch Google Cloud in this project?
+                </DialogTitle>
+                <DialogDescription className="text-[var(--text-secondary)] leading-relaxed">
+                  We will scan this repository for Google Cloud APIs and models, then match
+                  them against the catalog. Matches — including deprecations and replacements —
+                  show up on Changes. Nothing is written to the repo until you review a pull
+                  request.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[var(--border-color)] text-[var(--text-secondary)]"
+                  onClick={() => setConfirmOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  onClick={startScan}
+                >
+                  <ScanSearch className="h-3.5 w-3.5 mr-1.5" />
+                  Scan and watch
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={unsubscribeOpen} onOpenChange={setUnsubscribeOpen}>
         <AlertDialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-[var(--text-primary)]">
-              {pending?.action === "unsubscribe"
-                ? `Unsubscribe from ${pending.offer.name}?`
-                : `Subscribe to ${pending?.offer.name}?`}
+              Unsubscribe from Google Cloud?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-[var(--text-secondary)] leading-relaxed">
-              {pending?.action === "unsubscribe"
-                ? `This project will stop watching ${pending.offer.name} for deprecations and replacements. You can subscribe again anytime.`
-                : `This project will watch ${pending?.offer.name} for deprecations and replacements. You can unsubscribe anytime.`}
+              This project will stop watching Google Cloud for deprecations and replacements.
+              You can subscribe again anytime.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className={
-                pending?.action === "unsubscribe"
-                  ? "bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
-                  : "bg-primary hover:bg-primary/90 text-primary-foreground"
-              }
-              onClick={() => {
-                if (!pending) return;
-                toggle(pending.offer.id, pending.action === "subscribe");
-                setPending(null);
-              }}
+              className="bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
+              onClick={unsubscribe}
             >
-              {pending?.action === "unsubscribe" ? "Unsubscribe" : "Subscribe"}
+              Unsubscribe
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

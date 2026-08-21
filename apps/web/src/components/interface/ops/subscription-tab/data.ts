@@ -1,3 +1,5 @@
+import { GOOGLE_CLOUD_PROVIDER } from "@/components/interface/provider/data";
+
 export type MarketplaceOffer = {
   id: string;
   slug: string;
@@ -10,3 +12,24 @@ export type MarketplaceOffer = {
   subscribed: boolean;
   watchingSince?: string;
 };
+
+export const MOCK_GOOGLE_OFFER: MarketplaceOffer = {
+  id: GOOGLE_CLOUD_PROVIDER.slug,
+  slug: GOOGLE_CLOUD_PROVIDER.slug,
+  name: GOOGLE_CLOUD_PROVIDER.name,
+  provider: GOOGLE_CLOUD_PROVIDER.name,
+  product: GOOGLE_CLOUD_PROVIDER.slug,
+  description: GOOGLE_CLOUD_PROVIDER.description,
+  category: GOOGLE_CLOUD_PROVIDER.category,
+  logoUrl: GOOGLE_CLOUD_PROVIDER.logoUrl,
+  subscribed: false,
+};
+
+export const SUBSCRIBE_SCAN_STEPS = [
+  "Opening the repository…",
+  "Scanning for Google Cloud APIs and models…",
+  "Matching services to the catalog…",
+  "Checking deprecations and replacements…",
+] as const;
+
+export const MOCK_SUBSCRIBED_KEY = "patch.subscription.mock.google";

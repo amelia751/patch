@@ -886,6 +886,7 @@ function SystemPageContent() {
           <SubscriptionTab
             hasProject={!!configureProject}
             projectId={configureProject?.id}
+            onOpenChanges={() => setMainWorkspaceTab("changes")}
           />
         </TabsContent>
       </Tabs>
