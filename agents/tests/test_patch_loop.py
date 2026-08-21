@@ -8,6 +8,7 @@ exit codes, never by reading a summary of what happened.
 """
 
 import asyncio
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from agents.config import AgentId, ToolName, tool_allowlist  # noqa: E402
 from agents.context import RunContext  # noqa: E402
 from agents.guardrails import build_tool_guardrails  # noqa: E402
 from agents.orchestrator import GEMINI20_SLICE, Orchestrator, binding_value  # noqa: E402
+from agents.tools.pr import GITHUB_TOOLS_URL_ENV  # noqa: E402
 from agents.tools.patch.workspace import build_workspace_tools  # noqa: E402
 from agents.tools.results import is_refusal  # noqa: E402
 from agents.trace import ToolStatus, ToolTrace  # noqa: E402
@@ -37,6 +39,13 @@ BASE_SHA = "87e77dc54ac81ac573916db0ec6ceb97474902b0"
 
 RETIRED = "gemini-2.0-flash"
 REPLACEMENT = "gemini-3.5-flash"
+
+
+@pytest.fixture(autouse=True)
+def _no_live_github_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests prove the workspace, not a live pull request."""
+    monkeypatch.delenv(GITHUB_TOOLS_URL_ENV, raising=False)
+    os.environ.pop(GITHUB_TOOLS_URL_ENV, None)
 
 
 @pytest.fixture

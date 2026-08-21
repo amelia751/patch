@@ -49,7 +49,7 @@ agents/
     patch/               # skill + workspace four
     verification/        # evidence readers + record
     policy.py            # orchestrator-only; not an LlmAgent grant
-    pr.py                # orchestrator-only; open_pull_request still refuses
+    pr.py                # orchestrator-only; opens a PR via github-tools after PASS
   tests/
 ```
 

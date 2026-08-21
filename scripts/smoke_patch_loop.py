@@ -51,6 +51,7 @@ from agents.orchestrator import (  # noqa: E402
     VerticalSlice,
     binding_value,
 )
+from packages.schemas.run_state import RunState  # noqa: E402
 from agents.trace import ToolTrace  # noqa: E402
 from packages.providers.dotenv import apply_defaults, read_env_files  # noqa: E402
 from packages.providers.google.config import load_config  # noqa: E402
@@ -82,8 +83,25 @@ def _apply_repo_pins() -> None:
     apply_defaults(read_env_files([REPO_ROOT / ".env", REPO_ROOT / ".env.example"]))
 
 
-def _base_sha() -> str:
-    """The commit the fixture copy came from, so the contracts name a real tree."""
+def _base_sha(repo: str, *, require_remote: bool = False) -> str:
+    """The commit a GitHub write must pin.
+
+    A pull request on `amelia751/storygen` has to start from that repository's
+    HEAD. The PatchAPI checkout SHA is only a stand-in for isolated runs.
+    """
+    remote = subprocess.run(
+        ["gh", "api", f"repos/{repo}/commits/HEAD", "--jq", ".sha"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    sha = remote.stdout.strip()
+    if remote.returncode == 0 and len(sha) == 40:
+        return sha
+    if require_remote:
+        raise RuntimeError(
+            f"could not read HEAD for {repo}: {(remote.stderr or remote.stdout).strip()}"
+        )
     completed = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
         capture_output=True,
@@ -156,6 +174,7 @@ async def _run(
     feed_dir: Path,
     deterministic: bool,
     trace_out: Path | None,
+    open_pr: bool,
 ) -> tuple[int, str]:
     context = RunContext(
         run_id=run_id,
@@ -172,7 +191,9 @@ async def _run(
     print(f"workspace:      {session.working_dir}")
 
     result = await orchestrator.run_vertical_slice(
-        slice_, base_sha=_base_sha(), deterministic=deterministic
+        slice_,
+        base_sha=_base_sha(slice_.repo, require_remote=open_pr),
+        deterministic=deterministic,
     )
 
     print(f"\ntool trace ({len(trace)} calls, run {run_id}):")
@@ -195,7 +216,7 @@ async def _run(
             "GitHub tool service" in entry["reason"] or "not configured" in entry["reason"]
             for entry in context.human_required
         )
-        if not (
+        if open_pr or not (
             github_only and report is not None and getattr(report, "permits_pull_request", False)
         ):
             return EXIT_FAIL, f"the run stopped for a human on the pinned fixture: {reasons}"
@@ -218,6 +239,20 @@ async def _run(
     passed, detail = _recheck(session, slice_)
     if not passed:
         return EXIT_FAIL, detail
+    if open_pr:
+        if result.state is not RunState.PR_CREATED:
+            return EXIT_FAIL, f"no pull request was opened ({result.state}: {result.detail})"
+        url = ""
+        for stage in reversed(result.stages):
+            output = stage.output
+            if not isinstance(output, dict):
+                continue
+            payload = output.get("result") if isinstance(output.get("result"), dict) else output
+            if isinstance(payload, dict) and payload.get("html_url"):
+                url = str(payload["html_url"])
+                break
+        extra = f" pull request {url}" if url else " pull request opened"
+        return EXIT_PASS, f"{slice_.binding} now binds {binding!r}; {detail};{extra}"
     return EXIT_PASS, f"{slice_.binding} now binds {binding!r}; {detail}"
 
 
@@ -241,10 +276,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="write the tool trace as NDJSON to this path",
     )
+    parser.add_argument(
+        "--open-pr",
+        action="store_true",
+        help="require github-tools and open the storygen pull request",
+    )
     args = parser.parse_args(argv)
 
     if not args.fixture.is_dir():
         print(f"FAIL: no fixture directory at {args.fixture}")
+        return EXIT_FAIL
+
+    if args.open_pr and not os.environ.get("PATCHAPI_GITHUB_TOOLS_URL", "").strip():
+        print("FAIL: --open-pr needs PATCHAPI_GITHUB_TOOLS_URL pointing at github-tools")
         return EXIT_FAIL
 
     if not args.deterministic:
@@ -291,6 +335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     feed_dir=args.feed_dir,
                     deterministic=args.deterministic,
                     trace_out=args.trace_out,
+                    open_pr=args.open_pr,
                 )
             )
         # A failed run is a FAIL line and an exit code, not a traceback: this is
