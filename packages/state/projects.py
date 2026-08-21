@@ -20,6 +20,7 @@ from uuid import UUID
 
 from packages.events.publisher import publish_async
 from packages.events.repo_events import project_repo_added_event, project_repo_removed_event
+from packages.state.indexing import mark_import_queued
 from packages.state.pool import StateUnavailableError
 
 if TYPE_CHECKING:
@@ -72,6 +73,13 @@ async def announce_repository_added(project_id: UUID, repository: str, branch: s
         )
     )
     return result.published
+
+
+async def _queue_index(
+    pool: asyncpg.Pool, project_id: UUID, repository: str, branch: str
+) -> None:
+    """Publish, then flip the banner so the Code tab does not sit at idle."""
+    await mark_import_queued(pool, project_id, repository, branch)
 
 
 async def announce_repository_removed(project_id: UUID, repository: str, branch: str) -> bool:
@@ -397,6 +405,7 @@ async def import_repo_workspace(
     except Exception as exc:
         raise StateUnavailableError(f"could not import repository: {type(exc).__name__}") from exc
     await announce_repository_added(project_id, full_name, branch)
+    await _queue_index(pool, project_id, full_name, branch)
     return project
 
 
@@ -489,6 +498,7 @@ async def add_repository(
     except Exception as exc:
         raise StateUnavailableError(f"could not add repository: {type(exc).__name__}") from exc
     await announce_repository_added(project_id, full_name, branch or DEFAULT_BRANCH)
+    await _queue_index(pool, project_id, full_name, branch or DEFAULT_BRANCH)
     return project
 
 

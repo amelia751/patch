@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Final, Literal
 from uuid import UUID
 
+from packages.events.console_notify import EVENT_INDEXING, notify_console
 from packages.state.pool import StateUnavailableError
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
@@ -138,6 +139,56 @@ async def indexing_for_project(
     return _payload(rows)
 
 
+_MARK_QUEUED_SQL: Final[str] = """
+INSERT INTO repo_index_state (
+    repository, branch, status, progress_percent, error_message,
+    indexer_version, scanner_version
+)
+VALUES ($1, $2, 'indexing', 0, NULL, 'queued', 'queued')
+ON CONFLICT (repository, branch) DO UPDATE SET
+    status           = EXCLUDED.status,
+    progress_percent = EXCLUDED.progress_percent,
+    error_message    = NULL
+WHERE repo_index_state.status IN ('idle', 'error')
+"""
+
+
+async def mark_import_queued(
+    pool: asyncpg.Pool, project_id: UUID, repository: str, branch: str
+) -> None:
+    """Flip the banner to `indexing` the moment the import row commits.
+
+    The worker still owns the real pass. This write is what the dashboard
+    reads in the gap between Pub/Sub publish and the first progress ping.
+    Missing tables are ignored: the import itself already succeeded.
+    """
+    try:
+        async with pool.acquire() as connection:
+            await connection.execute(_MARK_QUEUED_SQL, repository, branch)
+            await notify_console(connection, event_type=EVENT_INDEXING, project_id=project_id)
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) == _UNDEFINED_TABLE:
+            return
+        # A banner that stays idle is worse than a log line; never fail the import.
+        return
+
+
+async def enqueue_idle_imports(pool: asyncpg.Pool, project_id: UUID) -> None:
+    """Re-announce imported targets that never got a pass (pre-worker imports)."""
+    from packages.state.projects import announce_repository_added
+
+    try:
+        async with pool.acquire() as connection:
+            rows = await connection.fetch(_INDEXING_SQL, project_id)
+    except Exception:
+        return
+    for row in rows:
+        if row["status"] not in ("idle", "error"):
+            continue
+        await mark_import_queued(pool, project_id, row["repository"], row["branch"])
+        await announce_repository_added(project_id, row["repository"], row["branch"])
+
+
 async def indexing_snapshot(pool: asyncpg.Pool, project_id: UUID) -> dict[str, Any]:
     """Indexing payload for an already-authorized project (SSE fan-out).
 
@@ -162,7 +213,9 @@ async def indexing_snapshot(pool: asyncpg.Pool, project_id: UUID) -> dict[str, A
 __all__ = [
     "MAX_PROGRESS",
     "IndexStatus",
+    "enqueue_idle_imports",
     "indexing_for_project",
     "indexing_snapshot",
+    "mark_import_queued",
     "rollup",
 ]

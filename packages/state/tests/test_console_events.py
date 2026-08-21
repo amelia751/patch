@@ -44,6 +44,10 @@ class FakeConnection:
             return []
         return self._rows
 
+    async def execute(self, query: str, *args: Any) -> str:
+        self.queries.append(query)
+        return "OK"
+
 
 class FakePool:
     def __init__(self, connection: FakeConnection) -> None:

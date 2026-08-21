@@ -74,21 +74,25 @@ export function CodebaseIndexingSign({
 }
 
 /**
- * Wraps a Codebase tab body with the indexing sign. `indexing` is the live
- * rollup; anything other than an in-flight index (including a missing or
- * unavailable endpoint, which arrives here as `null`) renders the body alone.
+ * Wraps a Codebase tab body with the indexing sign. Show it for an in-flight
+ * pass and for imported repos that are still `idle` (queued, not yet started).
+ * A missing endpoint (`null`) leaves the body alone.
  */
 export function withCodebaseIndexingSign(
   body: ReactNode,
   indexing?: ProjectIndexingState | null
 ) {
-  const isIndexing = indexing?.status === "indexing";
-  if (!isIndexing && !FORCE_SHOW_CODEBASE_INDEXING) {
+  const queued =
+    indexing?.status === "indexing" ||
+    (indexing?.status === "idle" && (indexing.repositories?.length ?? 0) > 0);
+  if (!queued && !FORCE_SHOW_CODEBASE_INDEXING) {
     return body;
   }
+  const progress =
+    indexing?.status === "indexing" ? indexing.progress_percent : queued ? 0 : undefined;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-primary)]">
-      <CodebaseIndexingSign progress={isIndexing ? indexing!.progress_percent : undefined} />
+      <CodebaseIndexingSign progress={progress} />
       <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
     </div>
   );

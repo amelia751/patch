@@ -25,7 +25,17 @@ from packages.state.console_events import (
     ConsoleHub,
     project_event_stream,
 )
-from packages.state.indexing import indexing_for_project
+from packages.state.gcp_connections import (
+    GcpConnectionError,
+    connection_record,
+    delete_connection,
+    list_connections,
+    reveal_connection,
+    update_connection,
+    upsert_connection,
+)
+from packages.state.gcp_viewer import GcpViewerError, list_cloud_run_services
+from packages.state.indexing import enqueue_idle_imports, indexing_for_project
 from packages.state.notifications import notifications_snapshot
 from packages.state.pool import StateUnavailableError
 from packages.state.projects import (
@@ -46,16 +56,6 @@ from packages.state.providers import (
     subscribe_project,
     unsubscribe_project,
 )
-from packages.state.gcp_connections import (
-    GcpConnectionError,
-    connection_record,
-    delete_connection,
-    list_connections,
-    reveal_connection,
-    update_connection,
-    upsert_connection,
-)
-from packages.state.gcp_viewer import GcpViewerError, list_cloud_run_services
 from packages.state.secret_manager import GoogleSecretVault, SecretStoreError, gcp_project
 from packages.state.secrets import (
     SecretInputError,
@@ -177,6 +177,12 @@ async def stream_owned_project_events(
         )
     if indexing is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
+    if indexing.get("status") == "idle" and indexing.get("repositories"):
+        await enqueue_idle_imports(_pool(request), project_id)
+        try:
+            indexing = await indexing_for_project(_pool(request), project_id, user_id) or indexing
+        except StateUnavailableError:
+            pass
     try:
         notifications = await notifications_snapshot(_pool(request), project_id)
     except StateUnavailableError as exc:
