@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -255,6 +256,40 @@ def test_rollup_agrees_with_the_indexer(rows: list[tuple[str, int]]) -> None:
     ]
 
     assert rollup(repositories) == store._rollup(theirs)
+
+
+def test_mark_import_queued_does_not_reset_ready_or_in_flight() -> None:
+    """A second import / Subscribe must not flash the banner at 0%.
+
+    `repo_index_state` is shared per (repository, branch). Flipping a ready
+    shard — or resetting an in-flight percent — is what made the Codebase
+    bar appear over a tree that had not changed.
+    """
+    source = Path(__file__).resolve().parents[1] / "indexing.py"
+    text = source.read_text(encoding="utf-8")
+    start = text.index("_MARK_QUEUED_SQL")
+    sql = text[start : start + 700]
+    assert "WHERE repo_index_state.status IN ('idle', 'error')" in sql
+    assert "status           = EXCLUDED.status" in sql
+
+
+def test_requeue_does_not_mark_ready_shards_as_indexing() -> None:
+    source = Path(__file__).resolve().parents[1] / "indexing.py"
+    text = source.read_text(encoding="utf-8")
+    start = text.index("async def requeue_project_imports")
+    body = text[start : start + 900]
+    assert 'if row["status"] in ("idle", "error")' in body
+    assert "announce_repository_added" in body
+
+
+def test_enqueue_idle_imports_skips_error_and_ready() -> None:
+    source = Path(__file__).resolve().parents[1] / "indexing.py"
+    text = source.read_text(encoding="utf-8")
+    start = text.index("async def enqueue_idle_imports")
+    body = text[start : start + 700]
+    assert 'if row["status"] != "idle"' in body
+    routes = Path(__file__).resolve().parents[1] / "project_routes.py"
+    assert 'repo.get("status") == "idle"' in routes.read_text(encoding="utf-8")
 
 
 # --- webhook ----------------------------------------------------------------

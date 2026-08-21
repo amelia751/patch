@@ -14,9 +14,11 @@ its scanner configuration in the request path of a read that returns four column
 `packages/state/tests/test_indexing_route.py` asserts this rollup agrees with the
 indexer's for every combination, so the duplication cannot drift silently.
 
-A project that imported nothing, or whose repositories have never been indexed,
-reads `idle` at 0%. That is neither an error nor readiness, and the banner stays
-hidden for it.
+A project that imported nothing reads `idle` at 0% with no repositories, and
+the banner stays hidden. Imported targets with no `repo_index_state` row are
+also `idle`; the tab shows the bar only for those, or for an in-flight pass.
+A ready shard that is re-imported or re-announced is left `ready`, so the bar
+does not flash 0% over an unchanged tree.
 """
 
 from __future__ import annotations
@@ -149,19 +151,24 @@ ON CONFLICT (repository, branch) DO UPDATE SET
     status           = EXCLUDED.status,
     progress_percent = EXCLUDED.progress_percent,
     error_message    = NULL
+WHERE repo_index_state.status IN ('idle', 'error')
 """
 
 
 async def mark_import_queued(
     pool: asyncpg.Pool, project_id: UUID, repository: str, branch: str
 ) -> None:
-    """Flip the banner to `indexing` the moment the import row commits.
+    """Queue a first pass. Do not lie about a shard that is already done.
 
-    The worker still owns the real pass. This write is what the dashboard
-    reads in the gap between Pub/Sub publish and the first progress ping.
-    A shared shard that is already `ready` is still flipped: otherwise a
-    second project importing the same repo never sees the overlay, and the
-    worker's reference-only ack is invisible. Missing tables are ignored.
+    The worker still owns the real pass. This write covers the gap between
+    Pub/Sub publish and the first progress ping for a target that has never
+    been indexed, or that last failed.
+
+    A `ready` row is left alone: flipping it to 0% is what made the Codebase
+    bar flash over an unchanged tree (second import of a shared shard,
+    Subscribe re-announce). An in-flight `indexing` row keeps its percent
+    for the same reason. The indexer itself sets `indexing` when a watchlist
+    bump actually starts a new pass. Missing tables are ignored.
     """
     try:
         async with pool.acquire() as connection:
@@ -189,12 +196,17 @@ async def requeue_project_imports(pool: asyncpg.Pool, project_id: UUID) -> None:
     except Exception:
         return
     for row in rows:
-        await mark_import_queued(pool, project_id, row["repository"], row["branch"])
+        if row["status"] in ("idle", "error"):
+            await mark_import_queued(pool, project_id, row["repository"], row["branch"])
         await announce_repository_added(project_id, row["repository"], row["branch"])
 
 
 async def enqueue_idle_imports(pool: asyncpg.Pool, project_id: UUID) -> None:
-    """Re-announce imported targets that never got a pass (pre-worker imports)."""
+    """Re-announce imported targets that never got a pass (pre-worker imports).
+
+    Failed shards stay `error` until Subscribe or a new import re-announces
+    them. Retrying on every Codebase tab open would flash the 0% bar.
+    """
     from packages.state.projects import announce_repository_added
 
     try:
@@ -203,7 +215,7 @@ async def enqueue_idle_imports(pool: asyncpg.Pool, project_id: UUID) -> None:
     except Exception:
         return
     for row in rows:
-        if row["status"] not in ("idle", "error"):
+        if row["status"] != "idle":
             continue
         await mark_import_queued(pool, project_id, row["repository"], row["branch"])
         await announce_repository_added(project_id, row["repository"], row["branch"])

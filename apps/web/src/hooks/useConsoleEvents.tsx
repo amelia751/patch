@@ -3,9 +3,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useProject } from "@/lib/project-context";
-import type {
-  IndexingStatus,
-  ProjectIndexingState,
+import {
+  indexingSignVisible,
+  type IndexingStatus,
+  type ProjectIndexingState,
 } from "@/components/interface/ops/codebase-tab/codebase-indexing-sign";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -124,7 +125,9 @@ async function fetchNotifications(
 
 /**
  * One project console stream: snapshot on connect, push events after that.
- * Polls `/indexing` and `/notifications` only while the EventSource is down.
+ * Polls `/indexing` and `/notifications` while the EventSource is down.
+ * Also polls `/indexing` while a pass is in flight, so a missed NOTIFY
+ * cannot leave the bar stuck at 0% after the worker already finished.
  */
 export function useConsoleEventsStream(
   projectId: string | null,
@@ -143,7 +146,13 @@ export function useConsoleEventsStream(
     let source: EventSource | null = null;
     let indexingTimer: number | undefined;
     let notificationTimer: number | undefined;
+    let inFlightTimer: number | undefined;
     let polling = false;
+
+    const stopInFlightWatch = () => {
+      if (inFlightTimer !== undefined) window.clearInterval(inFlightTimer);
+      inFlightTimer = undefined;
+    };
 
     const stopPoll = () => {
       polling = false;
@@ -153,13 +162,29 @@ export function useConsoleEventsStream(
       notificationTimer = undefined;
     };
 
+    const watchIfInFlight = (indexing: ProjectIndexingState | null) => {
+      if (!indexingSignVisible(indexing) || polling) {
+        stopInFlightWatch();
+        return;
+      }
+      if (inFlightTimer !== undefined) return;
+      inFlightTimer = window.setInterval(() => {
+        void fetchIndexing(projectId, signal).then((next) => {
+          if (signal.aborted || next == null) return;
+          applyIndexing(next);
+        });
+      }, INDEXING_POLL_MS);
+    };
+
     const applyIndexing = (payload: unknown) => {
       if (signal.aborted) return;
+      const indexing = normalizeIndexingState(payload);
       setState((current) => ({
         ...current,
         projectId,
-        indexing: normalizeIndexingState(payload),
+        indexing,
       }));
+      watchIfInFlight(indexing);
     };
 
     const applyNotifications = (payload: unknown) => {
@@ -184,6 +209,7 @@ export function useConsoleEventsStream(
           indexing,
           notifications: notifications ?? current.notifications,
         }));
+        watchIfInFlight(indexing);
       } catch {
         if (signal.aborted) return;
       }
@@ -192,11 +218,12 @@ export function useConsoleEventsStream(
     const startPoll = () => {
       if (polling || signal.aborted) return;
       polling = true;
+      stopInFlightWatch();
       void pollOnce();
       indexingTimer = window.setInterval(() => {
         void fetchIndexing(projectId, signal).then((indexing) => {
           if (signal.aborted || indexing == null) return;
-          setState((current) => ({ ...current, projectId, indexing }));
+          applyIndexing(indexing);
         });
       }, INDEXING_POLL_MS);
       notificationTimer = window.setInterval(() => {
@@ -216,6 +243,7 @@ export function useConsoleEventsStream(
       return () => {
         abort.abort();
         stopPoll();
+        stopInFlightWatch();
       };
     }
 
@@ -226,12 +254,14 @@ export function useConsoleEventsStream(
           notifications?: unknown;
         };
         if (signal.aborted) return;
+        const indexing = normalizeIndexingState(payload.indexing);
         setState({
           projectId,
           live: true,
-          indexing: normalizeIndexingState(payload.indexing),
+          indexing,
           notifications: asNotificationList(payload.notifications),
         });
+        watchIfInFlight(indexing);
       } catch {
         /* malformed frame: keep the last good snapshot */
       }
@@ -267,6 +297,7 @@ export function useConsoleEventsStream(
     return () => {
       abort.abort();
       stopPoll();
+      stopInFlightWatch();
       source?.close();
     };
   }, [projectId, enabled]);

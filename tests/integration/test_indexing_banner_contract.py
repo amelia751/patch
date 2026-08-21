@@ -84,9 +84,25 @@ def test_wrapper_passes_live_progress_and_hides_when_idle(sign_source: str) -> N
     assert re.search(r"<CodebaseIndexingSign\s+progress=", sign_source), (
         "withCodebaseIndexingSign renders the sign without passing progress"
     )
-    assert 'indexing?.status === "indexing"' in sign_source, (
+    assert "indexingSignVisible" in sign_source, (
         "the wrapper does not gate on a live `indexing` status"
     )
+    assert 'indexing.status === "indexing"' in sign_source, (
+        "the wrapper does not show the bar for an in-flight pass"
+    )
+    assert 'indexing.status !== "idle"' in sign_source, (
+        "a ready or error rollup would still draw the 0% bar"
+    )
+
+
+def test_tree_load_does_not_force_the_indexing_bar(tab_source: str) -> None:
+    """The GitHub tree fetch is not an index pass.
+
+    `force=true` on the skeleton is what flashed 0% every time the Codebase
+    tab remounted, even when every shard was already ready.
+    """
+    assert "withCodebaseIndexingSign(<CodebaseTabSkeleton />, indexing)" in tab_source
+    assert "withCodebaseIndexingSign(<CodebaseTabSkeleton />, indexing, true)" not in tab_source
 
 
 def test_tab_reads_live_indexing_from_the_console_stream(tab_source: str) -> None:
@@ -110,6 +126,9 @@ def test_console_stream_is_sse_with_poll_fallback(console_events_source: str) ->
     )
     assert "startPoll" in console_events_source, (
         "the console hook has no poll fallback when the EventSource drops"
+    )
+    assert "watchIfInFlight" in console_events_source, (
+        "an in-flight pass is not re-read if a live NOTIFY is missed"
     )
 
 

@@ -186,7 +186,8 @@ async def stream_owned_project_events(
         )
     if indexing is None:
         return JSONResponse({"detail": "Project not found"}, status_code=404)
-    if indexing.get("status") == "idle" and indexing.get("repositories"):
+    repos = indexing.get("repositories") or []
+    if any(repo.get("status") == "idle" for repo in repos):
         await enqueue_idle_imports(_pool(request), project_id)
         try:
             indexing = await indexing_for_project(_pool(request), project_id, user_id) or indexing

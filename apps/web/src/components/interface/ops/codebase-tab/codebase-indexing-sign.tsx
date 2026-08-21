@@ -29,17 +29,25 @@ export interface ProjectIndexingState {
 
 function indexingLabel(repositories: IndexingRepository[] | undefined): string {
   const inFlight = (repositories ?? []).filter(
-    (repo) =>
-      repo.full_name &&
-      (repo.status === "indexing" || repo.status === "idle" || repo.status === "error")
+    (repo) => repo.full_name && (repo.status === "indexing" || repo.status === "idle"),
   );
-  const names = (inFlight.length > 0 ? inFlight : repositories ?? [])
-    .map((repo) => repo.full_name)
-    .filter(Boolean);
+  const names = inFlight.map((repo) => repo.full_name).filter(Boolean);
   if (names.length === 0) return "Indexing codebase";
   if (names.length === 1) return `Indexing ${names[0]} codebase`;
   if (names.length === 2) return `Indexing ${names[0]}, ${names[1]} codebase`;
   return `Indexing ${names[0]} +${names.length - 1} codebase`;
+}
+
+/** The bar is for a real pass or a queued first index — not a tree fetch. */
+export function indexingSignVisible(
+  indexing?: ProjectIndexingState | null,
+  force = false,
+): boolean {
+  if (force || FORCE_SHOW_CODEBASE_INDEXING) return true;
+  if (!indexing) return false;
+  if (indexing.status === "indexing") return true;
+  if (indexing.status !== "idle") return false;
+  return indexing.repositories.some((repo) => repo.status === "idle");
 }
 
 export function CodebaseIndexingSign({
@@ -92,24 +100,23 @@ export function CodebaseIndexingSign({
 }
 
 /**
- * Wraps a Codebase tab body with the indexing sign. Show it for an in-flight
- * pass and for imported repos that are still `idle` (queued, not yet started).
- * A missing endpoint (`null`) leaves the body alone.
+ * Wraps a Codebase tab body with the indexing sign.
+ *
+ * Show it only for an in-flight pass, or for imported targets that are still
+ * `idle` (queued, worker has not flipped the row). A ready project, an error,
+ * a missing read (`null`), and a GitHub tree fetch must not draw the bar —
+ * those used to flash 0% over a codebase that was already indexed.
  */
 export function withCodebaseIndexingSign(
   body: ReactNode,
   indexing?: ProjectIndexingState | null,
   force = false
 ) {
-  const queued =
-    force ||
-    indexing?.status === "indexing" ||
-    (indexing?.status === "idle" && (indexing.repositories?.length ?? 0) > 0);
-  if (!queued && !FORCE_SHOW_CODEBASE_INDEXING) {
+  if (!indexingSignVisible(indexing, force)) {
     return body;
   }
   const progress =
-    indexing?.status === "indexing" ? indexing.progress_percent : queued ? 0 : undefined;
+    indexing?.status === "indexing" ? indexing.progress_percent : 0;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-primary)]">
       <CodebaseIndexingSign
