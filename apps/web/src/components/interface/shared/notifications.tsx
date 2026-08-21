@@ -73,135 +73,6 @@ interface Notification {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// Mock notifications for Clause Legal AI demo
-const MOCK_NOTIFICATIONS_CLAUSE: Notification[] = [
-  {
-    id: "mock-clause-1",
-    project_id: "demo",
-    type: "pending",
-    title: "Architecture generated for Clause",
-    message: "Your backend architecture has been successfully designed with GCP services. Ready to proceed with DevOps setup?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    priority: "high",
-    read: false,
-    dismissed: false,
-    details: {
-      label: "Generated components (13 services)",
-      items: [
-        "View Architecture|view_architecture",
-        "View Endpoints|view_endpoints",
-        "View Databases|view_databases"
-      ]
-    },
-    actions: [
-      { label: "Continue with DevOps", action_type: "continue_devops", variant: "default" },
-      { label: "View Thread", action_type: "view_thread", variant: "outline" }
-    ]
-  },
-  {
-    id: "mock-clause-2",
-    project_id: "demo",
-    type: "success",
-    title: "Database schema auto-synced",
-    message: "Your PostgreSQL and Elasticsearch schemas have been automatically updated based on your latest contract changes.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    priority: "medium",
-    read: false,
-    dismissed: false,
-    details: {
-      label: "Synced schemas (3)",
-      items: [
-        "✓ Created table: clause.documents",
-        "✓ Created index: document_chunks",
-        "✓ Updated collection: document_metadata"
-      ]
-    },
-    actions: [
-      { label: "Dismiss", action_type: "dismiss", variant: "ghost" }
-    ]
-  }
-];
-
-// Mock notifications for E-Commerce demo
-const MOCK_NOTIFICATIONS_ECOMMERCE: Notification[] = [
-  {
-    id: "mock-ecom-1",
-    project_id: "demo",
-    type: "pending",
-    title: "Architecture generated for E-Commerce",
-    message: "Your backend architecture has been successfully designed with GCP services. Ready to proceed with DevOps setup?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    priority: "high",
-    read: false,
-    dismissed: false,
-    details: {
-      label: "Generated components (8 services)",
-      items: [
-        "View Architecture|view_architecture",
-        "View Endpoints|view_endpoints",
-        "View Databases|view_databases"
-      ]
-    },
-    actions: [
-      { label: "Continue with DevOps", action_type: "continue_devops", variant: "default" },
-      { label: "View Thread", action_type: "view_thread", variant: "outline" }
-    ]
-  },
-  {
-    id: "mock-ecom-2",
-    project_id: "demo",
-    type: "success",
-    title: "Database schema auto-synced",
-    message: "Your Firestore schema has been automatically updated with 3 new collections based on your latest contract changes.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    priority: "medium",
-    read: false,
-    dismissed: false,
-    details: {
-      label: "Synced collections (3)",
-      items: [
-        "✓ Created collection: products",
-        "✓ Created collection: orders",
-        "✓ Updated collection: users (added 2 fields)"
-      ]
-    },
-    actions: [
-      { label: "Dismiss", action_type: "dismiss", variant: "ghost" }
-    ]
-  },
-  {
-    id: "mock-ecom-3",
-    project_id: "demo",
-    type: "pending",
-    title: "Contract approval needed",
-    message: "A new API contract for the payment service requires your review before deployment.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    priority: "high",
-    read: false,
-    dismissed: false,
-    details: {
-      label: "View contract details",
-      items: [
-        "Endpoint: POST /api/payments/checkout",
-        "Changes: 2 new fields, 1 field removed",
-        "Impact: Breaking change detected"
-      ]
-    },
-    actions: [
-      { label: "Review Contract", action_type: "review", variant: "default" },
-      { label: "Dismiss", action_type: "dismiss", variant: "ghost" }
-    ]
-  }
-];
-
-// Get mock notifications based on demo project
-function getMockNotifications(demoProject?: string): Notification[] {
-  if (demoProject === "clause-frontend" || demoProject === "clause-legal-ai" || demoProject === "clause") {
-    return MOCK_NOTIFICATIONS_CLAUSE;
-  }
-  return MOCK_NOTIFICATIONS_ECOMMERCE;
-}
-
 // Format relative timestamp
 function formatTimestamp(isoString: string): string {
   const date = new Date(isoString);
@@ -224,91 +95,19 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Listen for demo notification events
   useEffect(() => {
-    const handleDemoNotification = (e: CustomEvent<{
-      type: string;
-      title: string;
-      message: string;
-      action?: string;
-      slug?: string;
-      servicesCount?: number;
-      cloudProvider?: string;
-    }>) => {
-      const { type, title, message, action, slug, servicesCount, cloudProvider } = e.detail;
-      
-      // Format project name nicely
-      const projectName = slug?.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase()) || "Project";
-      const provider = cloudProvider === "aws" ? "AWS" : "GCP";
-      
-      // Create notification from demo event - MATCH THE MOCK FORMAT EXACTLY
-      const newNotification: Notification = type === "analysis_complete" ? {
-        // Analysis complete notification - matches mock format
-        id: `demo-notification-${Date.now()}`,
-        type: "pending",  // Shows "Action Required" badge
-        title: `Architecture generated for ${projectName}`,
-        message: `Your backend architecture has been successfully designed with ${provider} services. Ready to proceed with DevOps setup?`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        dismissed: false,
-        priority: "high",
-        details: {
-          label: `Generated components (${servicesCount || 8} services)`,
-          items: [
-            "View Architecture|view_architecture",
-            "View Endpoints|view_endpoints",
-          ]
-        },
-        actions: [
-          { label: "Continue with DevOps", action_type: "demo_continue_devops", variant: "default" },
-          { label: "View Thread", action_type: "view_thread", variant: "outline" },
-        ],
-        metadata: { slug, isDemo: true },
-      } : {
-        // DevOps complete notification
-        id: `demo-notification-${Date.now()}`,
-        type: "success",
-        title: `DevOps setup complete for ${projectName}`,
-        message: `Backend code has been generated and is ready for deployment to ${provider}.`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        dismissed: false,
-        priority: "medium",
-        actions: [
-          { label: "View Generated Code", action_type: "view_ops", variant: "default" },
-        ],
-        metadata: { slug, isDemo: true },
-      };
-      
-      setNotifications(prev => [newNotification, ...prev]);
-    };
-    
-    // Clear notifications when demo import starts (either replay or live)
-    const handleDemoImport = () => {
-      console.log("[Notifications] Demo import started - clearing mock notifications");
-      setNotifications([]);
-    };
-    
-    window.addEventListener("demoNotification", handleDemoNotification as EventListener);
-    window.addEventListener("demoImportProject", handleDemoImport as EventListener);
-    window.addEventListener("demoImportLiveProject", handleDemoImport as EventListener);
+    const clear = () => setNotifications([]);
+    window.addEventListener("demoImportProject", clear);
+    window.addEventListener("demoImportLiveProject", clear);
     return () => {
-      window.removeEventListener("demoNotification", handleDemoNotification as EventListener);
-      window.removeEventListener("demoImportProject", handleDemoImport as EventListener);
-      window.removeEventListener("demoImportLiveProject", handleDemoImport as EventListener);
+      window.removeEventListener("demoImportProject", clear);
+      window.removeEventListener("demoImportLiveProject", clear);
     };
   }, []);
   
   const fetchNotifications = useCallback(async () => {
-    // For demo mode (active demo streaming), start empty - notifications come via events
-    if (isDemoMode) {
-      // Don't reset - keep demo notifications that were added via events
-      return;
-    }
-    
-    // For unauthenticated users (not in active demo), show static mock notifications
-    if (!isAuthenticated) {
-      setNotifications(getMockNotifications("ecommerce"));
+    if (isDemoMode || !isAuthenticated) {
+      setNotifications([]);
       return;
     }
     
@@ -344,12 +143,11 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
     } finally {
       setLoading(false);
     }
-  }, [projectId, isAuthenticated, demoProject, isDemoMode]);
+  }, [projectId, isAuthenticated, isDemoMode]);
   
   const consoleEvents = useConsoleEvents();
 
-  // Live stream owns the bell for an authenticated project. Demo and signed-out
-  // users keep the mock/event path above.
+  // Live stream owns the bell for an authenticated project.
   useEffect(() => {
     if (isDemoMode || !isAuthenticated) return;
     if (consoleEvents.projectId !== projectId) return;
@@ -818,7 +616,7 @@ export function NotificationCenter() {
 
       <DropdownMenuContent
         align="end"
-        className="w-[400px] max-h-[600px] overflow-hidden bg-[var(--bg-primary)] border-[var(--border-color)] p-0"
+        className="w-80 max-h-[480px] overflow-hidden bg-[var(--bg-primary)] border-[var(--border-color)] p-0"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
