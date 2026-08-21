@@ -140,7 +140,7 @@ const outlineMutedButtonClass =
 export function ProviderPortal() {
   const [profile, setProfile] = useState<ProviderRecord | null>(null);
   const [services, setServices] = useState<PublishedService[]>([]);
-  const [tab, setTab] = useState("services");
+  const [tab, setTab] = useState("profile");
   const [showRegister, setShowRegister] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -197,14 +197,14 @@ export function ProviderPortal() {
     const next = await registerProvider(input);
     setProfile(next);
     setServices([]);
-    setTab("services");
+    setTab("profile");
     setShowRegister(false);
   };
 
   const leaveProvider = () => {
     setProfile(null);
     setServices([]);
-    setTab("services");
+    setTab("profile");
   };
 
   useEffect(() => {
@@ -281,6 +281,10 @@ export function ProviderPortal() {
       <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
         <div className="border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2 transition-colors">
           <TabsList className="inline-flex w-full h-9 items-center justify-between rounded-lg bg-[var(--bg-secondary)] p-1 text-[var(--text-secondary)] transition-colors">
+            <TabsTrigger value="profile" className={tabTriggerClass}>
+              <Building className="w-3 h-3 mr-2" />
+              Profile
+            </TabsTrigger>
             <TabsTrigger value="services" className={tabTriggerClass}>
               <Layers className="w-3 h-3 mr-2" />
               Services
@@ -289,12 +293,16 @@ export function ProviderPortal() {
               <FilePlus2 className="w-3 h-3 mr-2" />
               Changes
             </TabsTrigger>
-            <TabsTrigger value="profile" className={tabTriggerClass}>
-              <Building className="w-3 h-3 mr-2" />
-              Profile
-            </TabsTrigger>
           </TabsList>
         </div>
+
+        <TabsContent value="profile" className="flex-1 m-0 p-0 overflow-hidden">
+          <ProfileTab
+            profile={profile}
+            services={services}
+            onLeave={leaveProvider}
+          />
+        </TabsContent>
 
         <TabsContent value="services" className="flex-1 m-0 p-0 overflow-hidden">
           <ServicesTab
@@ -316,14 +324,6 @@ export function ProviderPortal() {
             slug={profile.slug}
             connection={profile.connections.changes}
             onConnectionChange={() => void refreshProfile(profile.slug)}
-          />
-        </TabsContent>
-
-        <TabsContent value="profile" className="flex-1 m-0 p-0 overflow-hidden">
-          <ProfileTab
-            profile={profile}
-            services={services}
-            onLeave={leaveProvider}
           />
         </TabsContent>
       </Tabs>
