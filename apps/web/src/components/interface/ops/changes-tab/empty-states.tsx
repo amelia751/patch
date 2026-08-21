@@ -14,10 +14,10 @@ export function NoProjectEmptyState() {
           <Bell className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No changes to show
+          No changes
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Select a project to match its inventory against known provider deprecations — including ones that already happened.
+          Select a project to watch subscribed providers for API and service releases.
         </p>
         <Button
           size="sm"
@@ -33,23 +33,27 @@ export function NoProjectEmptyState() {
 }
 
 export function NoDetectionsEmptyState({
+  subscribed = false,
   onBrowseSubscriptions,
 }: {
+  subscribed?: boolean;
   onBrowseSubscriptions?: () => void;
 }) {
   return (
-    <div className="h-full flex items-center justify-center">
+    <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
       <div className="text-center max-w-md px-4">
         <div className="h-12 w-12 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
           <Bell className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No matching deprecations
+          No changes
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
-          Nothing in this project matches a known deprecation yet. Subscribe to a provider to keep watching.
+          {subscribed
+            ? "No notes from your subscribed providers match this project yet."
+            : "Subscribe to Google Cloud from the marketplace to watch it for API and service releases."}
         </p>
-        {onBrowseSubscriptions && (
+        {!subscribed && onBrowseSubscriptions && (
           <Button
             size="sm"
             onClick={onBrowseSubscriptions}

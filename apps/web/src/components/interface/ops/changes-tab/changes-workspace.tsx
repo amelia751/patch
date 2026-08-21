@@ -45,6 +45,7 @@ export function ChangesTab({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(boot.runs[0]?.id ?? null);
   const [progress, setProgress] = useState<Record<string, RunProgress>>(boot.progress);
   const [changes, setChanges] = useState<ProjectChange[]>([]);
+  const [subscribed, setSubscribed] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanPct, setScanPct] = useState(0);
 
@@ -63,6 +64,7 @@ export function ChangesTab({
     const payload = await fetchProjectChanges(id);
     if (signal?.aborted) return payload;
     setChanges(payload.changes);
+    setSubscribed(payload.subscribed);
     const scanningNow = payload.subscribed && payload.scan.status === "scanning";
     setScanning(scanningNow);
     setScanPct(payload.scan.progress_percent);
@@ -72,6 +74,7 @@ export function ChangesTab({
   useEffect(() => {
     if (!hasProject || !projectId) {
       setChanges([]);
+      setSubscribed(false);
       setScanning(false);
       return;
     }
@@ -209,6 +212,7 @@ export function ChangesTab({
             hasProject={hasProject}
             projectId={projectId}
             changes={changes}
+            subscribed={subscribed}
             onBrowseSubscriptions={onBrowseSubscriptions}
             progress={progress}
             onCommitted={onCommitted}

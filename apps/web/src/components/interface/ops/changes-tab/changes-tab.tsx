@@ -142,7 +142,6 @@ const FEATURED_KINDS: ChangeKind[] = [
   "security",
   "fix",
 ];
-const MORE_KINDS = KIND_OPTIONS.filter((kind) => !FEATURED_KINDS.includes(kind));
 
 const KIND_DOT: Record<ChangeKind, string> = {
   deprecation: "bg-red-400",
@@ -381,6 +380,7 @@ function ActionConfirmDialog({
 export function ChangesInbox({
   hasProject = true,
   changes,
+  subscribed = false,
   onBrowseSubscriptions,
   progress,
   onCommitted,
@@ -389,6 +389,7 @@ export function ChangesInbox({
   hasProject?: boolean;
   projectId?: string;
   changes: ProjectChange[];
+  subscribed?: boolean;
   onBrowseSubscriptions?: () => void;
   progress: Record<string, RunProgress>;
   onCommitted: (change: ProjectChange, action: ChangeActionId) => void;
@@ -466,8 +467,18 @@ export function ChangesInbox({
     };
   }, [changes, statusOverride]);
 
+  const presentKinds = useMemo(() => {
+    const seen = new Set(changes.map((change) => change.kind));
+    return {
+      featured: FEATURED_KINDS.filter((kind) => seen.has(kind)),
+      more: KIND_OPTIONS.filter((kind) => seen.has(kind) && !FEATURED_KINDS.includes(kind)),
+    };
+  }, [changes]);
+  const showKindFilters = presentKinds.featured.length + presentKinds.more.length > 1;
+
   const filtersActive = Boolean(searchQuery) || statusFilter !== "all" || kindFilter !== "all";
-  const moreKindActive = kindFilter !== "all" && MORE_KINDS.includes(kindFilter);
+  const moreKindActive =
+    kindFilter !== "all" && presentKinds.more.includes(kindFilter);
   const resetFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
@@ -550,6 +561,15 @@ export function ChangesInbox({
     return <NoProjectEmptyState />;
   }
 
+  if (changes.length === 0) {
+    return (
+      <NoDetectionsEmptyState
+        subscribed={subscribed}
+        onBrowseSubscriptions={onBrowseSubscriptions}
+      />
+    );
+  }
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg-primary)]">
       <div className="border-b border-[var(--border-color)] px-4 pt-4 pb-3 space-y-3">
@@ -598,6 +618,7 @@ export function ChangesInbox({
           </Select>
         </div>
 
+        {showKindFilters && (
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
             Type
@@ -606,7 +627,7 @@ export function ChangesInbox({
               <FilterChip active={kindFilter === "all"} onClick={() => setKindFilter("all")}>
                 All
               </FilterChip>
-              {FEATURED_KINDS.map((kind) => (
+              {presentKinds.featured.map((kind) => (
                 <FilterChip
                   key={kind}
                   active={kindFilter === kind}
@@ -616,6 +637,7 @@ export function ChangesInbox({
                   {kind === "breaking_change" ? "Breaking" : CHANGE_KIND_LABELS[kind]}
                 </FilterChip>
               ))}
+              {presentKinds.more.length > 0 && (
               <Popover open={moreOpen} onOpenChange={setMoreOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -643,7 +665,7 @@ export function ChangesInbox({
                   align="start"
                   className="z-[200] w-52 p-1.5 border-[var(--border-color)] bg-[var(--bg-primary)]"
                 >
-                  {MORE_KINDS.map((kind) => (
+                  {presentKinds.more.map((kind) => (
                     <button
                       key={kind}
                       type="button"
@@ -664,8 +686,10 @@ export function ChangesInbox({
                   ))}
                 </PopoverContent>
               </Popover>
+              )}
             </div>
         </div>
+        )}
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] text-[var(--text-secondary)]">
@@ -728,8 +752,11 @@ export function ChangesInbox({
                 <p className="text-xs text-[var(--text-secondary)] mt-1">Clear search, type, or status to see detections again.</p>
               </div>
             ) : (
-              <NoDetectionsEmptyState onBrowseSubscriptions={onBrowseSubscriptions} />
-            )
+              <NoDetectionsEmptyState
+                subscribed={subscribed}
+                onBrowseSubscriptions={onBrowseSubscriptions}
+              />
+            )}
           ) : (
             Array.from(byProvider.entries()).map(([provider, changes]) => {
               const isExpanded = expandedProviders.has(provider);
