@@ -20,7 +20,9 @@ import {
 import { NoProjectEmptyState } from "./no-project-empty-state";
 import { CodebaseEmptyState } from "../empty-states";
 import {
+  FileTreeIndexingOverlay,
   withCodebaseIndexingSign,
+  type ProjectIndexingState,
 } from "./codebase-indexing-sign";
 import {
   Code,
@@ -784,7 +786,11 @@ function SkeletonTreeRow({
 }
 
 /** Loading shell: matches Codebase header, search+tree (FileTreeItem layout), and empty viewer pane. */
-function CodebaseTabSkeleton() {
+function CodebaseTabSkeleton({
+  indexing,
+}: {
+  indexing?: ProjectIndexingState | null;
+}) {
   const treeLayout: {
     level: number;
     kind: "folder" | "file";
@@ -834,7 +840,7 @@ function CodebaseTabSkeleton() {
       </div>
 
       <div className="flex-1 flex min-w-0 overflow-hidden">
-        <div className="w-72 border-r border-[var(--border-color)] flex flex-col overflow-hidden bg-[var(--bg-primary)] shrink-0">
+        <div className="w-72 border-r border-[var(--border-color)] flex flex-col overflow-hidden bg-[var(--bg-primary)] shrink-0 relative">
           <div className="p-3 border-b border-[var(--border-color)]">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-[var(--text-secondary)] pointer-events-none z-10" />
@@ -843,7 +849,7 @@ function CodebaseTabSkeleton() {
               </div>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5 thin-scrollbar">
+          <div className="flex-1 overflow-y-auto p-2 pb-12 space-y-0.5 thin-scrollbar">
             {treeLayout.map((row, i) => (
               <SkeletonTreeRow
                 key={i}
@@ -854,6 +860,7 @@ function CodebaseTabSkeleton() {
               />
             ))}
           </div>
+          <FileTreeIndexingOverlay indexing={indexing} />
         </div>
 
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-[var(--bg-tertiary)]">
@@ -1312,7 +1319,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
   }
 
   if (isLoading) {
-    return withCodebaseIndexingSign(<CodebaseTabSkeleton />, indexing);
+    return <CodebaseTabSkeleton indexing={indexing} />;
   }
 
   // Error state or empty state - both show the nice empty state
@@ -1321,7 +1328,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
     return withCodebaseIndexingSign(<CodebaseEmptyState onImport={onAddRepository} />, indexing);
   }
 
-  return withCodebaseIndexingSign(
+  return (
     <div className="h-full flex flex-col overflow-hidden bg-[var(--bg-primary)]">
       {/* Header */}
       <div className="border-b border-[var(--border-color)] p-4">
@@ -1415,7 +1422,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
       {/* Main Content - Three Panels */}
       <div className="flex-1 flex min-w-0 overflow-hidden">
         {/* Left Panel - File Tree */}
-        <div className="w-72 border-r border-[var(--border-color)] flex flex-col overflow-hidden bg-[var(--bg-primary)]">
+        <div className="w-72 border-r border-[var(--border-color)] flex flex-col overflow-hidden bg-[var(--bg-primary)] relative">
           {/* Search */}
           <div className="p-3 border-b border-[var(--border-color)]">
             <div className="relative">
@@ -1439,7 +1446,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
           </div>
 
           {/* File Tree */}
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 overflow-y-auto p-2 pb-12">
             {filteredTree.map((node) => (
               <FileTreeItem
                 key={node.id}
@@ -1453,6 +1460,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
               />
             ))}
           </div>
+          <FileTreeIndexingOverlay indexing={indexing} />
         </div>
 
         {/* Center Panel - Code Viewer */}
@@ -1598,8 +1606,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
           )}
         </div>
       </div>
-    </div>,
-    indexing
+    </div>
   );
 }
 

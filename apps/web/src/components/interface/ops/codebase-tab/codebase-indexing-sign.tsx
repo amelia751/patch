@@ -52,7 +52,7 @@ export function CodebaseIndexingSign({
       aria-live="polite"
       aria-label={`Indexing codebase, ${value}%`}
       className={cn(
-        "shrink-0 border-b border-primary/20 bg-primary/[0.06]",
+        "shrink-0 border-primary/20 bg-primary/[0.06]",
         className
       )}
     >
@@ -73,27 +73,61 @@ export function CodebaseIndexingSign({
   );
 }
 
+function indexingSignProgress(
+  indexing?: ProjectIndexingState | null
+): number | undefined | false {
+  const queued =
+    indexing?.status === "indexing" ||
+    (indexing?.status === "idle" && (indexing.repositories?.length ?? 0) > 0);
+  if (!queued && !FORCE_SHOW_CODEBASE_INDEXING) {
+    return false;
+  }
+  return indexing?.status === "indexing" ? indexing.progress_percent : queued ? 0 : undefined;
+}
+
 /**
- * Wraps a Codebase tab body with the indexing sign. Show it for an in-flight
- * pass and for imported repos that are still `idle` (queued, not yet started).
- * A missing endpoint (`null`) leaves the body alone.
+ * Sits on the bottom of the file-tree column so the folder list can scroll
+ * under it. Hidden unless a pass is in flight (or still queued).
+ */
+export function FileTreeIndexingOverlay({
+  indexing,
+}: {
+  indexing?: ProjectIndexingState | null;
+}) {
+  const progress = indexingSignProgress(indexing);
+  if (progress === false) {
+    return null;
+  }
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
+      <div
+        aria-hidden
+        className="h-5 bg-gradient-to-t from-[var(--bg-primary)] to-transparent"
+      />
+      <CodebaseIndexingSign
+        progress={progress}
+        className="border-t bg-[var(--bg-primary)]/95 backdrop-blur-[2px]"
+      />
+    </div>
+  );
+}
+
+/**
+ * Wraps a Codebase tab body with the indexing sign. Empty / no-tree states
+ * have no folder column, so the sign sits at the bottom of the pane.
  */
 export function withCodebaseIndexingSign(
   body: ReactNode,
   indexing?: ProjectIndexingState | null
 ) {
-  const queued =
-    indexing?.status === "indexing" ||
-    (indexing?.status === "idle" && (indexing.repositories?.length ?? 0) > 0);
-  if (!queued && !FORCE_SHOW_CODEBASE_INDEXING) {
+  const progress = indexingSignProgress(indexing);
+  if (progress === false) {
     return body;
   }
-  const progress =
-    indexing?.status === "indexing" ? indexing.progress_percent : queued ? 0 : undefined;
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-primary)]">
-      <CodebaseIndexingSign progress={progress} />
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-primary)]">
       <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
+      <FileTreeIndexingOverlay indexing={indexing} />
     </div>
   );
 }
