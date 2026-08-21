@@ -216,7 +216,7 @@ export function SubscriptionTab({
               </div>
             </div>
             <AlertDialogDescription className="text-xs leading-relaxed text-[var(--text-secondary)]">
-              PatchAPI will scan this project for relevant Google Cloud usage. It will not change your repo.
+              PatchAPI will scan this project for relevant Google Cloud usage. We will not change your repo.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
