@@ -223,14 +223,25 @@ async def run_turn(
             events += 1
             if event.model_version and event.model_version not in models:
                 models.append(event.model_version)
+                trace.emit(f"  model {event.model_version}")
             if event.error_message:
                 errors.append(f"{event.error_code}: {event.error_message}")
+                trace.emit(f"  ERROR {event.error_code}: {event.error_message}")
             if event.partial:
                 continue
             content = getattr(event, "content", None)
             for part in getattr(content, "parts", None) or ():
+                call = getattr(part, "function_call", None)
+                if call is not None and getattr(call, "name", None):
+                    trace.emit(f"  model → {call.name}")
+                response = getattr(part, "function_response", None)
+                if response is not None and getattr(response, "name", None):
+                    trace.emit(f"  model ← {response.name}")
                 if getattr(part, "text", None) and not getattr(part, "thought", False):
                     texts.append(part.text)
+                    snippet = " ".join(part.text.split())
+                    if snippet:
+                        trace.emit(f"  model: {snippet[:400]}")
     finally:
         await runner.close()
 

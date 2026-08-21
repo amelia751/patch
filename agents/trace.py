@@ -13,7 +13,7 @@ become a second copy of material policy has already bounded.
 
 import hashlib
 import json
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -133,6 +133,12 @@ class ToolTrace:
 
     run_id: str
     events: list[ToolTraceEvent] = field(default_factory=list)
+    live: Callable[[str], None] | None = None
+
+    def emit(self, line: str) -> None:
+        """Print one live line when a sink is attached. Tests leave this unset."""
+        if self.live is not None:
+            self.live(line)
 
     def record(
         self,
@@ -162,6 +168,7 @@ class ToolTrace:
             detail=detail,
         )
         self.events.append(event)
+        self.emit(event.render())
         return event
 
     def __iter__(self) -> Iterator[ToolTraceEvent]:

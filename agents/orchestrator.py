@@ -238,6 +238,8 @@ class Orchestrator:
         owning agent so a trace still reads as a chain.
         """
         function: Callable[..., Any] = self._tools[tool_name]
+        shown = ", ".join(f"{key}={value!r}"[:80] for key, value in sorted(arguments.items()))
+        self._trace.emit(f"  → {on_behalf_of}.{tool_name}({shown})")
         started = perf_counter()
         result = function(**arguments)
         duration_ms = (perf_counter() - started) * 1000.0
@@ -555,6 +557,7 @@ class Orchestrator:
         if deterministic:
             self._patch_deterministically(manifest, slice_, base_sha=base_sha)
         else:
+            self._trace.emit("=== PATCH agent live — inspect, edit, run, look ===")
             prompt = self._patch_prompt(manifest, report, slice_)
             turn = await run_turn(
                 self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
@@ -780,6 +783,7 @@ class Orchestrator:
         if deterministic:
             self._verification_deterministically(manifest, slice_)
         else:
+            self._trace.emit("=== VERIFICATION agent live — evidence only ===")
             impact = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
             base_sha = impact.base_sha if isinstance(impact, ImpactReport) else ""
             prompt = (
@@ -920,6 +924,7 @@ class Orchestrator:
         *,
         base_sha: str,
         deterministic: bool | None = None,
+        setup_deterministic: bool = False,
         static_manifest: Path | None = None,
     ) -> SliceResult:
         """Run seed → impact → policy → patch → UI check → verify → PR.
@@ -927,9 +932,12 @@ class Orchestrator:
         Verification grades orchestrator evidence, not the Patch turn. A PR is
         attempted only after PASS. Missing GitHub tools is HUMAN_REQUIRED, not
         a claimed pull request. `static_manifest` skips the provider crawl.
+        `setup_deterministic` keeps Impact off the model so a live Patch turn
+        still starts from a real scan.
         """
         if deterministic is None:
             deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
+        setup = deterministic or setup_deterministic
 
         result = SliceResult(state=self._state, detail="")
 
@@ -946,9 +954,9 @@ class Orchestrator:
         )
         if not keep(seeded):
             return result
-        if not keep(await self.run_impact(slice_, base_sha=base_sha, deterministic=deterministic)):
+        if not keep(await self.run_impact(slice_, base_sha=base_sha, deterministic=setup)):
             return result
-        if not keep(await self.run_policy(slice_, deterministic=deterministic)):
+        if not keep(await self.run_policy(slice_, deterministic=setup)):
             return result
         patch = await self.run_patch(slice_, base_sha=base_sha, deterministic=deterministic)
         if not keep(patch):

@@ -22,7 +22,7 @@ from typing import Any, Final
 
 from agents.config import MAX_TOOL_CALLS_PER_TURN, AgentId, tool_allowlist
 from agents.tools.results import ReasonCode, is_refusal, refusal
-from agents.trace import ToolStatus, ToolTrace
+from agents.trace import ToolStatus, ToolTrace, summarise
 
 # ADK types are imported lazily by the caller; the callbacks below only need the
 # `name` attribute of the tool object, so this module stays importable — and
@@ -95,6 +95,8 @@ def build_tool_guardrails(
             return stopped
 
         started[id(args)] = perf_counter()
+        shown = ", ".join(f"{key}={summarise(value)}" for key, value in sorted(args.items()))
+        trace.emit(f"  → {agent}.{name}({shown})")
         return None
 
     def after_tool(
@@ -110,6 +112,17 @@ def build_tool_guardrails(
         status = ToolStatus.REFUSED if is_refusal(tool_response) else ToolStatus.OK
         detail = tool_response.get("message") if status is ToolStatus.REFUSED else None
         _record(tool, args, status, tool_response, duration_ms, detail=detail)
+        if isinstance(tool_response, dict):
+            if "exit_code" in tool_response:
+                trace.emit(f"        exit {tool_response.get('exit_code')}")
+                for stream in ("stdout", "stderr"):
+                    text = str(tool_response.get(stream) or "").strip()
+                    if text:
+                        for line in text.splitlines()[-12:]:
+                            trace.emit(f"        {stream}: {line}")
+            tail = tool_response.get("visible_tail")
+            if tail:
+                trace.emit(f"        viewer: {str(tail).strip()[:240]}")
         return None
 
     return before_tool, after_tool
