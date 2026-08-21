@@ -1,6 +1,15 @@
 """Deterministic inbox classification. No database."""
 
-from packages.state.findings import aggregate_hits, classify, file_hit_kind, is_false_positive
+from datetime import date
+
+from packages.state.findings import (
+    aggregate_hits,
+    classify,
+    expand_identifiers,
+    file_hit_kind,
+    identifier_aliases,
+    is_false_positive,
+)
 from packages.state.watchlist import GOOGLE_WATCHLIST, watchlist_for
 
 
@@ -25,13 +34,28 @@ def test_runtime_hit_is_need_you() -> None:
     assert (status, reason) == ("needs_you", "runtime_hit")
 
 
-def test_docs_only_stays_watching() -> None:
+def test_in_effect_deprecation_with_docs_is_need_you() -> None:
     status, reason = classify(
         identifiers=["imagen-4.0-generate-001"],
         hits=[{"usage_kind": "documentation_example", "identifier": "imagen-4.0-generate-001"}],
         fail_closed=False,
         false_positive=False,
         change_kind="deprecation",
+        effective_at=date(2026, 8, 17),
+        today=date(2026, 8, 21),
+    )
+    assert (status, reason) == ("needs_you", "docs_only")
+
+
+def test_future_deprecation_docs_stay_watching() -> None:
+    status, reason = classify(
+        identifiers=["imagen-4.0-generate-001"],
+        hits=[{"usage_kind": "documentation_example", "identifier": "imagen-4.0-generate-001"}],
+        fail_closed=False,
+        false_positive=False,
+        change_kind="deprecation",
+        effective_at=date(2026, 12, 1),
+        today=date(2026, 8, 21),
     )
     assert (status, reason) == ("watching", "docs_only")
 
@@ -43,8 +67,21 @@ def test_no_usage_stays_watching() -> None:
         fail_closed=False,
         false_positive=False,
         change_kind="deprecation",
+        effective_at=date(2026, 6, 1),
+        today=date(2026, 8, 21),
     )
     assert (status, reason) == ("watching", "no_usage")
+
+
+def test_models_prefix_is_the_same_identifier() -> None:
+    assert identifier_aliases("models/imagen-4.0-generate-001") == (
+        "imagen-4.0-generate-001",
+        "models/imagen-4.0-generate-001",
+    )
+    assert "models/imagen-4.0-generate-001" in expand_identifiers(["imagen-4.0-generate-001"])
+    assert identifier_aliases("vertex/imagen-4.0-generate-001") == (
+        "vertex/imagen-4.0-generate-001",
+    )
 
 
 def test_vertex_prefix_fails_closed() -> None:

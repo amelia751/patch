@@ -22,7 +22,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 ACTIONABLE_KINDS: Final[frozenset[str]] = frozenset({"runtime_source", "configuration", "test"})
+BREAKING_KINDS: Final[frozenset[str]] = frozenset({"deprecation", "breaking_change"})
 FALSE_POSITIVE_PREFIXES: Final[tuple[str, ...]] = ("fal-ai/",)
+MODELS_PREFIX: Final[str] = "models/"
 VERTEX_PREFIX: Final[str] = "vertex/"
 
 FindingStatus = Literal["needs_you", "watching", "dismissed"]
@@ -188,6 +190,60 @@ def is_false_positive(identifier: str) -> bool:
     return any(lowered.startswith(prefix) for prefix in FALSE_POSITIVE_PREFIXES)
 
 
+def canonical_identifier(identifier: str) -> str:
+    """Strip the Gemini `models/` resource prefix. `vertex/` stays a different id."""
+    value = identifier.strip()
+    if value.startswith(MODELS_PREFIX):
+        return value[len(MODELS_PREFIX) :]
+    return value
+
+
+def identifier_aliases(identifier: str) -> tuple[str, ...]:
+    """Exact strings that count as the same model in inventory.
+
+    Catalog rows list both `imagen-4.0-generate-001` and
+    `models/imagen-4.0-generate-001`. A join that only used one of those
+    left a 404'ing call site in Watching.
+    """
+    raw = identifier.strip()
+    if not raw:
+        return ()
+    if raw.startswith(VERTEX_PREFIX) or raw.startswith(FALSE_POSITIVE_PREFIXES):
+        return (raw,)
+    canon = canonical_identifier(raw)
+    if not canon or canon.startswith(VERTEX_PREFIX):
+        return (raw,)
+    return tuple(dict.fromkeys((canon, f"{MODELS_PREFIX}{canon}", raw)))
+
+
+def expand_identifiers(identifiers: list[str]) -> list[str]:
+    """All aliases for a note, de-duplicated, for the inventory `ANY` join."""
+    seen: set[str] = set()
+    expanded: list[str] = []
+    for item in identifiers:
+        for alias in identifier_aliases(item):
+            if alias in seen:
+                continue
+            seen.add(alias)
+            expanded.append(alias)
+    return expanded
+
+
+def in_effect(
+    *,
+    change_kind: str,
+    effective_at: date | None,
+    fail_closed: bool,
+    today: date,
+) -> bool:
+    """True when this note is already a break, not a future announcement."""
+    if change_kind not in BREAKING_KINDS:
+        return False
+    if fail_closed or effective_at is None:
+        return True
+    return effective_at <= today
+
+
 def classify(
     *,
     identifiers: list[str],
@@ -195,8 +251,16 @@ def classify(
     fail_closed: bool,
     false_positive: bool,
     change_kind: str,
+    effective_at: date | None = None,
+    today: date | None = None,
 ) -> tuple[FindingStatus, FindingReason]:
-    """Deterministic inbox bucket. The model does not pick this."""
+    """Deterministic inbox bucket. The model does not pick this.
+
+    Need you is "this project still names a model that already 404s" — an
+    in-effect deprecation or breaking change with any hit, or any runtime
+    hit. Watching is for notes that are not yet a break, or that this
+    project does not call. Dismissed is a false positive or a human pin.
+    """
     if false_positive or (identifiers and all(is_false_positive(item) for item in identifiers)):
         return "dismissed", "false_positive"
     if not identifiers:
@@ -205,12 +269,20 @@ def classify(
         return "watching", "not_an_identifier"
 
     runtime = [hit for hit in hits if hit.get("usage_kind") in ACTIONABLE_KINDS]
-    vertex = any(item.startswith(VERTEX_PREFIX) for item in identifiers)
+    vertex = any(canonical_identifier(item).startswith(VERTEX_PREFIX) for item in identifiers)
+    breaking = in_effect(
+        change_kind=change_kind,
+        effective_at=effective_at,
+        fail_closed=fail_closed,
+        today=today or date.today(),
+    )
     if runtime:
         if fail_closed or vertex:
             return "needs_you", "fail_closed"
         return "needs_you", "runtime_hit"
     if hits:
+        if breaking:
+            return "needs_you", "docs_only"
         return "watching", "docs_only"
     if change_kind == "new_identifier":
         return "watching", "new_identifier"
@@ -366,7 +438,9 @@ async def refresh_project_findings(
 ) -> int:
     """Reclassify every latest event for `provider` against this project's inventory."""
     events = await connection.fetch(_LATEST_EVENTS_SQL, provider)
-    identifiers = sorted({item for row in events for item in (row["affected_identifiers"] or [])})
+    identifiers = expand_identifiers(
+        [item for row in events for item in (row["affected_identifiers"] or [])]
+    )
     usages: list[dict[str, Any]] = []
     if identifiers:
         usages = [
@@ -380,13 +454,18 @@ async def refresh_project_findings(
     written = 0
     for event in events:
         wanted = list(event["affected_identifiers"] or [])
-        hits = [hit for identifier in wanted for hit in by_id.get(identifier, ())]
+        aliases = expand_identifiers(wanted)
+        hits = [hit for identifier in aliases for hit in by_id.get(identifier, ())]
+        effective = event["effective_at"]
+        if not isinstance(effective, date):
+            effective = _as_date(str(effective) if effective else None)
         status, reason = classify(
             identifiers=wanted,
             hits=hits,
             fail_closed=bool(event["fail_closed"]),
             false_positive=bool(event["false_positive"]),
             change_kind=str(event["change_kind"]),
+            effective_at=effective,
         )
         repos, file_hits, file_count, counts, files = aggregate_hits(hits)
         await connection.execute(
@@ -505,6 +584,9 @@ async def inbox_payload(
         project_id,
         provider,
     )
+    if subscribed:
+        await ensure_watchlist(connection, provider)
+        await refresh_project_findings(connection, project_id, provider)
     scan = await read_scan(connection, project_id, provider)
     changes = await list_project_changes(connection, project_id) if subscribed else []
     return {
@@ -638,12 +720,17 @@ async def _wake_changes(connection: asyncpg.Connection, project_id: UUID) -> Non
 
 __all__ = [
     "ACTIONABLE_KINDS",
+    "BREAKING_KINDS",
     "EVENT_CHANGES",
     "aggregate_hits",
     "backfill_project",
+    "canonical_identifier",
     "classify",
     "ensure_watchlist",
+    "expand_identifiers",
     "file_hit_kind",
+    "identifier_aliases",
+    "in_effect",
     "inbox_payload",
     "is_false_positive",
     "list_project_changes",
