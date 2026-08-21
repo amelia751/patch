@@ -84,8 +84,8 @@ async def create_indexer_pool() -> asyncpg.Pool:
     """Own pool: advisory locks can wait out a sibling index of the same repo."""
     return await asyncpg.create_pool(
         database_url(),
-        min_size=1,
-        max_size=8,
+        min_size=0,
+        max_size=2,
         command_timeout=HANDLER_TIMEOUT_SECONDS,
         init=_configure,
     )

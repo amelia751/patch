@@ -12,11 +12,22 @@ from typing import Final
 
 DSN_VAR: Final[str] = "DATABASE_URL"
 
-# The dashboard issues several small reads per page. A handful of connections
-# covers that; a large pool would mostly hold idle Cloud SQL connections against
-# a per-instance limit that the agent fleet also draws from.
-MIN_POOL_SIZE: Final[int] = 1
-MAX_POOL_SIZE: Final[int] = 8
+# The dashboard issues several small reads per page. `db-f1-micro` has 25
+# slots and reserves a few for superuser; an 8-wide pool per Cloud Run
+# instance plus the indexer's pool exhausts that on a rolling deploy.
+def _pool_size(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(0, value)
+
+
+MIN_POOL_SIZE: Final[int] = _pool_size("PATCHAPI_DB_POOL_MIN", 1)
+MAX_POOL_SIZE: Final[int] = max(_pool_size("PATCHAPI_DB_POOL_MAX", 3), 1)
 
 # A read that has not answered by here is not going to help the request that is
 # waiting on it. Failing fast surfaces an unreachable database as a 503 rather
