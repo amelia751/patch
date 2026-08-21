@@ -177,7 +177,7 @@ export function ProviderPortal() {
 
   const openCatalog = async () => {
     setServices([]);
-    setTab("services");
+    setTab("profile");
     setShowRegister(false);
     setCatalogError(null);
     setCatalogLoading(true);
@@ -278,7 +278,7 @@ export function ProviderPortal() {
 
   return (
     <>
-      <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
+      <Tabs value={tab} defaultValue="profile" onValueChange={setTab} className="h-full flex flex-col">
         <div className="border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-2 transition-colors">
           <TabsList className="inline-flex w-full h-9 items-center justify-between rounded-lg bg-[var(--bg-secondary)] p-1 text-[var(--text-secondary)] transition-colors">
             <TabsTrigger value="profile" className={tabTriggerClass}>
