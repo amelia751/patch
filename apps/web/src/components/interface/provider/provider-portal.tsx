@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import Image from "next/image";
 import { format, startOfDay, subDays } from "date-fns";
 import { type DateRange } from "react-day-picker";
@@ -1869,19 +1877,13 @@ function RegisterDialog({
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
           <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] p-5 space-y-4">
             <Field label="Organization">
-              <Input
+              <HintInput
                 value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (!slugTouched) setSlug(slugify(e.target.value));
+                hint="Google Cloud"
+                onValueChange={(next) => {
+                  setName(next);
+                  if (!slugTouched) setSlug(slugify(next));
                 }}
-                onKeyDown={(e) =>
-                  fillOnTab(e, name, "Google Cloud", (next) => {
-                    setName(next);
-                    if (!slugTouched) setSlug(slugify(next));
-                  })
-                }
-                placeholder="Google Cloud"
                 className={fieldClass}
               />
             </Field>
@@ -1942,29 +1944,20 @@ function RegisterDialog({
                 </Select>
               </Field>
               <Field label="Since">
-                <Input
+                <HintInput
                   value={since}
-                  onChange={(e) => setSince(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  onKeyDown={(e) => fillOnTab(e, since, "2008", setSince)}
-                  placeholder="2008"
+                  hint="2008"
+                  onValueChange={(next) => setSince(next.replace(/\D/g, "").slice(0, 4))}
                   inputMode="numeric"
                   className={fieldClass}
                 />
               </Field>
             </div>
             <Field label="Description">
-              <Textarea
+              <HintTextarea
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onKeyDown={(e) =>
-                  fillOnTab(
-                    e,
-                    description,
-                    "A suite of cloud services for compute, storage, data analytics, and machine learning.",
-                    setDescription,
-                  )
-                }
-                placeholder="A suite of cloud services for compute, storage, data analytics, and machine learning."
+                hint="A suite of cloud services for compute, storage, data analytics, and machine learning."
+                onValueChange={setDescription}
                 className={textareaClass}
               />
             </Field>
@@ -1972,58 +1965,50 @@ function RegisterDialog({
 
           <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] divide-y divide-[var(--border-color)]">
             <LinkRow icon={Globe} label="Website">
-              <Input
+              <HintInput
                 value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                onKeyDown={(e) => fillOnTab(e, website, "cloud.google.com", setWebsite)}
-                placeholder="cloud.google.com"
+                hint="cloud.google.com"
+                onValueChange={setWebsite}
                 className={rowInputClass}
               />
             </LinkRow>
             <LinkRow icon={ExternalLink} label="Console">
-              <Input
+              <HintInput
                 value={consoleUrl}
-                onChange={(e) => setConsoleUrl(e.target.value)}
-                onKeyDown={(e) => fillOnTab(e, consoleUrl, "console.cloud.google.com", setConsoleUrl)}
-                placeholder="console.cloud.google.com"
+                hint="console.cloud.google.com"
+                onValueChange={setConsoleUrl}
                 className={rowInputClass}
               />
             </LinkRow>
             <LinkRow icon={Layers} label="Docs">
-              <Input
+              <HintInput
                 value={docsUrl}
-                onChange={(e) => setDocsUrl(e.target.value)}
-                onKeyDown={(e) => fillOnTab(e, docsUrl, "cloud.google.com/docs", setDocsUrl)}
-                placeholder="cloud.google.com/docs"
+                hint="cloud.google.com/docs"
+                onValueChange={setDocsUrl}
                 className={rowInputClass}
               />
             </LinkRow>
             <LinkRow icon={Eye} label="Status">
-              <Input
+              <HintInput
                 value={statusUrl}
-                onChange={(e) => setStatusUrl(e.target.value)}
-                onKeyDown={(e) => fillOnTab(e, statusUrl, "status.cloud.google.com", setStatusUrl)}
-                placeholder="status.cloud.google.com"
+                hint="status.cloud.google.com"
+                onValueChange={setStatusUrl}
                 className={rowInputClass}
               />
             </LinkRow>
             <LinkRow icon={Mail} label="Contact">
-              <Input
+              <HintInput
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => fillOnTab(e, email, "cloud.google.com/contact", setEmail)}
-                placeholder="cloud.google.com/contact"
+                hint="cloud.google.com/contact"
+                onValueChange={setEmail}
                 className={rowInputClass}
               />
             </LinkRow>
             <LinkRow icon={MapPin} label="Headquarters">
-              <Input
+              <HintInput
                 value={hq}
-                onChange={(e) => setHq(e.target.value)}
-                onKeyDown={(e) =>
-                  fillOnTab(e, hq, "1600 Amphitheatre Parkway, Mountain View, CA", setHq)
-                }
-                placeholder="1600 Amphitheatre Parkway, Mountain View, CA"
+                hint="1600 Amphitheatre Parkway, Mountain View, CA"
+                onValueChange={setHq}
                 className={rowInputClass}
               />
             </LinkRow>
@@ -2148,19 +2133,94 @@ function ChangeClusterRow({ cluster }: { cluster: ChangeCluster }) {
   );
 }
 
-function fillOnTab(
-  event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+function canAcceptHint(value: string, hint: string): boolean {
+  const current = value.trim();
+  if (!hint) return false;
+  if (current.toLowerCase() === hint.toLowerCase()) return false;
+  return current.length === 0 || hint.toLowerCase().startsWith(current.toLowerCase());
+}
+
+function acceptHintKey(
+  event: KeyboardEvent<HTMLElement>,
   value: string,
   hint: string,
   fill: (next: string) => void,
 ) {
   if (event.key !== "Tab" || event.shiftKey || event.altKey || event.metaKey) return;
-  const current = value.trim();
-  const matches =
-    current.length === 0 || hint.toLowerCase().startsWith(current.toLowerCase());
-  if (!matches || current.toLowerCase() === hint.toLowerCase()) return;
+  if (!canAcceptHint(value, hint)) return;
   event.preventDefault();
+  event.stopPropagation();
+  event.nativeEvent.stopImmediatePropagation();
   fill(hint);
+}
+
+function HintTab({ onFill }: { onFill: () => void }) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onFill();
+      }}
+      className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+    >
+      Tab
+    </button>
+  );
+}
+
+function HintInput({
+  value,
+  hint,
+  onValueChange,
+  className,
+  ...props
+}: Omit<ComponentProps<typeof Input>, "value" | "onChange" | "placeholder"> & {
+  value: string;
+  hint: string;
+  onValueChange: (next: string) => void;
+}) {
+  const open = canAcceptHint(value, hint);
+  return (
+    <div className="relative min-w-0">
+      <Input
+        {...props}
+        value={value}
+        placeholder={hint}
+        onChange={(event) => onValueChange(event.target.value)}
+        onKeyDownCapture={(event) => acceptHintKey(event, value, hint, onValueChange)}
+        className={cn(className, open && "pr-11")}
+      />
+      {open && <HintTab onFill={() => onValueChange(hint)} />}
+    </div>
+  );
+}
+
+function HintTextarea({
+  value,
+  hint,
+  onValueChange,
+  className,
+}: {
+  value: string;
+  hint: string;
+  onValueChange: (next: string) => void;
+  className?: string;
+}) {
+  const open = canAcceptHint(value, hint);
+  return (
+    <div className="relative min-w-0">
+      <Textarea
+        value={value}
+        placeholder={hint}
+        onChange={(event) => onValueChange(event.target.value)}
+        onKeyDownCapture={(event) => acceptHintKey(event, value, hint, onValueChange)}
+        className={cn(className, open && "pr-11")}
+      />
+      {open && <HintTab onFill={() => onValueChange(hint)} />}
+    </div>
+  );
 }
 
 function Field({
