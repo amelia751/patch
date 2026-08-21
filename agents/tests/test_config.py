@@ -4,6 +4,7 @@ import pytest
 
 from agents.config import (
     ADK_ATTACHED_TOOLS,
+    DETERMINISTIC_STAGES,
     MAX_TOOL_CALLS_PER_TURN,
     MODEL_TEMPERATURE,
     REASONING_MODEL,
@@ -83,8 +84,8 @@ def test_every_agent_can_stop_for_a_human():
         # Roadmap §8.1: Change Intelligence may not reach the workspace.
         (AgentId.CHANGE_INTELLIGENCE, ToolName.READ_FILE),
         (AgentId.CHANGE_INTELLIGENCE, ToolName.RUN_COMMAND),
-        (AgentId.PATCH, ToolName.SEARCH_PROVIDER_WEB),
-        (AgentId.VERIFICATION, ToolName.SEARCH_PROVIDER_WEB),
+        (AgentId.POLICY, ToolName.SEARCH_WEB),
+        (AgentId.PR, ToolName.SEARCH_WEB),
         # The orchestrator is code, not a supervisor agent with capabilities.
         (AgentId.ORCHESTRATOR, ToolName.OPEN_PULL_REQUEST),
     ],
@@ -117,9 +118,12 @@ def test_tool_functions_are_documented(run_context):
         assert function.__doc__ and function.__doc__.strip()
 
 
-def test_change_intelligence_holds_the_search_child_grant():
-    assert ToolName.SEARCH_PROVIDER_WEB in tool_allowlist(AgentId.CHANGE_INTELLIGENCE)
-    assert ToolName.SEARCH_PROVIDER_WEB in ADK_ATTACHED_TOOLS
+def test_every_reasoning_agent_holds_the_search_child_grant():
+    assert ToolName.SEARCH_WEB in ADK_ATTACHED_TOOLS
+    for agent in SPECIALISTS:
+        assert ToolName.SEARCH_WEB in tool_allowlist(agent)
+    for agent in DETERMINISTIC_STAGES:
+        assert ToolName.SEARCH_WEB not in tool_allowlist(agent)
 
 
 def test_the_patch_agent_holds_the_debug_loop():

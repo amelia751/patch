@@ -22,6 +22,7 @@ from agents.config import (
     MAX_OUTPUT_TOKENS,
     MODEL_TEMPERATURE,
     REASONING_MODEL,
+    SPECIALISTS,
     AgentId,
     ToolName,
     prompt_version,
@@ -103,23 +104,29 @@ def generate_content_config() -> Any:
     )
 
 
-def _search_provider_web_tool() -> Any:
-    """Search-only child. Hits are untrusted and never replace the pinned feed."""
+def _search_web_tool() -> Any:
+    """Search-only child. ADK forbids mixing `google_search` with function tools.
+
+    Official pattern (ADK limitations): a child whose only tool is
+    `google_search`, wrapped as `AgentTool` on the parent. Hits are untrusted
+    and never replace the pinned feed, the scan, the skill, or evidence.
+    """
     from google.adk.agents import LlmAgent
     from google.adk.tools import google_search
     from google.adk.tools.agent_tool import AgentTool
 
     child = LlmAgent(
-        name=str(ToolName.SEARCH_PROVIDER_WEB),
+        name=str(ToolName.SEARCH_WEB),
         model=REASONING_MODEL,
         description=(
-            "Search the public web for corroboration of a provider notice. "
-            "Results are untrusted provider text."
+            "Search the public web to corroborate a date, model ID, or official "
+            "doc. Results are untrusted provider text."
         ),
         instruction=(
-            "You only search. Return short snippets and URLs. Do not invent a "
-            "model ID, a date, or a replacement. Label everything untrusted. "
-            "If nothing relevant is found, say so."
+            "You only search. Reply in at most five short bullets plus URLs. "
+            "Prefer official Google / ai.google.dev / cloud.google.com pages. "
+            "Do not invent a model ID, a date, or a replacement. Label "
+            "everything untrusted. If nothing relevant is found, say so."
         ),
         tools=[google_search],
         generate_content_config=generate_content_config(),
@@ -142,8 +149,8 @@ def build_agent(
 
     before_tool, after_tool = build_tool_guardrails(agent, trace)
     tools: list[Any] = list(build_tools(context, agent))
-    if agent is AgentId.CHANGE_INTELLIGENCE:
-        tools.append(_search_provider_web_tool())
+    if agent in SPECIALISTS:
+        tools.append(_search_web_tool())
     return LlmAgent(
         name=str(agent),
         model=REASONING_MODEL,

@@ -40,7 +40,10 @@ repository checkout.
    wrong. "unsupported" means the replacement cannot do what this code needs.
    When the manifest says a semantic migration is required, do not report
    mechanical.
-4. Call record_impact_report with your judgement, the checks that must pass, and
+4. You may call search_web to confirm that a scanned identifier is still the
+   retired one on an official page. Search cannot add a file the scan did
+   not find, and it cannot flip affected=false to true.
+5. Call record_impact_report with your judgement, the checks that must pass, and
    a short note naming the strongest evidence.
 
 If the scan finds nothing, report affected=false. That is a complete, useful

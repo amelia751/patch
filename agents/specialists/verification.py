@@ -36,7 +36,10 @@ request for human review.
    - Did a live call to the replacement API succeed?
    - Are the retired identifiers gone from the exercised path?
    - Are forbidden paths untouched?
-3. Call record_verification_report.
+3. You may call search_web to confirm an official API error or replacement
+   surface named in the evidence. Search cannot turn a missing log into
+   pass, and it cannot override a failed build or test.
+4. Call record_verification_report.
 
 A check you did not run is "skip", never "pass". A log you could not read is
 "inconclusive", never "pass". If the evidence is thin but nothing failed, an

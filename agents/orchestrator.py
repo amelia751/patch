@@ -289,13 +289,30 @@ class Orchestrator:
 
         prompt = (
             f"Produce the ChangeManifest for provider change {change_id!r}. "
-            "Read the notice, compare it against the deterministic parse, and record "
-            "the manifest only if they agree."
+            "Read the notice, compare it against the deterministic parse, "
+            "corroborate identifiers and dates with search_web, then call "
+            "record_change_manifest if they agree or record_human_required if "
+            "they do not. search_web is not the finish — you must record."
         )
         turn = await run_turn(
             self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
         )
         output = self._context.output(STAGE_CONTRACTS[agent])
+        if output is None:
+            # Gemini often treats the search child as the end of the turn.
+            # Same ADK session: continue, do not search again.
+            turn = await run_turn(
+                self.agent(agent),
+                (
+                    "You already have the notice, the parse, and search hits. "
+                    "Call record_change_manifest now if they agree, or "
+                    "record_human_required if they do not. Do not call "
+                    "search_web again."
+                ),
+                trace=self._trace,
+                session_service=self._sessions(),
+            )
+            output = self._context.output(STAGE_CONTRACTS[agent])
 
         if output is None:
             self._advance(RunState.FAILED)
