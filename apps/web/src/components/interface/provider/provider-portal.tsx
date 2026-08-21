@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Image from "next/image";
 import { format, startOfDay, subDays } from "date-fns";
 import { type DateRange } from "react-day-picker";
@@ -1875,6 +1875,12 @@ function RegisterDialog({
                   setName(e.target.value);
                   if (!slugTouched) setSlug(slugify(e.target.value));
                 }}
+                onKeyDown={(e) =>
+                  fillOnTab(e, name, "Google Cloud", (next) => {
+                    setName(next);
+                    if (!slugTouched) setSlug(slugify(next));
+                  })
+                }
                 placeholder="Google Cloud"
                 className={fieldClass}
               />
@@ -1890,7 +1896,7 @@ function RegisterDialog({
                     setSlugTouched(true);
                     setSlug(sanitizeSlugInput(e.target.value));
                   }}
-                  placeholder="acme-ai"
+                  placeholder="slug"
                   className={cn(
                     fieldClass,
                     "font-mono rounded-l-none",
@@ -1939,6 +1945,7 @@ function RegisterDialog({
                 <Input
                   value={since}
                   onChange={(e) => setSince(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  onKeyDown={(e) => fillOnTab(e, since, "2008", setSince)}
                   placeholder="2008"
                   inputMode="numeric"
                   className={fieldClass}
@@ -1949,6 +1956,14 @@ function RegisterDialog({
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                onKeyDown={(e) =>
+                  fillOnTab(
+                    e,
+                    description,
+                    "A suite of cloud services for compute, storage, data analytics, and machine learning.",
+                    setDescription,
+                  )
+                }
                 placeholder="A suite of cloud services for compute, storage, data analytics, and machine learning."
                 className={textareaClass}
               />
@@ -1960,6 +1975,7 @@ function RegisterDialog({
               <Input
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
+                onKeyDown={(e) => fillOnTab(e, website, "cloud.google.com", setWebsite)}
                 placeholder="cloud.google.com"
                 className={rowInputClass}
               />
@@ -1968,6 +1984,7 @@ function RegisterDialog({
               <Input
                 value={consoleUrl}
                 onChange={(e) => setConsoleUrl(e.target.value)}
+                onKeyDown={(e) => fillOnTab(e, consoleUrl, "console.cloud.google.com", setConsoleUrl)}
                 placeholder="console.cloud.google.com"
                 className={rowInputClass}
               />
@@ -1976,6 +1993,7 @@ function RegisterDialog({
               <Input
                 value={docsUrl}
                 onChange={(e) => setDocsUrl(e.target.value)}
+                onKeyDown={(e) => fillOnTab(e, docsUrl, "cloud.google.com/docs", setDocsUrl)}
                 placeholder="cloud.google.com/docs"
                 className={rowInputClass}
               />
@@ -1984,6 +2002,7 @@ function RegisterDialog({
               <Input
                 value={statusUrl}
                 onChange={(e) => setStatusUrl(e.target.value)}
+                onKeyDown={(e) => fillOnTab(e, statusUrl, "status.cloud.google.com", setStatusUrl)}
                 placeholder="status.cloud.google.com"
                 className={rowInputClass}
               />
@@ -1992,6 +2011,7 @@ function RegisterDialog({
               <Input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => fillOnTab(e, email, "cloud.google.com/contact", setEmail)}
                 placeholder="cloud.google.com/contact"
                 className={rowInputClass}
               />
@@ -2000,6 +2020,9 @@ function RegisterDialog({
               <Input
                 value={hq}
                 onChange={(e) => setHq(e.target.value)}
+                onKeyDown={(e) =>
+                  fillOnTab(e, hq, "1600 Amphitheatre Parkway, Mountain View, CA", setHq)
+                }
                 placeholder="1600 Amphitheatre Parkway, Mountain View, CA"
                 className={rowInputClass}
               />
@@ -2123,6 +2146,21 @@ function ChangeClusterRow({ cluster }: { cluster: ChangeCluster }) {
       )}
     </div>
   );
+}
+
+function fillOnTab(
+  event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  value: string,
+  hint: string,
+  fill: (next: string) => void,
+) {
+  if (event.key !== "Tab" || event.shiftKey || event.altKey || event.metaKey) return;
+  const current = value.trim();
+  const matches =
+    current.length === 0 || hint.toLowerCase().startsWith(current.toLowerCase());
+  if (!matches || current.toLowerCase() === hint.toLowerCase()) return;
+  event.preventDefault();
+  fill(hint);
 }
 
 function Field({
