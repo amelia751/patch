@@ -25,11 +25,7 @@ export const MOCK_GOOGLE_OFFER: MarketplaceOffer = {
   subscribed: false,
 };
 
-export const SUBSCRIBE_SCAN_STEPS = [
-  "Opening the repository…",
-  "Scanning for Google Cloud APIs and models…",
-  "Matching services to the catalog…",
-  "Checking API and service releases…",
-] as const;
-
 export const MOCK_SUBSCRIBED_KEY = "patch.subscription.mock.google";
+export const MOCK_CHANGES_SCAN_KEY = "patch.changes.mock.scan";
+export const MOCK_SUBSCRIBE_SCAN_EVENT = "patchSubscribeScan";
+export const MOCK_CHANGES_SCAN_MS = 10_000;

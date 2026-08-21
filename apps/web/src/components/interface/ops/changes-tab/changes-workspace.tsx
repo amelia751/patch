@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Radio } from "lucide-react";
+import { Bell, Radio, ScanSearch } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  MOCK_CHANGES_SCAN_KEY,
+  MOCK_CHANGES_SCAN_MS,
+  MOCK_SUBSCRIBE_SCAN_EVENT,
+  MOCK_SUBSCRIBED_KEY,
+} from "@/components/interface/ops/subscription-tab/data";
 import type { ChangeActionId, RunProgress } from "./actions";
 import { ChangesInbox } from "./changes-tab";
 import { runKey, type ProjectChange } from "./data";
@@ -42,6 +49,8 @@ export function ChangesTab({
   const [runs, setRuns] = useState<MockRun[]>(boot.runs);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(boot.runs[0]?.id ?? null);
   const [progress, setProgress] = useState<Record<string, RunProgress>>(boot.progress);
+  const [scanning, setScanning] = useState(false);
+  const [scanPct, setScanPct] = useState(0);
 
   const attention = useMemo(
     () => runs.filter((run) => bucketNeedsYou(run.bucket)).length,
@@ -53,6 +62,49 @@ export function ChangesTab({
   );
 
   const hasActive = runs.some((run) => run.bucket === "active");
+
+  useEffect(() => {
+    let frame = 0;
+    let startAt = 0;
+
+    const finish = () => {
+      window.sessionStorage.setItem(MOCK_CHANGES_SCAN_KEY, "done");
+      setScanPct(100);
+      setScanning(false);
+    };
+
+    const tick = (now: number) => {
+      const elapsed = now - startAt;
+      const pct = Math.min(100, (elapsed / MOCK_CHANGES_SCAN_MS) * 100);
+      setScanPct(pct);
+      if (elapsed >= MOCK_CHANGES_SCAN_MS) {
+        finish();
+        return;
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    const begin = () => {
+      window.sessionStorage.setItem(MOCK_CHANGES_SCAN_KEY, "pending");
+      setScanning(true);
+      setScanPct(0);
+      startAt = performance.now();
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    const scanState = window.sessionStorage.getItem(MOCK_CHANGES_SCAN_KEY);
+    const subscribed = window.sessionStorage.getItem(MOCK_SUBSCRIBED_KEY) === "1";
+    if (scanState === "pending" || (subscribed && scanState !== "done")) {
+      begin();
+    }
+
+    const onSubscribe = () => begin();
+    window.addEventListener(MOCK_SUBSCRIBE_SCAN_EVENT, onSubscribe);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener(MOCK_SUBSCRIBE_SCAN_EVENT, onSubscribe);
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasActive) return;
@@ -125,7 +177,31 @@ export function ChangesTab({
       </SectionRail>
 
       <div className="flex-1 min-w-0 overflow-hidden">
-        {section === "releases" ? (
+        {scanning ? (
+          <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
+            <div className="w-full max-w-sm px-6 text-center">
+              <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+                <ScanSearch className="h-5 w-5 text-primary" />
+              </div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                Scanning your codebase
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
+                Looking for relevant Google Cloud usage
+              </p>
+              <div className="mt-5 h-1 overflow-hidden rounded-full bg-[var(--bg-secondary)]">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${scanPct}%` }}
+                />
+              </div>
+              <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                <Spinner className="h-3 w-3" />
+                {Math.round(scanPct)}%
+              </div>
+            </div>
+          </div>
+        ) : section === "releases" ? (
           <ChangesInbox
             hasProject={hasProject}
             projectId={projectId}

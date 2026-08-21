@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import {
   AlertDialog,
@@ -12,24 +12,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { getGCPServiceIcon } from "@/lib/gcp-icons";
-import { CheckCircle2, Rss, ScanSearch, Search, Store, Unplug } from "lucide-react";
+import { CheckCircle2, Rss, Search, Store, Unplug } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 import {
+  MOCK_CHANGES_SCAN_KEY,
   MOCK_GOOGLE_OFFER,
+  MOCK_SUBSCRIBE_SCAN_EVENT,
   MOCK_SUBSCRIBED_KEY,
-  SUBSCRIBE_SCAN_STEPS,
   type MarketplaceOffer,
 } from "./data";
 import {
@@ -77,16 +69,10 @@ export function SubscriptionTab({
   const [subscribed, setSubscribed] = useState(false);
   const [query, setQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [scanStep, setScanStep] = useState(0);
   const [unsubscribeOpen, setUnsubscribeOpen] = useState(false);
-  const scanTimer = useRef<number | null>(null);
 
   useEffect(() => {
     setSubscribed(readMockSubscribed());
-    return () => {
-      if (scanTimer.current !== null) window.clearInterval(scanTimer.current);
-    };
   }, []);
 
   const offers = useMemo(() => [mockOffer(subscribed)], [subscribed]);
@@ -106,31 +92,19 @@ export function SubscriptionTab({
     );
   }, [offers, query, section, watching]);
 
-  const startScan = () => {
-    setScanning(true);
-    setScanStep(0);
-    let step = 0;
-    if (scanTimer.current !== null) window.clearInterval(scanTimer.current);
-    scanTimer.current = window.setInterval(() => {
-      step += 1;
-      if (step >= SUBSCRIBE_SCAN_STEPS.length) {
-        if (scanTimer.current !== null) window.clearInterval(scanTimer.current);
-        scanTimer.current = null;
-        writeMockSubscribed(true);
-        setSubscribed(true);
-        setScanning(false);
-        setConfirmOpen(false);
-        setScanStep(0);
-        setSection("subscribed");
-        onOpenChanges?.();
-        return;
-      }
-      setScanStep(step);
-    }, 850);
+  const confirmSubscribe = () => {
+    writeMockSubscribed(true);
+    window.sessionStorage.setItem(MOCK_CHANGES_SCAN_KEY, "pending");
+    setSubscribed(true);
+    setConfirmOpen(false);
+    setSection("subscribed");
+    window.dispatchEvent(new CustomEvent(MOCK_SUBSCRIBE_SCAN_EVENT));
+    onOpenChanges?.();
   };
 
   const unsubscribe = () => {
     writeMockSubscribed(false);
+    window.sessionStorage.removeItem(MOCK_CHANGES_SCAN_KEY);
     setSubscribed(false);
     setUnsubscribeOpen(false);
     setSection("marketplace");
@@ -218,95 +192,44 @@ export function SubscriptionTab({
         )}
       </div>
 
-      <Dialog
-        open={confirmOpen}
-        onOpenChange={(open) => {
-          if (scanning) return;
-          setConfirmOpen(open);
-        }}
-      >
-        <DialogContent className="sm:max-w-[440px] bg-[var(--bg-primary)] border-[var(--border-color)]">
-          {scanning ? (
-            <div className="py-4">
-              <div className="flex items-center justify-center mb-4">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Spinner className="h-5 w-5 text-primary" />
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)] sm:max-w-md">
+          <AlertDialogHeader className="space-y-3 text-left">
+            <AlertDialogTitle className="text-base text-[var(--text-primary)]">
+              Subscribe
+            </AlertDialogTitle>
+            <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)]">
+                  <Image
+                    src={MOCK_GOOGLE_OFFER.logoUrl || getGCPServiceIcon("google cloud")}
+                    alt=""
+                    width={16}
+                    height={16}
+                    className="h-4 w-4 object-contain"
+                  />
                 </div>
-              </div>
-              <DialogHeader className="text-center sm:text-center">
-                <DialogTitle className="text-[var(--text-primary)]">
-                  Scanning your codebase
-                </DialogTitle>
-                <DialogDescription className="text-[var(--text-secondary)]">
-                  {SUBSCRIBE_SCAN_STEPS[scanStep]}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="mt-5 space-y-2">
-                {SUBSCRIBE_SCAN_STEPS.map((label, index) => {
-                  const done = index < scanStep;
-                  const current = index === scanStep;
-                  return (
-                    <div
-                      key={label}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      {done ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
-                      ) : current ? (
-                        <Spinner className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                      ) : (
-                        <span className="h-3.5 w-3.5 rounded-full border border-[var(--border-color)] flex-shrink-0" />
-                      )}
-                      <span
-                        className={
-                          current
-                            ? "text-[var(--text-primary)]"
-                            : done
-                              ? "text-[var(--text-secondary)]"
-                              : "text-[var(--text-secondary)]/50"
-                        }
-                      >
-                        {label}
-                      </span>
-                    </div>
-                  );
-                })}
+                <p className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
+                  Google Cloud
+                  <span> · API and service releases</span>
+                </p>
               </div>
             </div>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-[var(--text-primary)]">
-                  Watch Google Cloud in this project?
-                </DialogTitle>
-                <DialogDescription className="text-[var(--text-secondary)] leading-relaxed">
-                  We will scan this repository for Google Cloud APIs and services, then match
-                  them against published API and service releases. Matches show up on Changes.
-                  Nothing is written to the repo until you review a pull request.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border-[var(--border-color)] text-[var(--text-secondary)]"
-                  onClick={() => setConfirmOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                  onClick={startScan}
-                >
-                  <ScanSearch className="h-3.5 w-3.5 mr-1.5" />
-                  Scan and watch
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+            <AlertDialogDescription className="text-xs leading-relaxed text-[var(--text-secondary)]">
+              PatchAPI will scan this project for relevant Google Cloud usage. It will not change your repo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={confirmSubscribe}
+            >
+              Subscribe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={unsubscribeOpen} onOpenChange={setUnsubscribeOpen}>
         <AlertDialogContent className="bg-[var(--bg-primary)] border-[var(--border-color)]">
