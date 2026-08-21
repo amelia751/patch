@@ -43,6 +43,7 @@ from uuid import UUID
 from packages.events.config import EventType
 from packages.events.publisher import publish_async
 from packages.events.repo_events import branch_from_ref, index_updated_event
+from packages.state.findings import refresh_after_repo_ready
 from patchapi_repo_indexer import git, store
 from patchapi_repo_indexer.config import (
     DEFAULT_PROVIDER,
@@ -193,6 +194,7 @@ class Effects:
     publish: Callable[[EventEnvelope], Awaitable[PublishResult]] = publish_async
     now: Callable[[], datetime] = _utc_now
     index_backend: str = field(default=INDEX_BACKEND)
+    refresh_findings: Callable[..., Awaitable[tuple[str, ...]]] = refresh_after_repo_ready
 
 
 DEFAULT_EFFECTS: Final[Effects] = Effects()
@@ -382,6 +384,7 @@ async def _index(
         raise
 
     notified = await _fan_out(conn, repository, branch, sha, effects)
+    await effects.refresh_findings(conn, repository, branch)
     return HandlerResult(
         action=ACTION_INDEXED,
         repository=repository,
@@ -409,13 +412,18 @@ async def handle_repo_added(
 
     references = await store.acquire_shard(conn, repository, branch)
     previous = await store.load_state(conn, repository, branch)
-    if previous is not None and previous.status == "ready" and previous.indexed_sha:
+    if (
+        previous is not None
+        and previous.indexed_sha
+        and previous.indexer_version == INDEXER_VERSION
+    ):
         notified = await _fan_out(conn, repository, branch, previous.indexed_sha, effects)
         # Import may have flipped the row to `indexing` for the banner. Put
         # `ready` back and wake consoles so the overlay does not stick at 0%.
         await store.set_index_progress(
             conn, repository, branch, status="ready", progress_percent=PROGRESS_DONE
         )
+        await effects.refresh_findings(conn, repository, branch)
         return HandlerResult(
             action=ACTION_REFERENCED,
             repository=repository,

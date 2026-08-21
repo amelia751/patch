@@ -41,6 +41,14 @@ def test_cloud_provider_route_is_a_patch() -> None:
     assert "update_project_cloud_provider" in source
 
 
+def test_subscribe_kicks_off_a_findings_backfill() -> None:
+    source = PROJECT_ROUTES_PY.read_text(encoding="utf-8")
+    assert '@router.put("/{project_id}/providers/{slug}")' in source
+    assert "backfill_project" in source
+    assert '@router.get("/{project_id}/changes")' in source
+    assert "inbox_payload" in source
+
+
 def test_add_repository_writes_the_same_workspace_row_as_import() -> None:
     """Add Repository used to insert only `project_repositories`.
 

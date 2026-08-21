@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import {
   AlertDialog,
@@ -17,48 +17,48 @@ import { Input } from "@/components/ui/input";
 import { getGCPServiceIcon } from "@/lib/gcp-icons";
 import { CheckCircle2, Rss, Search, Store, Unplug } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
-import {
-  MOCK_CHANGES_SCAN_KEY,
-  MOCK_GOOGLE_OFFER,
-  MOCK_SUBSCRIBE_SCAN_EVENT,
-  MOCK_SUBSCRIBED_KEY,
-  type MarketplaceOffer,
-} from "./data";
+import { MOCK_GOOGLE_OFFER, type MarketplaceOffer } from "./data";
 import {
   MarketplaceEmptyState,
   NoProjectEmptyState,
   SubscribedEmptyState,
 } from "./empty-states";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 type Section = "subscribed" | "marketplace";
 
-function readMockSubscribed(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(MOCK_SUBSCRIBED_KEY) === "1";
+function formatWatchingSince(iso?: string | null): string | undefined {
+  if (!iso) return undefined;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
-function writeMockSubscribed(next: boolean) {
-  if (typeof window === "undefined") return;
-  if (next) window.sessionStorage.setItem(MOCK_SUBSCRIBED_KEY, "1");
-  else window.sessionStorage.removeItem(MOCK_SUBSCRIBED_KEY);
-}
-
-function mockOffer(subscribed: boolean): MarketplaceOffer {
+function offerFromProvider(row: Record<string, unknown>): MarketplaceOffer {
   return {
-    ...MOCK_GOOGLE_OFFER,
-    subscribed,
-    watchingSince: subscribed
-      ? new Date().toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
-      : undefined,
+    id: String(row.slug ?? row.id ?? "google"),
+    slug: String(row.slug ?? "google"),
+    name: String(row.name ?? MOCK_GOOGLE_OFFER.name),
+    provider: String(row.name ?? MOCK_GOOGLE_OFFER.provider),
+    product: String(row.slug ?? MOCK_GOOGLE_OFFER.product),
+    description: String(row.description ?? MOCK_GOOGLE_OFFER.description),
+    category: String(row.category ?? MOCK_GOOGLE_OFFER.category),
+    logoUrl: String(row.logo_url || row.logoUrl || MOCK_GOOGLE_OFFER.logoUrl || ""),
+    subscribed: Boolean(row.subscribed),
+    watchingSince: formatWatchingSince(
+      typeof row.subscribed_at === "string" ? row.subscribed_at : undefined,
+    ),
   };
 }
 
 export function SubscriptionTab({
   hasProject = true,
+  projectId,
   onOpenChanges,
 }: {
   hasProject?: boolean;
@@ -66,16 +66,36 @@ export function SubscriptionTab({
   onOpenChanges?: () => void;
 }) {
   const [section, setSection] = useState<Section>("marketplace");
-  const [subscribed, setSubscribed] = useState(false);
+  const [offers, setOffers] = useState<MarketplaceOffer[]>([MOCK_GOOGLE_OFFER]);
   const [query, setQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [unsubscribeOpen, setUnsubscribeOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setSubscribed(readMockSubscribed());
+  const loadOffers = useCallback(async (id: string) => {
+    const response = await fetch(`${API_URL}/api/projects/${id}/providers`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error(`providers ${response.status}`);
+    }
+    const payload = (await response.json()) as { providers?: Record<string, unknown>[] };
+    const next = (payload.providers ?? []).map(offerFromProvider);
+    setOffers(next.length > 0 ? next : [MOCK_GOOGLE_OFFER]);
+    if (next.some((offer) => offer.subscribed)) {
+      setSection("subscribed");
+    }
+    return next;
   }, []);
 
-  const offers = useMemo(() => [mockOffer(subscribed)], [subscribed]);
+  useEffect(() => {
+    if (!hasProject || !projectId) return;
+    void loadOffers(projectId).catch(() => {
+      setOffers([MOCK_GOOGLE_OFFER]);
+    });
+  }, [hasProject, loadOffers, projectId]);
+
   const watching = offers.filter((offer) => offer.subscribed);
   const available = offers.filter((offer) => !offer.subscribed);
 
@@ -92,22 +112,49 @@ export function SubscriptionTab({
     );
   }, [offers, query, section, watching]);
 
-  const confirmSubscribe = () => {
-    writeMockSubscribed(true);
-    window.sessionStorage.setItem(MOCK_CHANGES_SCAN_KEY, "pending");
-    setSubscribed(true);
-    setConfirmOpen(false);
-    setSection("subscribed");
-    window.dispatchEvent(new CustomEvent(MOCK_SUBSCRIBE_SCAN_EVENT));
-    onOpenChanges?.();
+  const confirmSubscribe = async () => {
+    if (!projectId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${projectId}/providers/google`, {
+        method: "PUT",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`subscribe ${response.status}`);
+      }
+      await loadOffers(projectId);
+      setConfirmOpen(false);
+      setSection("subscribed");
+      onOpenChanges?.();
+    } catch {
+      setError("Could not subscribe. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const unsubscribe = () => {
-    writeMockSubscribed(false);
-    window.sessionStorage.removeItem(MOCK_CHANGES_SCAN_KEY);
-    setSubscribed(false);
-    setUnsubscribeOpen(false);
-    setSection("marketplace");
+  const unsubscribe = async () => {
+    if (!projectId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${projectId}/providers/google`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`unsubscribe ${response.status}`);
+      }
+      await loadOffers(projectId);
+      setUnsubscribeOpen(false);
+      setSection("marketplace");
+    } catch {
+      setError("Could not unsubscribe. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!hasProject) {
@@ -218,14 +265,19 @@ export function SubscriptionTab({
             <AlertDialogDescription className="text-xs leading-relaxed text-[var(--text-secondary)]">
               PatchAPI will scan this project for relevant Google Cloud usage. We will not change your repo.
             </AlertDialogDescription>
+            {error && <p className="text-xs text-red-500">{error}</p>}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
-              onClick={confirmSubscribe}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmSubscribe();
+              }}
+              disabled={busy}
             >
-              Subscribe
+              {busy ? "Subscribing…" : "Subscribe"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -242,13 +294,18 @@ export function SubscriptionTab({
               You can subscribe again anytime.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {error && <p className="px-6 text-xs text-red-500">{error}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-500 hover:bg-red-600 text-white focus:ring-red-500"
-              onClick={unsubscribe}
+              onClick={(event) => {
+                event.preventDefault();
+                void unsubscribe();
+              }}
+              disabled={busy}
             >
-              Unsubscribe
+              {busy ? "Unsubscribing…" : "Unsubscribe"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

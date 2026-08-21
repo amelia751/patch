@@ -60,7 +60,6 @@ import {
   type RunProgress,
 } from "./actions";
 import {
-  HARDCODED_PROJECT_CHANGES,
   isDocsOnly,
   isNotYetEffective,
   affectedRepos,
@@ -381,6 +380,7 @@ function ActionConfirmDialog({
 
 export function ChangesInbox({
   hasProject = true,
+  changes,
   onBrowseSubscriptions,
   progress,
   onCommitted,
@@ -388,6 +388,7 @@ export function ChangesInbox({
 }: {
   hasProject?: boolean;
   projectId?: string;
+  changes: ProjectChange[];
   onBrowseSubscriptions?: () => void;
   progress: Record<string, RunProgress>;
   onCommitted: (change: ProjectChange, action: ChangeActionId) => void;
@@ -405,21 +406,19 @@ export function ChangesInbox({
     action: ChangeActionId;
   } | null>(null);
   const [pendingRepo, setPendingRepo] = useState<string | null>(null);
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    () => new Set(HARDCODED_PROJECT_CHANGES.map((change) => change.provider)),
-  );
-  const [expandedChanges, setExpandedChanges] = useState<Set<string>>(
-    () =>
-      new Set(
-        HARDCODED_PROJECT_CHANGES.filter((change) => change.status === "needs_you" && change.source === "fixture").map(
-          (c) => c.id,
-        ),
-      ),
-  );
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const [expandedChanges, setExpandedChanges] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setExpandedProviders(new Set(changes.map((change) => change.provider)));
+    setExpandedChanges(
+      new Set(changes.filter((change) => change.status === "needs_you").map((change) => change.id)),
+    );
+  }, [changes]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return HARDCODED_PROJECT_CHANGES.filter((change) => {
+    return changes.filter((change) => {
       const status = statusOverride[change.id] ?? change.status;
       if (statusFilter !== "all" && status !== statusFilter) return false;
       if (kindFilter !== "all" && change.kind !== kindFilter) return false;
@@ -441,7 +440,7 @@ export function ChangesInbox({
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [kindFilter, searchQuery, statusFilter, statusOverride]);
+  }, [changes, kindFilter, searchQuery, statusFilter, statusOverride]);
 
   useEffect(() => {
     setProviderPage({});
@@ -459,13 +458,13 @@ export function ChangesInbox({
 
   const counts = useMemo(() => {
     const tally = (status: DetectionStatus) =>
-      HARDCODED_PROJECT_CHANGES.filter((c) => c.status === status).length;
+      changes.filter((c) => (statusOverride[c.id] ?? c.status) === status).length;
     return {
       needsYou: tally("needs_you"),
       watching: tally("watching"),
       dismissed: tally("dismissed"),
     };
-  }, []);
+  }, [changes, statusOverride]);
 
   const filtersActive = Boolean(searchQuery) || statusFilter !== "all" || kindFilter !== "all";
   const moreKindActive = kindFilter !== "all" && MORE_KINDS.includes(kindFilter);
@@ -698,7 +697,7 @@ export function ChangesInbox({
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="max-w-5xl mx-auto space-y-3">
-          {bannerOpen && (
+          {bannerOpen && changes.length > 0 && (
             <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
               <Bell className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">

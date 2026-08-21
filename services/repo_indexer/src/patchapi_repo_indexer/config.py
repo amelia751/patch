@@ -15,7 +15,7 @@ from patchapi_repo_indexer.errors import UnknownProviderError
 
 # Bumped when the inventory-building logic changes shape. Recorded on every
 # inventory so a stored document can be traced to the indexer that wrote it.
-INDEXER_VERSION: Final[str] = "1.2.0"
+INDEXER_VERSION: Final[str] = "1.3.0"
 
 # Document version of the inventory contract itself. Consumers refuse a version
 # they do not know rather than misread a document written by a newer producer.
@@ -45,9 +45,7 @@ SCOPE_CHANGED_PATHS: Final[str] = "changed_paths"
 INDEX_BACKEND: Final[str] = os.getenv("PATCHAPI_INDEX_BACKEND", "zoekt")
 LAYER_B_CONFIDENCE: Final[float] = 0.9
 ZOEKT_INDEX_DIR: Final[str] = os.getenv("PATCHAPI_ZOEKT_INDEX_DIR", "/tmp/patchapi-zoekt")
-ZOEKT_WEBSERVER_URL: Final[str] = os.getenv(
-    "PATCHAPI_ZOEKT_WEBSERVER_URL", "http://127.0.0.1:6070"
-)
+ZOEKT_WEBSERVER_URL: Final[str] = os.getenv("PATCHAPI_ZOEKT_WEBSERVER_URL", "http://127.0.0.1:6070")
 ASTGREP_RULE_DIR: Final[str] = os.getenv("PATCHAPI_ASTGREP_RULE_DIR", "")
 INDEXER_WORKDIR: Final[str] = os.getenv("PATCHAPI_INDEXER_WORKDIR", "/tmp/patchapi-index-work")
 PUBSUB_PROJECT: Final[str] = os.getenv(
@@ -78,9 +76,31 @@ GEMINI_20_IDENTIFIERS: Final[tuple[str, ...]] = (
     "gemini-2.0-flash-lite-001",
 )
 
+GEMINI_IMAGE_IDENTIFIERS: Final[tuple[str, ...]] = (
+    "gemini-3.1-flash-image-preview",
+    "gemini-3.1-flash-image",
+    "gemini-3.5-flash",
+)
+
+VERTEX_IMAGEN_IDENTIFIERS: Final[tuple[str, ...]] = (
+    "vertex/imagen-4.0-generate-001",
+    "vertex/imagen-4.0-ultra-generate-001",
+    "vertex/imagen-4.0-fast-generate-001",
+)
+
+FALSE_POSITIVE_IDENTIFIERS: Final[tuple[str, ...]] = ("fal-ai/imagen4/preview",)
+
+GOOGLE_WATCHED_IDENTIFIERS: Final[tuple[str, ...]] = (
+    IMAGEN_4_IDENTIFIERS
+    + GEMINI_20_IDENTIFIERS
+    + GEMINI_IMAGE_IDENTIFIERS
+    + VERTEX_IMAGEN_IDENTIFIERS
+    + FALSE_POSITIVE_IDENTIFIERS
+)
+
 WATCHLISTS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyType(
     {
-        DEFAULT_PROVIDER: IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS,
+        DEFAULT_PROVIDER: GOOGLE_WATCHED_IDENTIFIERS,
     }
 )
 
@@ -95,7 +115,10 @@ __all__ = [
     "DEFAULT_PROVIDER",
     "DETECTION_LAYER",
     "DETECTION_LAYERS",
+    "FALSE_POSITIVE_IDENTIFIERS",
     "GEMINI_20_IDENTIFIERS",
+    "GEMINI_IMAGE_IDENTIFIERS",
+    "GOOGLE_WATCHED_IDENTIFIERS",
     "IMAGEN_4_IDENTIFIERS",
     "INDEXER_VERSION",
     "INDEXER_WORKDIR",
@@ -109,6 +132,7 @@ __all__ = [
     "SCANNER_VERSION",
     "SCOPE_CHANGED_PATHS",
     "SCOPE_FULL_TREE",
+    "VERTEX_IMAGEN_IDENTIFIERS",
     "WATCHLISTS",
     "ZOEKT_INDEX_DIR",
     "ZOEKT_WEBSERVER_URL",

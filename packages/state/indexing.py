@@ -174,6 +174,25 @@ async def mark_import_queued(
         return
 
 
+async def requeue_project_imports(pool: asyncpg.Pool, project_id: UUID) -> None:
+    """Re-announce every imported target so a watchlist bump can re-index.
+
+    Subscribe uses this after the first join. The indexer skips the clone when
+    `indexer_version` already matches; otherwise it full-indexes and refreshes
+    findings when the pass lands.
+    """
+    from packages.state.projects import announce_repository_added
+
+    try:
+        async with pool.acquire() as connection:
+            rows = await connection.fetch(_INDEXING_SQL, project_id)
+    except Exception:
+        return
+    for row in rows:
+        await mark_import_queued(pool, project_id, row["repository"], row["branch"])
+        await announce_repository_added(project_id, row["repository"], row["branch"])
+
+
 async def enqueue_idle_imports(pool: asyncpg.Pool, project_id: UUID) -> None:
     """Re-announce imported targets that never got a pass (pre-worker imports)."""
     from packages.state.projects import announce_repository_added
@@ -218,5 +237,6 @@ __all__ = [
     "indexing_for_project",
     "indexing_snapshot",
     "mark_import_queued",
+    "requeue_project_imports",
     "rollup",
 ]

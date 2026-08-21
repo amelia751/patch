@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 
 from packages.events.console_notify import (
+    EVENT_CHANGES,
     EVENT_INDEXING,
     EVENT_NOTIFICATIONS,
     decode_notify,
@@ -22,6 +23,11 @@ def test_round_trip() -> None:
 def test_notifications_type_is_distinct() -> None:
     payload = encode_notify(event_type=EVENT_NOTIFICATIONS, project_id=PROJECT_ID)
     assert decode_notify(payload) == (EVENT_NOTIFICATIONS, PROJECT_ID)
+
+
+def test_changes_type_is_distinct() -> None:
+    payload = encode_notify(event_type=EVENT_CHANGES, project_id=PROJECT_ID)
+    assert decode_notify(payload) == (EVENT_CHANGES, PROJECT_ID)
 
 
 def test_unknown_type_is_rejected_on_encode() -> None:

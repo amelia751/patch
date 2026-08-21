@@ -522,6 +522,15 @@ async def persist_notes(
                 fetched_at=fetched_at,
                 snapshot_sha256=snapshot_sha256,
             )
+            provider_id = link["provider_id"]
+        slug = await connection.fetchval(
+            "SELECT slug FROM providers WHERE id = $1",
+            provider_id,
+        )
+        if slug:
+            from packages.state.findings import refresh_subscribed_projects
+
+            await refresh_subscribed_projects(connection, str(slug))
 
 
 async def _mark_connected(

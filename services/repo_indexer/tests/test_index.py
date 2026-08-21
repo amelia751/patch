@@ -5,8 +5,7 @@ from pathlib import Path
 import pytest
 from patchapi_repo_indexer.config import (
     DETECTION_LAYER,
-    GEMINI_20_IDENTIFIERS,
-    IMAGEN_4_IDENTIFIERS,
+    GOOGLE_WATCHED_IDENTIFIERS,
     LITERAL_MATCH_CONFIDENCE,
     SCOPE_CHANGED_PATHS,
     SCOPE_FULL_TREE,
@@ -44,16 +43,16 @@ def test_finds_the_retired_imagen_identifier(fixture_repo):
     assert not inventory.is_empty
     assert inventory.scope == SCOPE_FULL_TREE
     assert inventory.provider == "google"
-    assert inventory.watched_identifiers == IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS
+    assert inventory.watched_identifiers == GOOGLE_WATCHED_IDENTIFIERS
 
 
 def test_reports_the_runtime_call_site_with_its_line(fixture_repo):
     inventory = index(fixture_repo)
 
     runtime = [usage for usage in inventory.usages if usage.file_path == "src/image.ts"]
-    assert len(runtime) == 1
-    hit = runtime[0]
-    assert hit.identifier == RETIRED_MODEL
+    identifiers = {usage.identifier for usage in runtime}
+    assert identifiers == {RETIRED_MODEL, "vertex/imagen-4.0-generate-001"}
+    hit = next(usage for usage in runtime if usage.identifier == RETIRED_MODEL)
     assert hit.usage_kind is UsageKind.RUNTIME_SOURCE
     assert hit.is_runtime
     assert hit.detection_layer == DETECTION_LAYER
@@ -77,7 +76,9 @@ def test_separates_runtime_usage_from_documentation(fixture_repo):
 def test_finds_every_watched_family_member_present(fixture_repo):
     inventory = index(fixture_repo)
 
-    assert set(inventory.matched_identifiers) == {RETIRED_MODEL, RETIRED_FAST_MODEL}
+    assert {RETIRED_MODEL, RETIRED_FAST_MODEL}.issubset(inventory.matched_identifiers)
+    assert "vertex/imagen-4.0-generate-001" in inventory.matched_identifiers
+    assert "gemini-3.5-flash" in inventory.matched_identifiers
 
 
 def test_skips_vendored_directories(fixture_repo):
@@ -151,7 +152,7 @@ def test_unknown_provider_fails_closed(fixture_repo):
 
 
 def test_watchlist_for_returns_the_pinned_imagen_and_gemini20_families():
-    assert watchlist_for("google") == IMAGEN_4_IDENTIFIERS + GEMINI_20_IDENTIFIERS
+    assert watchlist_for("google") == GOOGLE_WATCHED_IDENTIFIERS
 
 
 def test_indexes_the_storygen_fixture():

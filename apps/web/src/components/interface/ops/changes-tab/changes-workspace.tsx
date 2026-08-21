@@ -1,17 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, Radio, ScanSearch } from "lucide-react";
 import { SectionRail, SectionRailButton } from "@/components/interface/shared/section-rail";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  MOCK_CHANGES_SCAN_KEY,
-  MOCK_CHANGES_SCAN_MS,
-  MOCK_SUBSCRIBE_SCAN_EVENT,
-  MOCK_SUBSCRIBED_KEY,
-} from "@/components/interface/ops/subscription-tab/data";
 import type { ChangeActionId, RunProgress } from "./actions";
 import { ChangesInbox } from "./changes-tab";
+import { dismissProjectChange, fetchProjectChanges, reopenProjectChange } from "./api";
 import { runKey, type ProjectChange } from "./data";
 import { RunsPanel, bucketNeedsYou } from "./runs-panel";
 import {
@@ -49,6 +44,7 @@ export function ChangesTab({
   const [runs, setRuns] = useState<MockRun[]>(boot.runs);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(boot.runs[0]?.id ?? null);
   const [progress, setProgress] = useState<Record<string, RunProgress>>(boot.progress);
+  const [changes, setChanges] = useState<ProjectChange[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanPct, setScanPct] = useState(0);
 
@@ -63,48 +59,47 @@ export function ChangesTab({
 
   const hasActive = runs.some((run) => run.bucket === "active");
 
-  useEffect(() => {
-    let frame = 0;
-    let startAt = 0;
-
-    const finish = () => {
-      window.sessionStorage.setItem(MOCK_CHANGES_SCAN_KEY, "done");
-      setScanPct(100);
-      setScanning(false);
-    };
-
-    const tick = (now: number) => {
-      const elapsed = now - startAt;
-      const pct = Math.min(100, (elapsed / MOCK_CHANGES_SCAN_MS) * 100);
-      setScanPct(pct);
-      if (elapsed >= MOCK_CHANGES_SCAN_MS) {
-        finish();
-        return;
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-
-    const begin = () => {
-      window.sessionStorage.setItem(MOCK_CHANGES_SCAN_KEY, "pending");
-      setScanning(true);
-      setScanPct(0);
-      startAt = performance.now();
-      frame = window.requestAnimationFrame(tick);
-    };
-
-    const scanState = window.sessionStorage.getItem(MOCK_CHANGES_SCAN_KEY);
-    const subscribed = window.sessionStorage.getItem(MOCK_SUBSCRIBED_KEY) === "1";
-    if (scanState === "pending" || (subscribed && scanState !== "done")) {
-      begin();
-    }
-
-    const onSubscribe = () => begin();
-    window.addEventListener(MOCK_SUBSCRIBE_SCAN_EVENT, onSubscribe);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener(MOCK_SUBSCRIBE_SCAN_EVENT, onSubscribe);
-    };
+  const loadChanges = useCallback(async (id: string, signal?: AbortSignal) => {
+    const payload = await fetchProjectChanges(id);
+    if (signal?.aborted) return payload;
+    setChanges(payload.changes);
+    const scanningNow = payload.subscribed && payload.scan.status === "scanning";
+    setScanning(scanningNow);
+    setScanPct(payload.scan.progress_percent);
+    return payload;
   }, []);
+
+  useEffect(() => {
+    if (!hasProject || !projectId) {
+      setChanges([]);
+      setScanning(false);
+      return;
+    }
+    const controller = new AbortController();
+    let timer: number | undefined;
+
+    const tick = async (intervalMs: number) => {
+      try {
+        const payload = await loadChanges(projectId, controller.signal);
+        if (controller.signal.aborted) return;
+        const next = payload.subscribed && payload.scan.status === "scanning" ? 1500 : 5000;
+        timer = window.setTimeout(() => {
+          void tick(next);
+        }, intervalMs);
+      } catch {
+        if (controller.signal.aborted) return;
+        timer = window.setTimeout(() => {
+          void tick(4000);
+        }, 4000);
+      }
+    };
+
+    void tick(1500);
+    return () => {
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [hasProject, loadChanges, projectId]);
 
   useEffect(() => {
     if (!hasActive) return;
@@ -129,7 +124,15 @@ export function ChangesTab({
   };
 
   const onCommitted = (change: ProjectChange, action: ChangeActionId) => {
-    if (action === "dismiss" || action === "reopen") return;
+    if (action === "dismiss" || action === "reopen") {
+      if (projectId) {
+        const request = action === "dismiss" ? dismissProjectChange : reopenProjectChange;
+        void request(projectId, change.id)
+          .then(() => loadChanges(projectId))
+          .catch(() => undefined);
+      }
+      return;
+    }
     const existing = findRunFor(runs, change);
     if (existing) {
       setSelectedRunId(existing.id);
@@ -187,7 +190,7 @@ export function ChangesTab({
                 Scanning your codebase
               </p>
               <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
-                Looking for relevant Google Cloud usage
+                Matching Google Cloud releases against imported repositories
               </p>
               <div className="mt-5 h-1 overflow-hidden rounded-full bg-[var(--bg-secondary)]">
                 <div
@@ -205,6 +208,7 @@ export function ChangesTab({
           <ChangesInbox
             hasProject={hasProject}
             projectId={projectId}
+            changes={changes}
             onBrowseSubscriptions={onBrowseSubscriptions}
             progress={progress}
             onCommitted={onCommitted}

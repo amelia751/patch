@@ -19,8 +19,11 @@ from uuid import UUID
 CHANNEL: Final[str] = "patchapi_console"
 EVENT_INDEXING: Final[str] = "indexing"
 EVENT_NOTIFICATIONS: Final[str] = "notifications"
+EVENT_CHANGES: Final[str] = "changes"
 
-_EVENT_TYPES: Final[frozenset[str]] = frozenset({EVENT_INDEXING, EVENT_NOTIFICATIONS})
+_EVENT_TYPES: Final[frozenset[str]] = frozenset(
+    {EVENT_INDEXING, EVENT_NOTIFICATIONS, EVENT_CHANGES}
+)
 
 
 def encode_notify(*, event_type: str, project_id: UUID | str) -> str:
@@ -62,6 +65,7 @@ async def notify_console(connection: Any, *, event_type: str, project_id: UUID |
 
 __all__ = [
     "CHANNEL",
+    "EVENT_CHANGES",
     "EVENT_INDEXING",
     "EVENT_NOTIFICATIONS",
     "decode_notify",

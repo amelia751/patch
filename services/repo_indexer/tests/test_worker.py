@@ -21,7 +21,7 @@ from uuid import UUID, uuid4
 import asyncpg
 import pytest
 from patchapi_repo_indexer import pubsub, store, worker
-from patchapi_repo_indexer.config import IMAGEN_4_IDENTIFIERS
+from patchapi_repo_indexer.config import IMAGEN_4_IDENTIFIERS, INDEXER_VERSION
 from patchapi_repo_indexer.errors import ZoektUnavailableError
 from patchapi_repo_indexer.git import RevisionNotFoundError
 from patchapi_repo_indexer.models import ApiUsageInventory, ApiUsageRecord
@@ -248,6 +248,10 @@ def world() -> FakeWorld:
     return FakeWorld()
 
 
+async def _noop_refresh_findings(*_args: object, **_kwargs: object) -> tuple[str, ...]:
+    return ()
+
+
 @pytest.fixture
 def effects(world: FakeWorld) -> worker.Effects:
     return worker.Effects(
@@ -259,6 +263,7 @@ def effects(world: FakeWorld) -> worker.Effects:
         publish=world.publish,
         now=lambda: NOW,
         index_backend="zoekt",
+        refresh_findings=_noop_refresh_findings,
     )
 
 
@@ -291,7 +296,7 @@ def ready_state(sha: str = BEFORE_SHA, **overrides: Any) -> store.RepoIndexState
         progress_percent=100,
         indexed_sha=sha,
         shard_path="/var/zoekt/egaki",
-        indexer_version="1.1.0",
+        indexer_version=INDEXER_VERSION,
         scanner_version="1.0.0",
         last_full_index=NOW,
         last_delta_index=None,

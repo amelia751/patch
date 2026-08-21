@@ -6,7 +6,6 @@ import { CodebaseTab } from "@/components/interface/ops/codebase-tab";
 import { ConfigureTab } from "@/components/interface/ops/configure-tab";
 import { ChangesTab } from "@/components/interface/ops/changes-tab";
 import { SubscriptionTab } from "@/components/interface/ops/subscription-tab";
-import { MOCK_SUBSCRIBE_SCAN_EVENT } from "@/components/interface/ops/subscription-tab/data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -262,11 +261,8 @@ function SystemPageContent() {
       }
     };
     window.addEventListener("switchMainTab", handler);
-    const openChanges = () => setMainWorkspaceTab("changes");
-    window.addEventListener(MOCK_SUBSCRIBE_SCAN_EVENT, openChanges);
     return () => {
       window.removeEventListener("switchMainTab", handler);
-      window.removeEventListener(MOCK_SUBSCRIBE_SCAN_EVENT, openChanges);
     };
   }, [setMainWorkspaceTab]);
 

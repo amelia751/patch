@@ -48,7 +48,9 @@ export interface ProjectChange {
   fileCount: number;
   files: FileHit[];
   sourceUrls: string[];
-  source: "fixture" | "ui";
+  source: "fixture" | "ui" | "live";
+  statusReason?: string;
+  failClosed?: boolean;
 }
 
 export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [

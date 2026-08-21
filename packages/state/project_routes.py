@@ -25,6 +25,11 @@ from packages.state.console_events import (
     ConsoleHub,
     project_event_stream,
 )
+from packages.state.findings import (
+    backfill_project,
+    inbox_payload,
+    set_finding_status,
+)
 from packages.state.gcp_connections import (
     GcpConnectionError,
     connection_record,
@@ -35,7 +40,11 @@ from packages.state.gcp_connections import (
     upsert_connection,
 )
 from packages.state.gcp_viewer import GcpViewerError, list_cloud_run_services
-from packages.state.indexing import enqueue_idle_imports, indexing_for_project
+from packages.state.indexing import (
+    enqueue_idle_imports,
+    indexing_for_project,
+    requeue_project_imports,
+)
 from packages.state.notifications import notifications_snapshot
 from packages.state.pool import StateUnavailableError
 from packages.state.projects import (
@@ -383,9 +392,7 @@ async def get_owned_project(request: Request, project_id: UUID) -> JSONResponse:
 
 
 @router.patch("/{project_id}/cloud-provider")
-async def update_owned_project_cloud_provider(
-    request: Request, project_id: UUID
-) -> JSONResponse:
+async def update_owned_project_cloud_provider(request: Request, project_id: UUID) -> JSONResponse:
     """Set or clear `projects.cloud_provider`. Same contract as JetRun."""
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
@@ -647,9 +654,7 @@ async def upsert_owned_secret(request: Request, project_id: UUID) -> JSONRespons
 
 
 @router.delete("/{project_id}/secrets/{secret_name}")
-async def delete_owned_secret(
-    request: Request, project_id: UUID, secret_name: str
-) -> JSONResponse:
+async def delete_owned_secret(request: Request, project_id: UUID, secret_name: str) -> JSONResponse:
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
         return user_id
@@ -731,6 +736,21 @@ async def put_project_provider(request: Request, project_id: UUID, slug: str) ->
         if project is None:
             return JSONResponse({"detail": "Project not found"}, status_code=404)
         await subscribe_project(_pool(request), project_id, slug)
+        try:
+            async with _pool(request).acquire() as connection:
+                result = await backfill_project(connection, project_id, slug)
+            await requeue_project_imports(_pool(request), project_id)
+        except Exception as exc:
+            if getattr(exc, "sqlstate", None) == "42P01":
+                return JSONResponse(
+                    {
+                        "error": "dependency_unavailable",
+                        "dependency": "postgres",
+                        "reason": "change findings tables are missing",
+                    },
+                    status_code=503,
+                )
+            raise
     except ProviderStoreError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=404)
     except StateUnavailableError as exc:
@@ -738,7 +758,76 @@ async def put_project_provider(request: Request, project_id: UUID, slug: str) ->
             {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
             status_code=503,
         )
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, **result})
+
+
+@router.get("/{project_id}/changes")
+async def get_project_changes(request: Request, project_id: UUID) -> JSONResponse:
+    """Project inbox: watchlist notes joined to this project's inventory."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        async with _pool(request).acquire() as connection:
+            payload = await inbox_payload(connection, project_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) == "42P01":
+            return JSONResponse(
+                {
+                    "error": "dependency_unavailable",
+                    "dependency": "postgres",
+                    "reason": "change findings tables are missing",
+                },
+                status_code=503,
+            )
+        raise
+    return JSONResponse(payload)
+
+
+@router.post("/{project_id}/changes/{external_id}/dismiss")
+async def dismiss_project_change(
+    request: Request, project_id: UUID, external_id: str
+) -> JSONResponse:
+    return await _set_change_status(request, project_id, external_id, status="dismissed")
+
+
+@router.post("/{project_id}/changes/{external_id}/reopen")
+async def reopen_project_change(
+    request: Request, project_id: UUID, external_id: str
+) -> JSONResponse:
+    return await _set_change_status(request, project_id, external_id, status="watching")
+
+
+async def _set_change_status(
+    request: Request, project_id: UUID, external_id: str, *, status: str
+) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        async with _pool(request).acquire() as connection:
+            updated = await set_finding_status(
+                connection, project_id, external_id, status=status, user_id=user_id
+            )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if updated is None:
+        return JSONResponse({"detail": "Change not found"}, status_code=404)
+    return JSONResponse(updated)
 
 
 @router.get("/{project_id}/gcp-connections")
@@ -851,9 +940,7 @@ async def delete_owned_gcp_connection(
     if isinstance(vault, JSONResponse):
         return vault
     try:
-        deleted = await delete_connection(
-            _pool(request), project_id, user_id, connection_id, vault
-        )
+        deleted = await delete_connection(_pool(request), project_id, user_id, connection_id, vault)
     except StateUnavailableError as exc:
         return JSONResponse(
             {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
@@ -884,9 +971,7 @@ async def inspect_owned_gcp_runtime(
             if owned is None:
                 return JSONResponse({"detail": "Project not found"}, status_code=404)
             return JSONResponse({"detail": "Connection not found"}, status_code=404)
-        payload = await reveal_connection(
-            _pool(request), project_id, user_id, connection_id, vault
-        )
+        payload = await reveal_connection(_pool(request), project_id, user_id, connection_id, vault)
     except StateUnavailableError as exc:
         return JSONResponse(
             {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
