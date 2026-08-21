@@ -73,11 +73,13 @@ def test_every_agent_can_stop_for_a_human():
         (AgentId.PR, ToolName.RECORD_PATCH_PLAN),
         (AgentId.PR, ToolName.APPLY_PATCH),
         (AgentId.PR, ToolName.RUN_COMMAND),
+        (AgentId.PR, ToolName.COMPUTER_USE_STEP),
         (AgentId.PR, ToolName.RECORD_POLICY_DECISION),
         # Roadmap §8.5: verification does not author patches.
         (AgentId.VERIFICATION, ToolName.RECORD_PATCH_PLAN),
         (AgentId.VERIFICATION, ToolName.APPLY_PATCH),
         (AgentId.VERIFICATION, ToolName.RUN_COMMAND),
+        (AgentId.VERIFICATION, ToolName.COMPUTER_USE_STEP),
         # Roadmap §8.1: Change Intelligence may not reach the workspace.
         (AgentId.CHANGE_INTELLIGENCE, ToolName.READ_FILE),
         (AgentId.CHANGE_INTELLIGENCE, ToolName.RUN_COMMAND),

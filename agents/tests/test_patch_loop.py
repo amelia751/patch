@@ -26,8 +26,8 @@ from agents.config import AgentId, ToolName, tool_allowlist  # noqa: E402
 from agents.context import RunContext  # noqa: E402
 from agents.guardrails import build_tool_guardrails  # noqa: E402
 from agents.orchestrator import GEMINI20_SLICE, Orchestrator, binding_value  # noqa: E402
-from agents.tools.pr import GITHUB_TOOLS_URL_ENV  # noqa: E402
 from agents.tools.patch.workspace import build_workspace_tools  # noqa: E402
+from agents.tools.pr import GITHUB_TOOLS_URL_ENV  # noqa: E402
 from agents.tools.results import is_refusal  # noqa: E402
 from agents.trace import ToolStatus, ToolTrace  # noqa: E402
 from packages.schemas.run_state import RunState  # noqa: E402
@@ -83,10 +83,15 @@ def test_the_fixture_starts_red(session):
     assert binding_value(session.read_file("lib/gemini.ts"), "MODEL") == RETIRED
 
 
-def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, session):
+def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, session, repo_root):
     orchestrator = Orchestrator(sandboxed_context, ToolTrace(run_id="run-patch-loop"))
+    manifest = repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json"
 
-    result = asyncio.run(orchestrator.run_vertical_slice(base_sha=BASE_SHA, deterministic=True))
+    result = asyncio.run(
+        orchestrator.run_vertical_slice(
+            base_sha=BASE_SHA, deterministic=True, static_manifest=manifest
+        )
+    )
 
     assert result.reached_testing, result.detail
     assert result.state in {RunState.HUMAN_REQUIRED, RunState.PR_CREATED, RunState.VERIFYING}
@@ -97,6 +102,8 @@ def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, sessio
     assert binding_value(source, "MODEL") == REPLACEMENT
     assert session.execute(["python3", "generate.py"], 60).exit_code == 0
     assert session.execute(["python3", "-m", "unittest", "test_generate.py"], 60).exit_code == 0
+    assert (session.working_dir / "viewer" / "model.json").is_file()
+    assert (session.working_dir / ".patchapi-ui" / "screenshot.png").is_file()
 
 
 def test_the_deterministic_loop_records_every_contract(sandboxed_context):
@@ -150,7 +157,8 @@ def test_the_trace_shows_the_whole_chain(sandboxed_context):
     assert called.index("scan_repository") < called.index("evaluate_policy")
     assert called.index("evaluate_policy") < called.index("apply_patch")
     assert called.index("apply_patch") < called.index("run_command")
-    assert called.index("run_command") < called.index("record_verification_report")
+    assert called.index("run_command") < called.index("computer_use_step")
+    assert called.index("computer_use_step") < called.index("record_verification_report")
     assert not trace.denied
     assert all(
         event.agent is not AgentId.PATCH for event in trace if event.tool == "open_pull_request"

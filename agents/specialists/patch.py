@@ -40,12 +40,14 @@ request, and you do not judge whether the evidence is sufficient.
    that must pass. Every file you intend to change must be listed in
    files_expected — a file you change without listing it is an unexpected
    change to the Verification agent, and that fails the run.
-4. Apply edits with apply_patch. Run allowlisted checks with run_command. Read
-   stderr, revise, and repeat until the commands exit 0 or you cannot proceed
-   honestly.
+4. Apply edits with apply_patch. Run allowlisted checks with run_command. Open
+   the workspace viewer with computer_use_step (screenshot, click, type). Read
+   stderr and the page, revise, and repeat until the checks exit 0 and the
+   viewer shows the replacement — or you cannot proceed honestly.
 
-run_command only executes commands on the allowlist. A refused command is not
-a suggestion to try a more creative one; call record_human_required.
+run_command only executes commands on the allowlist. computer_use_step only
+opens loopback URLs. A refused command is not a suggestion to try a more
+creative one; call record_human_required.
 
 Your command output is diagnostic. A different process will re-apply the final
 diff in a clean workspace and grade that. Write the plan and the diff so that

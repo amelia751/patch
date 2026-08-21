@@ -51,11 +51,11 @@ from agents.orchestrator import (  # noqa: E402
     VerticalSlice,
     binding_value,
 )
-from packages.schemas.run_state import RunState  # noqa: E402
 from agents.trace import ToolTrace  # noqa: E402
 from packages.providers.dotenv import apply_defaults, read_env_files  # noqa: E402
 from packages.providers.google.config import load_config  # noqa: E402
 from packages.providers.google.errors import GoogleProviderError  # noqa: E402
+from packages.schemas.run_state import RunState  # noqa: E402
 from sandbox.session import SandboxUnavailableError, open_session  # noqa: E402
 
 EXIT_PASS: Final[int] = 0
@@ -64,6 +64,9 @@ EXIT_SKIP: Final[int] = 3
 
 DEFAULT_FIXTURE: Final[Path] = REPO_ROOT / "demo" / "storygen"
 DEFAULT_FEED_DIR: Final[Path] = REPO_ROOT / "demo" / "fixtures"
+DEFAULT_MANIFEST: Final[Path] = (
+    REPO_ROOT / "agents" / "fixtures" / "change_manifest.gemini20.json"
+)
 DEFAULT_RUN_ID: Final[str] = "smoke-patch-loop"
 
 # Compiled artefacts of a previous local run are not part of the fixture and
@@ -172,6 +175,7 @@ async def _run(
     *,
     run_id: str,
     feed_dir: Path,
+    static_manifest: Path | None,
     deterministic: bool,
     trace_out: Path | None,
     open_pr: bool,
@@ -194,6 +198,7 @@ async def _run(
         slice_,
         base_sha=_base_sha(slice_.repo, require_remote=open_pr),
         deterministic=deterministic,
+        static_manifest=static_manifest,
     )
 
     print(f"\ntool trace ({len(trace)} calls, run {run_id}):")
@@ -262,6 +267,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--feed-dir", type=Path, default=DEFAULT_FEED_DIR)
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST,
+        help="static ChangeManifest JSON (skips the provider crawl)",
+    )
     parser.add_argument("--run-id", default=DEFAULT_RUN_ID)
     parser.add_argument("--sandbox", choices=("local", "gke"), default="local")
     parser.add_argument(
@@ -333,6 +344,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     GEMINI20_SLICE,
                     run_id=args.run_id,
                     feed_dir=args.feed_dir,
+                    static_manifest=args.manifest if args.manifest.is_file() else None,
                     deterministic=args.deterministic,
                     trace_out=args.trace_out,
                     open_pr=args.open_pr,

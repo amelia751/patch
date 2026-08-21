@@ -13,7 +13,11 @@ from agents.config import ADK_ATTACHED_TOOLS, AgentId, ToolName, tool_allowlist
 from agents.context import RunContext
 from agents.tools.change import build_provider_feed_tools
 from agents.tools.impact import build_repo_inventory_tools
-from agents.tools.patch import build_migration_skill_tools, build_workspace_tools
+from agents.tools.patch import (
+    build_computer_use_tools,
+    build_migration_skill_tools,
+    build_workspace_tools,
+)
 from agents.tools.policy import build_policy_tools
 from agents.tools.pr import build_pull_request_tools
 from agents.tools.results import ReasonCode, is_refusal, ok, refusal
@@ -28,6 +32,7 @@ _BUILDERS: Final[tuple[Callable[[RunContext], list[Callable[..., Any]]], ...]] =
     build_repo_inventory_tools,
     build_migration_skill_tools,
     build_workspace_tools,
+    build_computer_use_tools,
     build_evidence_tools,
     build_policy_tools,
     build_pull_request_tools,

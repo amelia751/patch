@@ -358,6 +358,48 @@ class Orchestrator:
         self._advance(RunState.NORMALIZED)
         return self._stage(agent, None, manifest, "manifest seeded from the pinned feed document")
 
+    def seed_static_manifest(self, path: Path) -> StageResult:
+        """Commit a pre-written ChangeManifest JSON. No Change Intelligence turn.
+
+        The live provider crawl is not wired; this is the input the rest of the
+        loop already knows how to consume. The file must validate as
+        `ChangeManifest` — a feed document still goes through
+        `seed_change_manifest`.
+        """
+        agent = AgentId.ORCHESTRATOR
+        self._advance(RunState.SANITIZED)
+        started = perf_counter()
+        try:
+            manifest = ChangeManifest.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            self._trace.record(
+                agent=agent,
+                tool="seed_static_manifest",
+                status=ToolStatus.ERROR,
+                arguments={"path": str(path)},
+                result={"error": str(exc)},
+                duration_ms=(perf_counter() - started) * 1000.0,
+                detail="the static manifest did not validate",
+            )
+            return self._fail(agent, f"{path} is not a ChangeManifest: {exc}")
+
+        self._context.record(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE], agent, manifest)
+        self._trace.record(
+            agent=agent,
+            tool="seed_static_manifest",
+            status=ToolStatus.OK,
+            arguments={"path": str(path), "change_id": manifest.change_id},
+            result={
+                "change_id": manifest.change_id,
+                "affected_identifiers": list(manifest.affected_identifiers),
+                "recommended_replacement": manifest.recommended_replacement,
+            },
+            duration_ms=(perf_counter() - started) * 1000.0,
+            detail="static ChangeManifest; the Change Intelligence agent did not run",
+        )
+        self._advance(RunState.NORMALIZED)
+        return self._stage(agent, None, manifest, f"manifest seeded from {path.name}")
+
     def _notice_path(self, change_id: str) -> Path | None:
         """The feed document whose `change_id` matches, or `None`."""
         for path in sorted(self._context.feed_dir.glob("*.json")):
@@ -554,6 +596,19 @@ class Orchestrator:
             f"{slice_.binding} now binds {binding!r}; both checks exited 0",
         )
 
+    def _run_computer_use(self, slice_: VerticalSlice) -> dict[str, Any]:
+        """Screenshot the workspace viewer after the checks wrote it."""
+        replacement = ""
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        if isinstance(manifest, ChangeManifest) and manifest.recommended_replacement:
+            replacement = manifest.recommended_replacement
+        goal = (
+            f"Confirm the viewer shows the migrated {slice_.binding} binding"
+            + (f" ({replacement})" if replacement else "")
+            + " and no retired identifier."
+        )
+        return self._call("computer_use_step", on_behalf_of=AgentId.PATCH, goal=goal, url="")
+
     def _patch_prompt(
         self,
         manifest: ChangeManifest,
@@ -695,6 +750,16 @@ class Orchestrator:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
             uris.append(path.as_uri())
+        workspace = getattr(self._context.sandbox, "working_dir", None)
+        ui_src = Path(workspace) / ".patchapi-ui" if isinstance(workspace, Path) else None
+        if ui_src is not None and ui_src.is_dir():
+            dest = root / "ui"
+            dest.mkdir(parents=True, exist_ok=True)
+            for item in ui_src.iterdir():
+                if item.is_file():
+                    target = dest / item.name
+                    target.write_bytes(item.read_bytes())
+                    uris.append(target.as_uri())
         self._context.evidence_root = root
         self._evidence_uris = uris
         self._entrypoint_digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
@@ -783,9 +848,7 @@ class Orchestrator:
             self._call(
                 "record_human_required",
                 on_behalf_of=agent,
-                reason=(
-                    "the GitHub tool service is not configured; no pull request was opened"
-                ),
+                reason=("the GitHub tool service is not configured; no pull request was opened"),
             )
             self._advance(RunState.HUMAN_REQUIRED)
             return self._stage(
@@ -857,12 +920,13 @@ class Orchestrator:
         *,
         base_sha: str,
         deterministic: bool | None = None,
+        static_manifest: Path | None = None,
     ) -> SliceResult:
-        """Run seed → impact → policy → patch → verify → PR.
+        """Run seed → impact → policy → patch → UI check → verify → PR.
 
         Verification grades orchestrator evidence, not the Patch turn. A PR is
         attempted only after PASS. Missing GitHub tools is HUMAN_REQUIRED, not
-        a claimed pull request.
+        a claimed pull request. `static_manifest` skips the provider crawl.
         """
         if deterministic is None:
             deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
@@ -875,7 +939,12 @@ class Orchestrator:
             result.detail = stage.detail
             return not (is_terminal(self._state) or self._context.stopped_for_human)
 
-        if not keep(self.seed_change_manifest(slice_.change_id)):
+        seeded = (
+            self.seed_static_manifest(static_manifest)
+            if static_manifest is not None
+            else self.seed_change_manifest(slice_.change_id)
+        )
+        if not keep(seeded):
             return result
         if not keep(await self.run_impact(slice_, base_sha=base_sha, deterministic=deterministic)):
             return result
@@ -887,6 +956,18 @@ class Orchestrator:
         source = self._read_entrypoint(slice_)
         if source is None:
             keep(self._fail(AgentId.VERIFICATION, f"{slice_.entrypoint} missing after patch"))
+            return result
+        ui = self._run_computer_use(slice_)
+        if is_refusal(ui):
+            keep(self._fail(AgentId.PATCH, str(ui.get("message", "computer_use_step refused"))))
+            return result
+        if not ui.get("goal_met"):
+            keep(
+                self._fail(
+                    AgentId.PATCH,
+                    f"computer_use_step did not confirm the viewer: {ui.get('visible_tail', '')}",
+                )
+            )
             return result
         self._write_evidence(
             slice_,
