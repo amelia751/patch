@@ -24,6 +24,7 @@ JOB="${PATCHAPI_REFRESH_JOB:-patchapi-refresh-releases}"
 REFRESH_SA_ID="${PATCHAPI_REFRESH_SA:-patchapi-refresh}"
 SCHEDULER_SA_ID="${PATCHAPI_SCHEDULER_SA:-patchapi-scheduler}"
 SCHEDULE="${PATCHAPI_REFRESH_SCHEDULE:-0 */6 * * *}"
+PREFIX="${PATCHAPI_PUBSUB_TOPIC_PREFIX:-patchapi-dev}"
 SQL_INSTANCE="${PATCHAPI_SQL_INSTANCE:-${PROJECT_ID}:${REGION}:patchapi-console}"
 IMAGE_TAG="${PATCHAPI_IMAGE_TAG:-$(git rev-parse HEAD)}"
 IMAGE="${PATCHAPI_REFRESH_IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/patchapi/api:${IMAGE_TAG}}"
@@ -77,6 +78,14 @@ for secret in patchapi-database-url patchapi-gemini-api-key; do
     --role=roles/secretmanager.secretAccessor --quiet >/dev/null
 done
 
+# The poller announces transitions; it does not act on them. Publish rights are
+# scoped to the two topics it emits on, and it holds no subscriber role at all.
+for topic in "${PREFIX}-provider-change-detected" "${PREFIX}-change-normalized"; do
+  gcloud pubsub topics add-iam-policy-binding "$topic" \
+    --project="$PROJECT_ID" --member="serviceAccount:${REFRESH_SA}" \
+    --role=roles/pubsub.publisher --quiet >/dev/null
+done
+
 # GOOGLE_API_KEY reaches the Gemini surface. Vertex is reached with the job's
 # own identity through application default credentials, so no service account
 # key is mounted.
@@ -86,6 +95,9 @@ JOB_ARGS=(
   --image="$IMAGE"
   --service-account="$REFRESH_SA"
   --set-cloudsql-instances="$SQL_INSTANCE"
+  # Cloud Run does not set these. Without a project the publisher resolves no
+  # topic and the poll degrades to a silent batch run.
+  --set-env-vars="GCP_PROJECT=${PROJECT_ID},PATCHAPI_PUBSUB_TOPIC_PREFIX=${PREFIX}"
   --set-secrets="DATABASE_URL=patchapi-database-url:latest,GOOGLE_API_KEY=patchapi-gemini-api-key:latest"
   --command=patchapi-refresh-releases
   --max-retries=1
