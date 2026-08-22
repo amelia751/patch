@@ -144,16 +144,21 @@ def credentials_file(environ: Mapping[str, str] | None, base_dir: Path | None) -
 
 def mint_token(key_path: Path) -> str:
     try:
+        import google.auth
         import google.auth.transport.requests
         from google.oauth2 import service_account
     except ImportError as exc:  # pragma: no cover - dependency is pinned
         raise ProbeUnavailableError("google-auth is not installed") from exc
-    if not key_path.is_file():
-        raise ProbeUnavailableError("Google Cloud credentials are not configured")
     try:
-        credentials = service_account.Credentials.from_service_account_file(
-            str(key_path), scopes=[CLOUD_PLATFORM_SCOPE]
-        )
+        if key_path.is_file():
+            credentials = service_account.Credentials.from_service_account_file(
+                str(key_path), scopes=[CLOUD_PLATFORM_SCOPE]
+            )
+        else:
+            # Cloud Run holds no key file. The runtime service account comes
+            # from the metadata server, which is what lets the scheduled job
+            # probe Vertex without a private key mounted as a secret.
+            credentials, _ = google.auth.default(scopes=[CLOUD_PLATFORM_SCOPE])
         credentials.refresh(google.auth.transport.requests.Request())
     except Exception as exc:  # google-auth raises a wide, undocumented family
         raise ProbeUnavailableError(f"could not mint a Google access token: {exc}") from exc
