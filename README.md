@@ -186,10 +186,11 @@ The list APIs have launch stage / preview; they do not return retirement dates.
 | Snapshot | [`packages/state/data/google_models.json`](./packages/state/data/google_models.json) |
 | Refresh | `refresh_google_models` in [`packages/state/google_models.py`](./packages/state/google_models.py) |
 
-`GET /api/providers/google` serves the Service Usage file plus Gemini / Vertex
-`models`. Model lifecycle rows with a day-precision shutdown date stay on
-`modelChanges`. Month-only strings stay on the model and are not turned into
-a date.
+The snapshot is read by `load_google_models`, not served raw: the provider pages
+read `providers`, `provider_services` and `provider_changes` from Postgres, and
+the catalog feeds classification through the watchlist. Model lifecycle rows
+with a day-precision shutdown date become changes. Month-only strings stay on
+the model and are not turned into a date.
 
 **Release notes (Changes tab)** — not Service Usage. The public BigQuery table
 is one job (~5s for the last 365 days), not a 1 QPS list, and a year is

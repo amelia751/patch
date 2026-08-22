@@ -1,14 +1,11 @@
 # HTML fixtures are easier to read as single-row tables.
 # ruff: noqa: E501
-"""Gemini / Vertex lifecycle parsing: dates, tables, and the HTTP surface."""
+"""Gemini / Vertex lifecycle parsing: dates, tables, and the committed snapshot."""
 
 from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from packages.state.google_models import (
     CatalogUnavailableError,
@@ -19,7 +16,6 @@ from packages.state.google_models import (
     parse_lifecycle_tables,
     parse_provider_date,
 )
-from packages.state.provider_routes import router as provider_router
 
 GEMINI_HTML = """
 <table>
@@ -178,17 +174,6 @@ def test_load_google_models_reads_the_committed_snapshot() -> None:
     )
     assert imagen.effective_at.startswith("2026-08-17")
     assert imagen.recommended_replacement == "gemini-3.1-flash-image"
-
-
-def test_google_route_includes_model_changes() -> None:
-    app = FastAPI()
-    app.include_router(provider_router)
-    response = TestClient(app).get("/api/providers/google")
-    assert response.status_code == 200
-    body = response.json()
-    assert len(body["modelChanges"]) >= 10
-    assert any(row["id"] == "imagen-4.0-generate-001" for row in body["models"])
-    assert body["modelTrust"]["classification"] == "untrusted_provider_input"
 
 
 def test_load_google_models_fails_closed_when_snapshot_is_missing(tmp_path: Path) -> None:
