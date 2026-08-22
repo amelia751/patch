@@ -35,6 +35,7 @@ from packages.events.repo_events import (
     project_repo_removed_event,
     repo_push_event,
 )
+from packages.repo_scan import SCANNER_VERSION
 from packages.repo_scan.classify import UsageKind
 
 REPOSITORY = "patchapi-test/egaki"
@@ -297,7 +298,7 @@ def ready_state(sha: str = BEFORE_SHA, **overrides: Any) -> store.RepoIndexState
         indexed_sha=sha,
         shard_path="/var/zoekt/egaki",
         indexer_version=INDEXER_VERSION,
-        scanner_version="1.0.0",
+        scanner_version=SCANNER_VERSION,
         last_full_index=NOW,
         last_delta_index=None,
         file_count=42,
@@ -395,6 +396,33 @@ async def test_push_to_an_already_indexed_sha_is_dropped(
     assert result.reason == "already indexed at this sha"
     assert not world.touched
     assert fake_store.persisted == []
+
+
+@pytest.mark.parametrize(
+    "stale",
+    [{"indexer_version": "0.9.0"}, {"scanner_version": "0.9.0"}],
+    ids=["indexer", "scanner"],
+)
+async def test_a_shard_from_an_older_extractor_is_rebuilt_at_the_same_sha(
+    conn: FakeConnection,
+    fake_store: FakeStore,
+    world: FakeWorld,
+    effects: worker.Effects,
+    stale: dict[str, str],
+) -> None:
+    """Either version moving means the stored inventory answers a stale question.
+
+    The scanner half is the one that bites: teaching it to read a new kind of
+    file leaves the indexer version untouched, and trusting the old shard would
+    report the tree as having no such usage rather than as never having looked.
+    """
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope()]
+    fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA, **stale)
+
+    result = await worker.handle_push(conn, push_event(), effects=effects)
+
+    assert result.action == worker.ACTION_INDEXED
+    assert world.inventories[0]["changed_paths"] is None
 
 
 async def test_push_delta_indexes_retires_and_fans_out(

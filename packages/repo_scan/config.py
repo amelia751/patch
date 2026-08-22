@@ -6,7 +6,10 @@ so two runs of the same commit produce byte-identical inventories.
 
 from typing import Final
 
-SCANNER_VERSION: Final[str] = "1.0.0"
+# Bumped whenever a scan of the same commit could return a different set of
+# hits. Stored on every inventory, and read by the indexer to decide whether a
+# shard written earlier can still be trusted.
+SCANNER_VERSION: Final[str] = "1.1.0"
 
 # Directories never descended into. Vendored dependencies and build output are
 # not the customer's API usage, and scanning them makes the inventory unstable.

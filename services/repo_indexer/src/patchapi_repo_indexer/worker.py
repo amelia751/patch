@@ -399,6 +399,21 @@ async def _index(
     )
 
 
+def _extractors_match(state: store.IndexState | None) -> bool:
+    """True when a stored inventory was written by the code running now.
+
+    Both versions are checked because either one changes what a scan finds. The
+    scanner learning to read dependency manifests leaves the indexer version
+    untouched, and trusting a shard written before that would report a tree as
+    having no SDK dependencies rather than as unread.
+    """
+    return (
+        state is not None
+        and state.indexer_version == INDEXER_VERSION
+        and state.scanner_version == SCANNER_VERSION
+    )
+
+
 async def handle_repo_added(
     conn: asyncpg.Connection, envelope: EventEnvelope, *, effects: Effects = DEFAULT_EFFECTS
 ) -> HandlerResult:
@@ -414,11 +429,7 @@ async def handle_repo_added(
 
     references = await store.acquire_shard(conn, repository, branch)
     previous = await store.load_state(conn, repository, branch)
-    if (
-        previous is not None
-        and previous.indexed_sha
-        and previous.indexer_version == INDEXER_VERSION
-    ):
+    if previous is not None and previous.indexed_sha and _extractors_match(previous):
         notified = await _fan_out(conn, repository, branch, previous.indexed_sha, effects)
         # Import may have flipped the row to `indexing` for the banner. Put
         # `ready` back and wake consoles so the overlay does not stick at 0%.
@@ -526,7 +537,7 @@ async def handle_push(
         state is not None
         and state.status == "ready"
         and state.indexed_sha == after
-        and state.indexer_version != INDEXER_VERSION
+        and not _extractors_match(state)
     )
     if state is not None and state.status == "ready" and state.indexed_sha == after:
         if not version_stale:
@@ -539,9 +550,11 @@ async def handle_push(
                 reference_count=references,
             )
         log.info(
-            "indexer %s → %s; re-indexing %s@%s at the same sha",
+            "indexer %s/scanner %s → %s/%s; re-indexing %s@%s at the same sha",
             state.indexer_version,
+            state.scanner_version,
             INDEXER_VERSION,
+            SCANNER_VERSION,
             repository,
             branch,
         )
