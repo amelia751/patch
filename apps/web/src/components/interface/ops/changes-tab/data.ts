@@ -25,13 +25,29 @@ export interface FileHit {
   kind?: FileHitKind;
 }
 
+/** What one repository, at one commit, does about a change. */
+export interface ChangeImpact {
+  repository: string;
+  baseSha: string;
+  affected: boolean;
+  migration?: "semantic" | "mechanical" | null;
+  notes: string;
+}
+
 export interface ProjectChange {
   id: string;
   provider: string;
   providerSlug: string;
   product: string;
   title: string;
+  /** The provider's own words about the change. */
   summary: string;
+  /**
+   * The reading of the notice. One row is shown to every subscriber, so this
+   * never describes a repository — `impacts` carries anything that does.
+   */
+  rationale?: string;
+  impacts?: ChangeImpact[];
   kind: ChangeKind;
   status: DetectionStatus;
   announcedAt?: string;

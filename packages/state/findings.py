@@ -164,7 +164,26 @@ SELECT ce.external_id,
        f.file_hits,
        f.file_count,
        f.files,
-       ce.source_urls
+       ce.source_urls,
+       ce.rationale,
+       -- What this project's repositories do about the change, newest reading
+       -- per repository. Kept apart from `summary` and `rationale`, which are
+       -- one row shown to every subscriber and may not describe a tree.
+       (
+           SELECT jsonb_agg(note ORDER BY note ->> 'repository')
+           FROM (
+               SELECT DISTINCT ON (ci.repository) jsonb_build_object(
+                   'repository', ci.repository,
+                   'baseSha', ci.base_sha,
+                   'affected', ci.affected,
+                   'migration', ci.migration_character,
+                   'notes', ci.notes
+               ) AS note
+               FROM change_impacts ci
+               WHERE ci.change_event_id = ce.id AND ci.project_id = f.project_id
+               ORDER BY ci.repository, ci.assessed_at DESC
+           ) AS latest
+       ) AS impacts
 FROM project_change_findings f
 JOIN change_events ce ON ce.id = f.change_event_id
 JOIN providers p ON p.slug = ce.provider AND p.retired_at IS NULL
@@ -846,6 +865,9 @@ def _change_payload(row: asyncpg.Record) -> dict[str, Any]:
     files = row["files"] or []
     if not isinstance(files, list):
         files = []
+    impacts = row["impacts"] if "impacts" in row.keys() else None
+    if not isinstance(impacts, list):
+        impacts = []
     return {
         "id": row["external_id"],
         "provider": row["provider_name"],
@@ -853,6 +875,11 @@ def _change_payload(row: asyncpg.Record) -> dict[str, Any]:
         "product": row["product"],
         "title": row["title"],
         "summary": row["summary"],
+        # Two sentences with different scopes, never merged. `rationale` is the
+        # reading of the notice and is the same for everyone; `impacts` is what
+        # these repositories do about it.
+        "rationale": row["rationale"] if "rationale" in row.keys() else "",
+        "impacts": impacts,
         "kind": row["kind"],
         "status": row["status"],
         "statusReason": row["status_reason"],

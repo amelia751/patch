@@ -1,5 +1,5 @@
 import type { ChangeKind } from "@/components/interface/provider/data";
-import type { DetectionStatus, FileHit, ProjectChange } from "./data";
+import type { ChangeImpact, DetectionStatus, FileHit, ProjectChange } from "./data";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -51,6 +51,18 @@ function asChange(raw: unknown): ProjectChange | null {
     ? row.identifiers.map((item) => String(item))
     : [];
   const repos = Array.isArray(row.repos) ? row.repos.map((item) => String(item)) : [];
+  const impacts = Array.isArray(row.impacts)
+    ? row.impacts
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item) => ({
+          repository: String(item.repository ?? ""),
+          baseSha: String(item.baseSha ?? ""),
+          affected: Boolean(item.affected),
+          migration: (item.migration as ChangeImpact["migration"]) ?? null,
+          notes: String(item.notes ?? ""),
+        }))
+        .filter((impact) => impact.repository && impact.notes)
+    : [];
   return {
     id: String(row.id ?? ""),
     provider: String(row.provider ?? "Google Cloud"),
@@ -58,6 +70,8 @@ function asChange(raw: unknown): ProjectChange | null {
     product: String(row.product ?? ""),
     title: String(row.title ?? ""),
     summary: String(row.summary ?? ""),
+    rationale: row.rationale ? String(row.rationale) : undefined,
+    impacts,
     kind,
     status,
     statusReason: row.statusReason ? String(row.statusReason) : undefined,

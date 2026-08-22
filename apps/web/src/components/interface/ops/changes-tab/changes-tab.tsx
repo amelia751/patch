@@ -939,6 +939,39 @@ export function ChangesInbox({
                                   {change.summary}
                                 </p>
 
+                                {change.rationale && change.rationale !== change.summary && (
+                                  <div className="border-l-2 border-[var(--border-color)] pl-3">
+                                    <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
+                                      Analysis
+                                    </label>
+                                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed mt-1">
+                                      {change.rationale}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {(change.impacts ?? []).length > 0 && (
+                                  <div className="border-l-2 border-[var(--border-color)] pl-3">
+                                    <label className="text-[10px] font-medium text-[var(--text-secondary)] uppercase">
+                                      In your repositories
+                                    </label>
+                                    {(change.impacts ?? []).map((impact) => (
+                                      <p
+                                        key={`${impact.repository}@${impact.baseSha}`}
+                                        className="text-xs text-[var(--text-secondary)] leading-relaxed mt-1"
+                                      >
+                                        <span className="font-mono text-[var(--text-primary)]">
+                                          {repoTitle(impact.repository)}
+                                        </span>
+                                        <span className="text-[var(--text-secondary)]">
+                                          {" "}
+                                          @ {impact.baseSha.slice(0, 8)} — {impact.notes}
+                                        </span>
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+
                                 <div className="grid grid-cols-2 gap-4">
                                   {affectedRepos(change).length > 0 && (
                                     <div>
