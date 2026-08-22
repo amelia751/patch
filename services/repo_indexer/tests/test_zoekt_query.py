@@ -18,6 +18,7 @@ from patchapi_repo_indexer.zoekt.patterns import (
     GOOGLE_IMAGEN_FAMILY,
     GOOGLE_IMAGEN_PREVIEW,
     GOOGLE_VERTEX_ROUTED,
+    PROVIDER_PATTERNS,
     compile_patterns,
     match_identifiers,
     patterns_for,
@@ -143,12 +144,17 @@ def test_an_identifier_outside_the_family_is_added_as_a_literal():
 
 
 def test_a_watchlist_identifier_the_family_covers_is_not_duplicated():
-    assert patterns_for("google", [GA_MODEL]) == (
-        GOOGLE_VERTEX_ROUTED,
-        GOOGLE_IMAGEN_FAMILY,
-        GOOGLE_IMAGEN_PREVIEW,
-        GOOGLE_GEMINI_FAMILY,
-    )
+    assert patterns_for("google", [GA_MODEL]) == PROVIDER_PATTERNS["google"]
+
+
+def test_a_service_host_is_indexed_as_its_own_identifier():
+    """A whole-service shutdown names no model, so the host is the only key a
+    finding can join on."""
+    compiled = compile_patterns(patterns_for("google"))
+
+    found = match_identifiers('const HOST = "dialogflow.googleapis.com";', compiled)
+
+    assert found == ("dialogflow.googleapis.com",)
 
 
 def test_unknown_provider_has_no_patterns():

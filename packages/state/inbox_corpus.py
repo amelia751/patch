@@ -1,16 +1,21 @@
 """Official Google notes that the Releases tab is allowed to materialize.
 
-The indexer names every Gemini / Imagen / Veo identifier a project actually
-uses. This module turns those identifiers into `change_events` by intersecting
-them with:
+The indexer names every Gemini / Imagen / Veo identifier a project uses, and
+every Google API host it calls. This module turns those into `change_events` by
+intersecting them with:
 
 * the pinned demo watchlist
 * the committed Google models lifecycle catalog
-* ingested `provider_change_notes` whose text names a used identifier
+* ingested `provider_change_notes` whose text names a used identifier, or whose
+  product is a service the project calls and whose kind is breaking
 
-Nothing here invents a deprecation. A catalog row or a release note that does
-not name an identifier this project uses is left out, so the inbox stays a
-join against inventory rather than a dump of every Google retirement.
+The last clause is what lets a whole-service shutdown land. Such a notice names
+a product and no model at all, so a model-only join read every one of them as
+unrelated to every project.
+
+Nothing here invents a deprecation. A catalog row or a release note that names
+nothing this project uses is left out, so the inbox stays a join against
+inventory rather than a dump of every Google retirement.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
+from packages.providers.google.probe import is_service_identifier
 from packages.state.findings import (
     BREAKING_KINDS,
     canonical_identifier,
@@ -55,8 +61,14 @@ CHANGE_KINDS: Final[frozenset[str]] = frozenset(
 # Short tokens like "gemini" or "imagen" are not identifiers.
 _MIN_IDENTIFIER_CHARS: Final[int] = 8
 
+_UNDEFINED_TABLE: Final[str] = "42P01"
+
+# A model id, or the API host a call goes to. The host arm is what lets a
+# whole-service deprecation reach the inbox: "Dialogflow ES is shut down" names
+# no model, so a model-only pattern read it as unrelated to every project.
 _NOTE_IDENTIFIER: Final[re.Pattern[str]] = re.compile(
-    r"(?:models/|vertex/)?(?:imagen|gemini|veo)-\d[\w.-]*",
+    r"(?:models/|vertex/)?(?:imagen|gemini|veo)-\d[\w.-]*"
+    r"|[a-z0-9][a-z0-9-]*\.googleapis\.com",
     re.IGNORECASE,
 )
 
@@ -81,6 +93,8 @@ def identifier_is_covered(identifier: str, covered: set[str]) -> bool:
 def product_for_identifier(identifier: str) -> str:
     """Family label for an inbox card. Not a routing decision."""
     lowered = canonical_identifier(identifier).lower()
+    if is_service_identifier(lowered):
+        return lowered
     if lowered.startswith("imagen-") or "/imagen-" in lowered:
         return "Imagen"
     if lowered.startswith("veo-") or "/veo-" in lowered:
@@ -182,6 +196,32 @@ def note_identifiers_in_text(text: str, usage_identifiers: Iterable[str]) -> lis
             seen.add(canon)
             found.append(canon)
     return found
+
+
+def service_identifiers_for_note(
+    product: str,
+    kind: str,
+    hosts_by_product: Mapping[str, tuple[str, ...]],
+    usage_identifiers: Iterable[str],
+) -> list[str]:
+    """API hosts this project calls that belong to the note's product.
+
+    A whole-service shutdown names the product ("Dialogflow"), never a host and
+    never a model, so text matching finds nothing to join on. The catalog knows
+    which host answers for that product and the index knows whether the tree
+    calls it; this is the join between the two.
+
+    Restricted to breaking kinds on purpose. Matching a product is far coarser
+    than matching a model id — every feature note for Vertex AI would otherwise
+    become a card for every project that calls `aiplatform.googleapis.com`.
+    """
+    if kind not in BREAKING_KINDS:
+        return []
+    hosts = hosts_by_product.get(product.strip().lower())
+    if not hosts:
+        return []
+    usages = expand_usage_set(usage_identifiers)
+    return [host for host in hosts if host in usages]
 
 
 def release_note_event(
@@ -290,6 +330,13 @@ JOIN providers p ON p.id = n.provider_id AND p.retired_at IS NULL
 WHERE p.slug = $1
 """
 
+_SERVICE_HOSTS_SQL: Final[str] = """
+SELECT s.product, s.identifiers
+FROM provider_services s
+JOIN providers p ON p.id = s.provider_id AND p.retired_at IS NULL
+WHERE p.slug = $1 AND s.retired_at IS NULL
+"""
+
 
 async def project_usage_identifiers(
     connection: asyncpg.Connection, project_id: UUID, provider: str
@@ -297,6 +344,34 @@ async def project_usage_identifiers(
     """Identifiers the indexer stored for this project."""
     rows = await connection.fetch(_USAGE_IDENTIFIERS_SQL, project_id, provider)
     return {str(row["identifier"]) for row in rows if row["identifier"]}
+
+
+async def service_hosts_by_product(
+    connection: asyncpg.Connection, provider: str
+) -> dict[str, tuple[str, ...]]:
+    """Product name to the API hosts it answers on, from the ingested catalog.
+
+    Empty when nobody has connected a catalog, which is the honest answer: with
+    no catalog there is nothing that maps "Dialogflow" to a hostname, and a
+    guess would put a shutdown notice in front of a project that never called it.
+    """
+    try:
+        rows = await connection.fetch(_SERVICE_HOSTS_SQL, provider)
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) == _UNDEFINED_TABLE:
+            return {}
+        raise
+    mapping: dict[str, list[str]] = {}
+    for row in rows:
+        key = str(row["product"] or "").strip().lower()
+        if not key:
+            continue
+        bucket = mapping.setdefault(key, [])
+        for host in row["identifiers"] or ():
+            value = str(host).strip()
+            if value and value not in bucket:
+                bucket.append(value)
+    return {key: tuple(values) for key, values in mapping.items() if values}
 
 
 async def covered_identifiers(connection: asyncpg.Connection, provider: str) -> set[str]:
@@ -364,16 +439,23 @@ async def ensure_release_note_events(
     try:
         rows = await connection.fetch(_NOTES_SQL, provider)
     except Exception as exc:
-        if getattr(exc, "sqlstate", None) == "42P01":
+        if getattr(exc, "sqlstate", None) == _UNDEFINED_TABLE:
             return 0
         raise
     covered = await covered_identifiers(connection, provider)
+    hosts_by_product = await service_hosts_by_product(connection, provider)
     notes: list[WatchlistNote] = []
     for row in rows:
         text = " ".join(
             str(row[key] or "") for key in ("product", "title", "summary")
         )
+        kind = str(row["kind"] or "other")
         hits = note_identifiers_in_text(text, usage_identifiers)
+        for host in service_identifiers_for_note(
+            str(row["product"] or ""), kind, hosts_by_product, usage_identifiers
+        ):
+            if host not in hits:
+                hits.append(host)
         event = release_note_event(
             external_id=str(row["external_id"]),
             product=str(row["product"] or ""),
@@ -431,5 +513,7 @@ __all__ = [
     "product_for_identifier",
     "project_usage_identifiers",
     "release_note_event",
+    "service_hosts_by_product",
+    "service_identifiers_for_note",
     "upsert_event_from_manifest",
 ]

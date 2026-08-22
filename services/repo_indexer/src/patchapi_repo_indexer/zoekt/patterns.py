@@ -19,7 +19,7 @@ from patchapi_repo_indexer.errors import UnknownProviderError
 
 # Bumped whenever a pattern's meaning changes. Recorded alongside the watchlist
 # version so a stored finding can be traced to the regex that produced it.
-PATTERNS_VERSION: Final[str] = "1.2.0"
+PATTERNS_VERSION: Final[str] = "1.3.0"
 
 # Vertex-routed ids are a different inventory key than the bare model id.
 # Listed first so a `vertex/imagen-…` line records the prefix, not the suffix.
@@ -41,6 +41,12 @@ GOOGLE_GEMINI_FAMILY: Final[str] = r"gemini-\d+\.\d+[\w.-]*"
 # tests and stored findings can still name the regex that produced them.
 GOOGLE_GEMINI20_FAMILY: Final[str] = r"gemini-2\.0-flash(-lite)?(-\d+)?"
 
+# The service a call goes to, not the model it names. A shutdown announcement
+# for `dialogflow.googleapis.com` names no model, so a model-only index has
+# nothing for it to join against and the release note stays invisible. This is
+# the inventory key that lets a whole-service deprecation find its call sites.
+GOOGLE_SERVICE_HOST: Final[str] = r"[a-z0-9][a-z0-9-]*\.googleapis\.com"
+
 PROVIDER_PATTERNS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyType(
     {
         DEFAULT_PROVIDER: (
@@ -48,6 +54,7 @@ PROVIDER_PATTERNS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyT
             GOOGLE_IMAGEN_FAMILY,
             GOOGLE_IMAGEN_PREVIEW,
             GOOGLE_GEMINI_FAMILY,
+            GOOGLE_SERVICE_HOST,
         ),
     }
 )
@@ -128,6 +135,7 @@ __all__ = [
     "GOOGLE_GEMINI_FAMILY",
     "GOOGLE_IMAGEN_FAMILY",
     "GOOGLE_IMAGEN_PREVIEW",
+    "GOOGLE_SERVICE_HOST",
     "GOOGLE_VERTEX_ROUTED",
     "PATTERNS_VERSION",
     "PROVIDER_PATTERNS",

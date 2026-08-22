@@ -18,7 +18,11 @@ from uuid import UUID
 import asyncpg
 
 from packages.events.console_notify import EVENT_CHANGES, notify_console
-from packages.providers.google.probe import ProbeResult, probe_identifiers
+from packages.providers.google.probe import (
+    ProbeResult,
+    is_service_identifier,
+    probe_identifiers,
+)
 from packages.state.watchlist import watchlist_for
 
 log = logging.getLogger(__name__)
@@ -246,6 +250,9 @@ def identifier_aliases(identifier: str) -> tuple[str, ...]:
     if not raw:
         return ()
     if raw.startswith(VERTEX_PREFIX) or raw.startswith(FALSE_POSITIVE_PREFIXES):
+        return (raw,)
+    if is_service_identifier(raw):
+        # `models/aiplatform.googleapis.com` is not a string any tree contains.
         return (raw,)
     canon = canonical_identifier(raw)
     if not canon or canon.startswith(VERTEX_PREFIX):

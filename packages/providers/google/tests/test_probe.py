@@ -10,6 +10,7 @@ from packages.providers.google.probe import (
     canonical_probe_id,
     decide,
     is_probeable,
+    is_service_identifier,
     probe_identifiers,
     retired_identifiers,
     strip_model_name,
@@ -29,6 +30,14 @@ def test_third_party_ids_are_not_probeable() -> None:
     assert not is_probeable("fal-ai/imagen4/preview")
     assert not is_probeable("")
     assert is_probeable("imagen-4.0-generate-001")
+
+
+def test_a_service_host_is_never_probed_as_a_model() -> None:
+    """The model listing has no row for a hostname, so probing one would report
+    a running service as retired and the poller would announce it."""
+    assert is_service_identifier("aiplatform.googleapis.com")
+    assert not is_probeable("aiplatform.googleapis.com")
+    assert not is_probeable("generativelanguage.googleapis.com")
 
 
 def test_strip_model_name_handles_both_resource_shapes() -> None:

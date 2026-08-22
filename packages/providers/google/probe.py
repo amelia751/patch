@@ -57,6 +57,12 @@ MODELS_PREFIX: Final[str] = "models/"
 # Google whether someone else's model exists, and a "no" would be meaningless.
 FOREIGN_PREFIXES: Final[tuple[str, ...]] = ("fal-ai/", "openai/", "anthropic/", "replicate/")
 
+# A Google API host is inventory too, but it is not a model, and the listings
+# below only answer "does this publisher still ship this model". Asking that
+# about `aiplatform.googleapis.com` returns a confident NOT_FOUND for a service
+# that is running fine — which the poller would then announce as a retirement.
+SERVICE_HOST_SUFFIX: Final[str] = ".googleapis.com"
+
 
 class ProbeUnavailableError(GoogleProviderError):
     """The probe could not reach a surface. Not evidence of retirement."""
@@ -105,10 +111,17 @@ def canonical_probe_id(identifier: str) -> tuple[str, str]:
     return GEMINI_API, raw.removeprefix(MODELS_PREFIX)
 
 
+def is_service_identifier(identifier: str) -> bool:
+    """True for a Google API host, which is inventory but not a model."""
+    return identifier.strip().lower().endswith(SERVICE_HOST_SUFFIX)
+
+
 def is_probeable(identifier: str) -> bool:
     """False for third-party ids and for anything that is not a model name."""
     raw = identifier.strip().lower()
     if not raw:
+        return False
+    if is_service_identifier(raw):
         return False
     return not raw.startswith(FOREIGN_PREFIXES)
 
@@ -332,6 +345,7 @@ def retired_identifiers(results: Iterable[ProbeResult]) -> tuple[str, ...]:
 
 __all__ = [
     "GEMINI_API",
+    "SERVICE_HOST_SUFFIX",
     "VERTEX",
     "ProbeResult",
     "ProbeStatus",
@@ -339,6 +353,7 @@ __all__ = [
     "canonical_probe_id",
     "decide",
     "is_probeable",
+    "is_service_identifier",
     "mint_token",
     "probe_identifiers",
     "retired_identifiers",

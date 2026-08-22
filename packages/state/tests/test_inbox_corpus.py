@@ -11,7 +11,13 @@ from packages.state.inbox_corpus import (
     note_identifiers_in_text,
     product_for_identifier,
     release_note_event,
+    service_identifiers_for_note,
 )
+
+_HOSTS: dict[str, tuple[str, ...]] = {
+    "vertex ai": ("aiplatform.googleapis.com",),
+    "dialogflow": ("dialogflow.googleapis.com",),
+}
 
 
 def _change(
@@ -139,6 +145,42 @@ def test_manifest_event_requires_source_url() -> None:
 def test_product_and_cover_helpers() -> None:
     assert product_for_identifier("vertex/imagen-4.0-generate-001") == "Imagen"
     assert identifier_is_covered("models/imagen-4.0-generate-001", {"imagen-4.0-generate-001"})
+
+
+def test_service_shutdown_reaches_a_project_that_calls_the_host() -> None:
+    """The notice names "Dialogflow" and no model. The catalog supplies the host."""
+    hits = service_identifiers_for_note(
+        "Dialogflow", "deprecation", _HOSTS, ["dialogflow.googleapis.com", "gemini-3.5-flash"]
+    )
+    assert hits == ["dialogflow.googleapis.com"]
+
+
+def test_service_match_ignores_a_product_the_project_never_calls() -> None:
+    assert (
+        service_identifiers_for_note("Dialogflow", "deprecation", _HOSTS, ["gemini-3.5-flash"])
+        == []
+    )
+
+
+def test_service_match_is_limited_to_breaking_kinds() -> None:
+    """Product is a coarse key: every Vertex AI feature note would otherwise
+    become a card for every project that calls the host."""
+    assert (
+        service_identifiers_for_note("Vertex AI", "feature", _HOSTS, ["aiplatform.googleapis.com"])
+        == []
+    )
+
+
+def test_note_text_extracts_a_service_host() -> None:
+    hits = note_identifiers_in_text(
+        "Requests to dialogflow.googleapis.com stop being served on 2027-01-31.",
+        ["dialogflow.googleapis.com"],
+    )
+    assert hits == ["dialogflow.googleapis.com"]
+
+
+def test_a_service_host_is_labelled_by_itself() -> None:
+    assert product_for_identifier("aiplatform.googleapis.com") == "aiplatform.googleapis.com"
 
 
 def test_jsonb_arguments_are_bound_as_objects() -> None:
