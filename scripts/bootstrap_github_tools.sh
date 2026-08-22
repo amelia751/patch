@@ -22,6 +22,7 @@ SERVICE="${PATCHAPI_GHTOOLS_SERVICE:-patchapi-github-tools}"
 GHTOOLS_SA_ID="${PATCHAPI_GHTOOLS_SA:-patchapi-github-tools}"
 AGENTS_SA_ID="${PATCHAPI_AGENTS_SA:-patchapi-agents}"
 API_SA_ID="${PATCHAPI_API_SA:-patchapi-api}"
+DEPLOY_SA_ID="${PATCHAPI_DEPLOY_SA:-patchapi-github-deploy}"
 KEY_FILE="${GOOGLE_APPLICATION_CREDENTIALS:-$ROOT/.secrets/gcp-service-account.json}"
 
 if [[ -f "$KEY_FILE" ]]; then
@@ -63,6 +64,13 @@ for secret in patchapi-github-app-id patchapi-github-app-installation-id patchap
     --project="$PROJECT_ID" --member="serviceAccount:${GHTOOLS_SA}" \
     --role=roles/secretmanager.secretAccessor --quiet >/dev/null
 done
+
+# Deploying a revision means assigning it a runtime identity, which Cloud Run
+# treats as impersonation. Without this the workflow fails on actAs even though
+# it can already push the image.
+gcloud iam service-accounts add-iam-policy-binding "$GHTOOLS_SA" \
+  --project="$PROJECT_ID" --member="serviceAccount:$(sa_email "$DEPLOY_SA_ID")" \
+  --role=roles/iam.serviceAccountUser --quiet >/dev/null
 
 # Who may call it. The agent lane opens the pull request; the control plane
 # reads PR state for the console. Neither receives the private key.
