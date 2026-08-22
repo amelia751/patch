@@ -756,7 +756,7 @@ export function ChangesInbox({
                 subscribed={subscribed}
                 onBrowseSubscriptions={onBrowseSubscriptions}
               />
-            )}
+            )
           ) : (
             Array.from(byProvider.entries()).map(([provider, changes]) => {
               const isExpanded = expandedProviders.has(provider);
