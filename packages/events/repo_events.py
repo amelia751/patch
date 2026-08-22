@@ -18,19 +18,17 @@ pure function of its inputs, and the clock is the one thing that cannot be.
 
 from __future__ import annotations
 
-import hashlib
-import re
 from typing import Final
 
 from packages.events.config import EventType, TrustLevel
 from packages.events.envelope import EventEnvelope
+from packages.events.ids import digest as _digest
+from packages.events.ids import slug as _slug
 
 # A push is GitHub reporting a fact about the enterprise's own repository. It is
 # not provider material, so it is not labelled untrusted — but the *contents* of
 # the repository never travel in the payload either way (roadmap §10.4).
 _REPO_TRUST: Final[TrustLevel] = TrustLevel.INTERNAL_ANALYSIS
-
-_UNSAFE: Final[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9._-]+")
 
 BRANCH_REF_PREFIX: Final[str] = "refs/heads/"
 
@@ -44,16 +42,6 @@ def branch_from_ref(ref: str) -> str | None:
     if not ref.startswith(BRANCH_REF_PREFIX):
         return None
     return ref[len(BRANCH_REF_PREFIX) :] or None
-
-
-def _slug(value: str) -> str:
-    """Reduce a repository or branch to the run-id alphabet (`idempotency.py`)."""
-    cleaned = _UNSAFE.sub("-", value).strip("-")
-    return cleaned or "unnamed"
-
-
-def _digest(*parts: str) -> str:
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:32]
 
 
 def repo_push_event(

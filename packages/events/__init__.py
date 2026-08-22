@@ -20,6 +20,14 @@ from packages.events.console_notify import (
 )
 from packages.events.envelope import EventEnvelope, PayloadError
 from packages.events.idempotency import ActionType, idempotency_key, key_digest
+from packages.events.provider_events import (
+    TRANSITION_APPEARED,
+    TRANSITION_RESTORED,
+    TRANSITION_RETIRED,
+    TRANSITIONS,
+    change_normalized_event,
+    provider_change_detected_event,
+)
 from packages.events.publisher import (
     PublisherClient,
     PublishResult,
@@ -44,6 +52,10 @@ __all__ = [
     "MAX_PAYLOAD_BYTES",
     "MAX_PAYLOAD_KEYS",
     "MAX_PAYLOAD_VALUE_CHARS",
+    "TRANSITIONS",
+    "TRANSITION_APPEARED",
+    "TRANSITION_RESTORED",
+    "TRANSITION_RETIRED",
     "ActionType",
     "EventEnvelope",
     "EventType",
@@ -52,6 +64,7 @@ __all__ = [
     "PublisherClient",
     "TrustLevel",
     "branch_from_ref",
+    "change_normalized_event",
     "decode_notify",
     "encode_notify",
     "idempotency_key",
@@ -60,6 +73,7 @@ __all__ = [
     "notify_console",
     "project_repo_added_event",
     "project_repo_removed_event",
+    "provider_change_detected_event",
     "publish",
     "publish_async",
     "repo_push_event",
