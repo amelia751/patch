@@ -76,7 +76,7 @@ export function CodebaseIndexingSign({
     <div
       role="status"
       aria-live="polite"
-      aria-label={`${text}, ${value}%`}
+      aria-label={text}
       className={cn(
         "shrink-0 border-b border-primary/20 bg-primary/[0.06]",
         className
@@ -87,7 +87,6 @@ export function CodebaseIndexingSign({
         <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">
           {text}
         </p>
-        <span className="text-[11px] tabular-nums text-primary/80">{value}%</span>
       </div>
       <div className="h-[2px] bg-primary/15">
         <div
