@@ -709,6 +709,15 @@ async def refresh_subscribed_projects(connection: asyncpg.Connection, provider: 
     return count
 
 
+_HAS_FINDINGS_SQL: Final[str] = """
+SELECT 1
+FROM project_change_findings f
+JOIN change_events e ON e.id = f.change_event_id
+WHERE f.project_id = $1 AND e.provider = $2
+LIMIT 1
+"""
+
+
 async def inbox_payload(
     connection: asyncpg.Connection, project_id: UUID, provider: str = "google"
 ) -> dict[str, Any]:
@@ -723,7 +732,10 @@ async def inbox_payload(
         project_id,
         provider,
     )
-    if subscribed:
+    if subscribed and not await connection.fetchval(_HAS_FINDINGS_SQL, project_id, provider):
+        # Cold start only. Two tabs opened at once used to run this concurrently
+        # and race each other's writes; now the poller announces a transition and
+        # the indexer reclassifies, so a warm project is read without writing.
         from packages.state.inbox_corpus import ensure_inbox_corpus
 
         await ensure_inbox_corpus(connection, project_id, provider)
