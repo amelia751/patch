@@ -21,8 +21,11 @@ dependencies = [
 
 # The wired control plane. `patchapi-control-api` remains the unwired service;
 # this entry point is the composition root that connects it to Postgres.
+# `patchapi-refresh-releases` is the scheduled batch half: same image, no
+# server, run to completion by Cloud Scheduler.
 [project.scripts]
 patchapi-serve = "packages.state.serve:main"
+patchapi-refresh-releases = "packages.state.refresh:main"
 
 [dependency-groups]
 dev = [
@@ -53,8 +56,11 @@ only-include = ["__init__.py"]
 "auth_routes.py" = "packages/state/auth_routes.py"
 "config.py" = "packages/state/config.py"
 "dashboard.py" = "packages/state/dashboard.py"
+"discovery.py" = "packages/state/discovery.py"
 "findings.py" = "packages/state/findings.py"
 "inbox_corpus.py" = "packages/state/inbox_corpus.py"
+"index_inventory.py" = "packages/state/index_inventory.py"
+"refresh.py" = "packages/state/refresh.py"
 "pool.py" = "packages/state/pool.py"
 "runs.py" = "packages/state/runs.py"
 "serve.py" = "packages/state/serve.py"
