@@ -36,6 +36,7 @@ COPY pyproject.toml uv.lock ./
 COPY packages/schemas/pyproject.toml packages/schemas/
 COPY packages/events/pyproject.toml packages/events/
 COPY packages/auth/pyproject.toml packages/auth/
+COPY packages/providers/pyproject.toml packages/providers/
 COPY packages/state/pyproject.toml packages/state/
 COPY packages/repo_scan/pyproject.toml packages/repo_scan/
 COPY services/control_api/pyproject.toml services/control_api/
@@ -44,6 +45,7 @@ COPY services/repo_indexer/pyproject.toml services/repo_indexer/
 COPY packages/schemas packages/schemas
 COPY packages/events packages/events
 COPY packages/auth packages/auth
+COPY packages/providers packages/providers
 COPY packages/state packages/state
 COPY packages/repo_scan packages/repo_scan
 COPY services/control_api services/control_api
