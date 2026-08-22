@@ -1,0 +1,37 @@
+[project]
+name = "patchapi-agent-runner"
+version = "0.1.0"
+description = "Change Intelligence lane — turns an announced change into rationale on its event."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "patchapi-events",
+    "patchapi-state",
+    "patchapi-schemas",
+    "patchapi-providers",
+    "patchapi-policy",
+    "patchapi-repo-scan",
+    "google-adk>=2.1,<3",
+    "asyncpg>=0.30,<0.31",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<0.40",
+    "httpx>=0.27,<0.29",
+]
+
+[project.scripts]
+patchapi-agent-runner-serve = "patchapi_agent_runner.serve:main"
+
+[tool.uv.sources]
+patchapi-events = { workspace = true }
+patchapi-state = { workspace = true }
+patchapi-schemas = { workspace = true }
+patchapi-providers = { workspace = true }
+patchapi-policy = { workspace = true }
+patchapi-repo-scan = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patchapi_agent_runner"]

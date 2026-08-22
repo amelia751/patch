@@ -28,6 +28,7 @@ from packages.providers.google.normalize import load_notice_file, manifest_from_
 from packages.schemas.change_manifest import ChangeManifest
 
 CONTRACT: Final[str] = "change_manifest"
+RATIONALE_CONTRACT: Final[str] = "change_rationale"
 AGENT: Final[AgentId] = AgentId.CHANGE_INTELLIGENCE
 
 # Feed documents are JSON. A directory listing is bounded to this so a stray
@@ -262,6 +263,11 @@ def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
             )
 
         context.record(CONTRACT, AGENT, manifest)
+        # The manifest is the deterministic parse, identical for every run of
+        # this notice. The rationale is the only part of the turn that is the
+        # agent's own, and the enrichment lane exists to show it, so it is
+        # recorded rather than left in the tool's return value.
+        context.record(RATIONALE_CONTRACT, AGENT, rationale.strip()[:MAX_UNTRUSTED_EXCERPT_CHARS])
         return ok(
             recorded=CONTRACT,
             schema_version=manifest.schema_version,

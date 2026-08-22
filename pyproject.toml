@@ -30,6 +30,7 @@ members = [
     "services/control_api",
     "services/github_tools",
     "services/repo_indexer",
+    "services/agent_runner",
     "agents",
     "db",
 ]
