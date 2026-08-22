@@ -1,17 +1,17 @@
-"""The package registry probe. No network: responses are injected."""
+"""The package registry check. No network: responses are injected."""
 
 import httpx
 import pytest
 
-from packages.providers.probe_result import ProbeStatus
+from packages.providers.live_result import LiveStatus
 from packages.providers.sdk import (
     NPM,
     PYPI,
     fetch_package,
     is_sdk_identifier,
+    live_packages,
     major_of,
     npm_url,
-    probe_packages,
     provider_for_package,
     sdk_identifier,
     split_sdk_identifier,
@@ -75,9 +75,9 @@ async def test_a_rate_limited_registry_is_unknown_never_retired() -> None:
     every project at once."""
     transport = httpx.MockTransport(lambda request: httpx.Response(429))
     async with httpx.AsyncClient(transport=transport) as client:
-        results = await probe_packages(["npm:@google/genai"], client=client)
+        results = await live_packages(["npm:@google/genai"], client=client)
 
-    assert [result.status for result in results] == [ProbeStatus.UNKNOWN]
+    assert [result.status for result in results] == [LiveStatus.UNKNOWN]
 
 
 @pytest.mark.asyncio
@@ -85,9 +85,9 @@ async def test_a_published_package_resolves() -> None:
     payload = {"dist-tags": {"latest": "2.1.0"}, "versions": {"2.1.0": {}}}
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
     async with httpx.AsyncClient(transport=transport) as client:
-        results = await probe_packages(["npm:@google/genai"], client=client)
+        results = await live_packages(["npm:@google/genai"], client=client)
 
-    assert results[0].status is ProbeStatus.RESOLVES
+    assert results[0].status is LiveStatus.RESOLVES
     assert results[0].surface == NPM
 
 

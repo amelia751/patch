@@ -16,7 +16,7 @@ from typing import Any, Final
 from agents.config import AgentId
 from agents.context import RunContext
 from agents.tools.results import ReasonCode, ok, refusal
-from packages.providers.google.probe import ProbeStatus, probe_identifiers
+from packages.providers.google.live import LiveStatus, live_identifiers
 
 AGENT: Final[AgentId] = AgentId.CHANGE_INTELLIGENCE
 
@@ -24,10 +24,10 @@ AGENT: Final[AgentId] = AgentId.CHANGE_INTELLIGENCE
 MAX_IDENTIFIERS: Final[int] = 12
 
 
-def build_probe_tools(context: RunContext) -> list[Callable[..., Any]]:
-    """Build the live-probe tool bound to `context`."""
+def build_live_tools(context: RunContext) -> list[Callable[..., Any]]:
+    """Build the liveness tool bound to `context`."""
 
-    async def probe_identifier(identifiers: list[str]) -> dict[str, Any]:
+    async def live_identifier(identifiers: list[str]) -> dict[str, Any]:
         """Check whether Google still publishes these model identifiers.
 
         Returns one result per identifier: `resolves` (the surface lists it),
@@ -35,32 +35,32 @@ def build_probe_tools(context: RunContext) -> list[Callable[..., Any]]:
         code would get), or `unknown` (the check could not run).
 
         `unknown` is not evidence of retirement. If you need a retirement to be
-        true and the probe says `unknown`, corroborate it from the notice and
+        true and the check says `unknown`, corroborate it from the notice and
         an official page, or record HUMAN_REQUIRED. Never treat a failed check
         as a confirmed removal.
         """
         wanted = [item.strip() for item in identifiers if item and item.strip()]
         if not wanted:
-            return refusal(ReasonCode.INVALID_CONTRACT, "name at least one identifier to probe")
+            return refusal(ReasonCode.INVALID_CONTRACT, "name at least one identifier to check")
         if len(wanted) > MAX_IDENTIFIERS:
             return refusal(
                 ReasonCode.INVALID_CONTRACT,
-                f"probe at most {MAX_IDENTIFIERS} identifiers per call; {len(wanted)} were named",
+                f"check at most {MAX_IDENTIFIERS} identifiers per call; {len(wanted)} were named",
             )
 
-        results = await probe_identifiers(wanted, base_dir=context.repo_root)
-        by_status: dict[str, list[str]] = {status.value: [] for status in ProbeStatus}
+        results = await live_identifiers(wanted, base_dir=context.repo_root)
+        by_status: dict[str, list[str]] = {status.value: [] for status in LiveStatus}
         for result in results:
             by_status[str(result.status)].append(result.identifier)
 
         return ok(
             results=[result.to_evidence() for result in results],
-            not_found=by_status[ProbeStatus.NOT_FOUND.value],
-            resolves=by_status[ProbeStatus.RESOLVES.value],
-            unknown=by_status[ProbeStatus.UNKNOWN.value],
+            not_found=by_status[LiveStatus.NOT_FOUND.value],
+            resolves=by_status[LiveStatus.RESOLVES.value],
+            unknown=by_status[LiveStatus.UNKNOWN.value],
         )
 
-    return [probe_identifier]
+    return [live_identifier]
 
 
-__all__ = ["AGENT", "MAX_IDENTIFIERS", "build_probe_tools"]
+__all__ = ["AGENT", "MAX_IDENTIFIERS", "build_live_tools"]

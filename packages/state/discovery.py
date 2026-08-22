@@ -7,8 +7,9 @@ deterministic parse, and records a `ChangeManifest`. `upsert_event_from_manifest
 turns that into a `change_events` row. The function existed with no caller, so
 the Releases tab only ever showed the pinned watchlist.
 
-*From a probe.* The indexer knows every model identifier the fleet actually
-calls. The probe knows which of those a Google surface has stopped publishing.
+*From a liveness check.* The indexer knows every model identifier the fleet
+actually calls. The check knows which of those a Google surface has stopped
+publishing.
 An identifier in both sets that no `change_events` row covers is a break in
 production that no notice describes — the case a watchlist can never catch,
 because someone has to notice it first in order to type it in.
@@ -27,11 +28,11 @@ from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from packages.events.provider_events import TRANSITION_RETIRED
-from packages.providers.google.probe import (
+from packages.providers.google.live import (
     GEMINI_API,
-    ProbeResult,
-    ProbeStatus,
-    probe_identifiers,
+    LiveResult,
+    LiveStatus,
+    live_identifiers,
 )
 from packages.state.inbox_corpus import (
     covered_identifiers,
@@ -59,14 +60,17 @@ WHERE p.slug = $1 AND p.retired_at IS NULL
 """
 
 
-def discovery_event(result: ProbeResult) -> WatchlistNote:
+def discovery_event(result: LiveResult) -> WatchlistNote:
     """A retirement observed on the wire, with no notice to cite.
 
-    `fail_closed` is set and no replacement is named on purpose: the probe
+    `fail_closed` is set and no replacement is named on purpose: the check
     proves the model is gone, and proves nothing at all about what replaces it.
     """
     surface = "the Gemini API" if result.surface == GEMINI_API else "Vertex AI"
     return {
+        # The `probe:` prefix is a stored key, not a name for the concept. Rows
+        # already carry it and no migration rewrites them, so changing it here
+        # would orphan every discovered retirement recorded so far.
         "external_id": f"probe:{result.surface}:{result.identifier}",
         "provider": "google",
         "product": product_for_identifier(result.identifier),
@@ -101,19 +105,19 @@ async def undocumented_retirements(
     connection: asyncpg.Connection,
     *,
     provider: str = "google",
-    results: tuple[ProbeResult, ...] | None = None,
-) -> list[ProbeResult]:
-    """Probed-gone identifiers that no existing change event mentions."""
+    results: tuple[LiveResult, ...] | None = None,
+) -> list[LiveResult]:
+    """Identifiers a surface no longer serves that no existing change event mentions."""
     if results is None:
         identifiers = await indexed_identifiers(connection, provider)
         if not identifiers:
             return []
-        results = await probe_identifiers(identifiers)
+        results = await live_identifiers(identifiers)
     covered = await covered_identifiers(connection, provider)
     return [
         result
         for result in results
-        if result.status is ProbeStatus.NOT_FOUND
+        if result.status is LiveStatus.NOT_FOUND
         and not identifier_is_covered(result.identifier, covered)
     ]
 
@@ -122,7 +126,7 @@ async def record_discovered_retirements(
     connection: asyncpg.Connection,
     *,
     provider: str = "google",
-    results: tuple[ProbeResult, ...] | None = None,
+    results: tuple[LiveResult, ...] | None = None,
 ) -> list[str]:
     """Write a change event for each undocumented break. Returns the external ids."""
     from packages.state.inbox_corpus import _insert_notes
@@ -169,7 +173,7 @@ async def apply_provider_change(
 ) -> dict[str, Any]:
     """The deterministic reaction to one announced provider transition.
 
-    Deliberately narrow. It records what the probe proves and reclassifies the
+    Deliberately narrow. It records what the check proves and reclassifies the
     projects that actually call the identifier — not every subscribed project,
     which is what made the batch job expensive. It never writes a rationale or
     names a replacement: that is the Change Intelligence lane's contribution,
@@ -178,14 +182,14 @@ async def apply_provider_change(
     from packages.state.findings import refresh_project_findings
 
     if transition != TRANSITION_RETIRED:
-        # `restored` and `appeared` change no finding on their own. The probe row
-        # is already updated, so the next classification picks them up.
+        # `restored` and `appeared` change no finding on their own. The liveness
+        # row is already updated, so the next classification picks them up.
         return {"recorded": None, "reclassified": 0, "reason": f"{transition} needs no action"}
 
-    result = ProbeResult(
+    result = LiveResult(
         identifier=identifier,
         surface=surface,
-        status=ProbeStatus.NOT_FOUND,
+        status=LiveStatus.NOT_FOUND,
         checked_at=checked_at,
         detail="",
         source_url=source_url,

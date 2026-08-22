@@ -10,8 +10,8 @@ dependencies = [
     # Live Vertex calls: ADC/service-account credentials plus the HTTP transport
     # google-auth uses to refresh them.
     "google-auth>=2.38,<3",
-    # The model probe runs inside async callers (agent tools, findings refresh),
-    # so it needs an async client rather than `requests`.
+    # The live model check runs inside async callers (agent tools, findings
+    # refresh), so it needs an async client rather than `requests`.
     "httpx>=0.27,<0.29",
     "requests>=2.32,<3",
 ]
@@ -33,14 +33,14 @@ only-include = ["__init__.py"]
 [tool.hatch.build.targets.wheel.force-include]
 "__init__.py" = "packages/providers/__init__.py"
 "dotenv.py" = "packages/providers/dotenv.py"
-"probe_result.py" = "packages/providers/probe_result.py"
+"live_result.py" = "packages/providers/live_result.py"
 "sdk.py" = "packages/providers/sdk.py"
 "google/__init__.py" = "packages/providers/google/__init__.py"
 "google/config.py" = "packages/providers/google/config.py"
 "google/deprecation_feed.py" = "packages/providers/google/deprecation_feed.py"
 "google/errors.py" = "packages/providers/google/errors.py"
+"google/live.py" = "packages/providers/google/live.py"
 "google/normalize.py" = "packages/providers/google/normalize.py"
-"google/probe.py" = "packages/providers/google/probe.py"
 "google/smoke.py" = "packages/providers/google/smoke.py"
 "google/snapshot.py" = "packages/providers/google/snapshot.py"
 "google/vertex.py" = "packages/providers/google/vertex.py"

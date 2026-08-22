@@ -98,8 +98,8 @@ async def test_an_unknown_migration_kind_is_refused() -> None:
         )
 
 
-async def test_a_manifest_lands_on_the_event_the_probe_wrote() -> None:
-    """The agent's change_id differs from the probe's, so identifiers match them up."""
+async def test_a_manifest_lands_on_the_event_the_deterministic_lane_wrote() -> None:
+    """The agent's change_id differs from the lane's, so identifiers match them up."""
     conn = FakeConnection(external_id="probe:gemini_api:imagen-4.0-generate-001")
 
     applied = await enrich_from_manifest(

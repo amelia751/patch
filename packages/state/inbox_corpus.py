@@ -27,7 +27,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
-from packages.providers.google.probe import is_service_identifier
+from packages.providers.google.live import is_service_identifier
 from packages.providers.sdk import is_sdk_identifier, packages_calling
 from packages.state.findings import (
     BREAKING_KINDS,

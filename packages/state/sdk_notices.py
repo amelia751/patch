@@ -6,7 +6,7 @@ callers and neither is a transition.
 
 *The author deprecated it.* `@google/generative-ai` still installs and still
 resolves; npm simply carries a message saying to move to `@google/genai`. A
-liveness probe reports that as healthy forever.
+liveness check reports that as healthy forever.
 
 *A new major shipped.* That is not a break — a pinned 1.x keeps working — so it
 is recorded as `new_identifier`, which classification treats as watching rather
@@ -52,7 +52,7 @@ _REGISTRY_DOCS: Final[dict[str, str]] = {
 
 
 def registry_page(ecosystem: str, name: str) -> str:
-    """Where a human reads the same thing the probe read."""
+    """Where a human reads the same thing the liveness check read."""
     base = _REGISTRY_DOCS.get(ecosystem, "")
     return f"{base}/{name}" if base else ""
 

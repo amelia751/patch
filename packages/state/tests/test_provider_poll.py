@@ -15,7 +15,7 @@ from packages.events.provider_events import (
     TRANSITION_RETIRED,
 )
 from packages.events.publisher import PublishResult
-from packages.providers.google.probe import ProbeResult, ProbeStatus
+from packages.providers.google.live import LiveResult, LiveStatus
 from packages.state import provider_poll
 from packages.state.provider_poll import (
     NO_PREVIOUS,
@@ -27,8 +27,8 @@ from packages.state.provider_poll import (
 GEMINI = "gemini_api"
 
 
-def probe(identifier: str, status: ProbeStatus, surface: str = GEMINI) -> ProbeResult:
-    return ProbeResult(
+def live(identifier: str, status: LiveStatus, surface: str = GEMINI) -> LiveResult:
+    return LiveResult(
         identifier=identifier,
         surface=surface,
         status=status,
@@ -39,40 +39,40 @@ def probe(identifier: str, status: ProbeStatus, surface: str = GEMINI) -> ProbeR
 
 
 def test_a_model_that_stops_resolving_is_a_retirement() -> None:
-    assert classify_transition("resolves", ProbeStatus.NOT_FOUND) == TRANSITION_RETIRED
+    assert classify_transition("resolves", LiveStatus.NOT_FOUND) == TRANSITION_RETIRED
 
 
 def test_a_model_still_missing_is_not_news() -> None:
-    assert classify_transition("not_found", ProbeStatus.NOT_FOUND) is None
+    assert classify_transition("not_found", LiveStatus.NOT_FOUND) is None
 
 
 def test_a_model_still_serving_is_not_news() -> None:
-    assert classify_transition("resolves", ProbeStatus.RESOLVES) is None
+    assert classify_transition("resolves", LiveStatus.RESOLVES) is None
 
 
 def test_first_sight_of_a_dead_model_is_announced() -> None:
-    # Never probed before and already gone: the retirement is real and nobody
+    # Never checked before and already gone: the retirement is real and nobody
     # has heard about it yet.
-    assert classify_transition(NO_PREVIOUS, ProbeStatus.NOT_FOUND) == TRANSITION_RETIRED
+    assert classify_transition(NO_PREVIOUS, LiveStatus.NOT_FOUND) == TRANSITION_RETIRED
 
 
 def test_first_sight_of_a_live_model_is_only_an_appearance() -> None:
-    assert classify_transition(NO_PREVIOUS, ProbeStatus.RESOLVES) == TRANSITION_APPEARED
+    assert classify_transition(NO_PREVIOUS, LiveStatus.RESOLVES) == TRANSITION_APPEARED
 
 
 def test_a_model_that_comes_back_is_a_restoration() -> None:
-    assert classify_transition("not_found", ProbeStatus.RESOLVES) == TRANSITION_RESTORED
+    assert classify_transition("not_found", LiveStatus.RESOLVES) == TRANSITION_RESTORED
 
 
 def test_a_failed_check_never_announces_anything() -> None:
     for previous in (NO_PREVIOUS, "resolves", "not_found", "unknown"):
-        assert classify_transition(previous, ProbeStatus.UNKNOWN) is None
+        assert classify_transition(previous, LiveStatus.UNKNOWN) is None
 
 
 def test_leaving_unknown_for_a_404_is_a_retirement() -> None:
     # The only way to hold `unknown` is for the very first check to have failed,
     # so arriving at a definite 404 is the first real answer about this id.
-    assert classify_transition("unknown", ProbeStatus.NOT_FOUND) == TRANSITION_RETIRED
+    assert classify_transition("unknown", LiveStatus.NOT_FOUND) == TRANSITION_RETIRED
 
 
 def test_a_steady_state_poll_announces_nothing() -> None:
@@ -81,8 +81,8 @@ def test_a_steady_state_poll_announces_nothing() -> None:
         ("gemini-3.5-flash", GEMINI): "resolves",
     }
     results = (
-        probe("imagen-4.0-generate-001", ProbeStatus.NOT_FOUND),
-        probe("gemini-3.5-flash", ProbeStatus.RESOLVES),
+        live("imagen-4.0-generate-001", LiveStatus.NOT_FOUND),
+        live("gemini-3.5-flash", LiveStatus.RESOLVES),
     )
     assert detect_transitions(previous, results) == []
 
@@ -93,8 +93,8 @@ def test_only_the_changed_identifier_is_announced() -> None:
         ("gemini-3.5-flash", GEMINI): "resolves",
     }
     results = (
-        probe("imagen-4.0-generate-001", ProbeStatus.NOT_FOUND),
-        probe("gemini-3.5-flash", ProbeStatus.NOT_FOUND),
+        live("imagen-4.0-generate-001", LiveStatus.NOT_FOUND),
+        live("gemini-3.5-flash", LiveStatus.NOT_FOUND),
     )
     transitions = detect_transitions(previous, results)
     assert [change.identifier for change in transitions] == ["gemini-3.5-flash"]
@@ -105,8 +105,8 @@ def test_only_the_changed_identifier_is_announced() -> None:
 def test_the_same_id_on_two_surfaces_is_tracked_separately() -> None:
     previous = {("imagen-4.0-generate-001", GEMINI): "not_found"}
     results = (
-        probe("imagen-4.0-generate-001", ProbeStatus.NOT_FOUND),
-        probe("imagen-4.0-generate-001", ProbeStatus.NOT_FOUND, surface="vertex"),
+        live("imagen-4.0-generate-001", LiveStatus.NOT_FOUND),
+        live("imagen-4.0-generate-001", LiveStatus.NOT_FOUND, surface="vertex"),
     )
     transitions = detect_transitions(previous, results)
     # Gemini already knew; Vertex is a first observation of a dead model.
@@ -127,7 +127,7 @@ def _result(published: bool) -> PublishResult:
 async def test_an_unpublished_transition_is_reported_so_its_row_is_held_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The bug this guards: committing the probe row before the message lands.
+    """The bug this guards: committing the liveness row before the message lands.
 
     The stored status is the only memory of what the last poll concluded. Write
     `not_found`, fail to publish, and the next poll sees no change — the
@@ -140,7 +140,7 @@ async def test_an_unpublished_transition_is_reported_so_its_row_is_held_back(
     monkeypatch.setattr(provider_poll, "publish_async", denied)
     transitions = detect_transitions(
         {("imagen-4.0-generate-001", GEMINI): "resolves"},
-        (probe("imagen-4.0-generate-001", ProbeStatus.NOT_FOUND),),
+        (live("imagen-4.0-generate-001", LiveStatus.NOT_FOUND),),
     )
     published, failed = await announce(transitions, provider="google")
     assert published == []
@@ -157,7 +157,7 @@ async def test_a_published_transition_leaves_nothing_held_back(
     monkeypatch.setattr(provider_poll, "publish_async", accepted)
     transitions = detect_transitions(
         {("imagen-4.0-generate-001", GEMINI): "resolves"},
-        (probe("imagen-4.0-generate-001", ProbeStatus.NOT_FOUND),),
+        (live("imagen-4.0-generate-001", LiveStatus.NOT_FOUND),),
     )
     published, failed = await announce(transitions, provider="google")
     assert len(published) == 1

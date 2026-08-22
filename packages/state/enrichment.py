@@ -1,9 +1,9 @@
 """Where the Change Intelligence agent is allowed to write.
 
 The deterministic lane owns whether a release needs you. It reaches that answer
-from evidence a model can neither improve nor argue with: a probe that 404s, an
-identifier the indexer found in an imported tree, a date on a pinned feed. That
-answer must not move because a model phrased something confidently.
+from evidence a model can neither improve nor argue with: a live check that 404s,
+an identifier the indexer found in an imported tree, a date on a pinned feed.
+That answer must not move because a model phrased something confidently.
 
 The agent owns the part determinism is bad at — reading a notice, and saying in
 a sentence why this break matters to this repository and what to move to.
@@ -105,7 +105,7 @@ async def apply_agent_rationale(
 
 
 async def enrich_from_manifest(connection: asyncpg.Connection, payload: dict[str, Any]) -> bool:
-    """Route a recorded ChangeManifest to the event the probe already wrote.
+    """Route a recorded ChangeManifest to the event the deterministic lane wrote.
 
     The agent picks its own `change_id`, which will not match the
     `probe:<surface>:<identifier>` id the deterministic lane used. Matching on

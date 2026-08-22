@@ -30,8 +30,8 @@ from patchapi_agent_runner import runner
 
 log = logging.getLogger(__name__)
 
-# A turn calls the model, the probe, and web search. Cloud Run request timeout
-# and the subscription ack deadline are set to match.
+# A turn calls the model, the liveness check, and web search. Cloud Run request
+# timeout and the subscription ack deadline are set to match.
 HANDLER_TIMEOUT_SECONDS = 600.0
 
 

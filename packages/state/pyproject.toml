@@ -12,7 +12,7 @@ dependencies = [
     "patchapi-auth",
     "patchapi-control-api",
     "patchapi-events",
-    # The live model probe: findings escalate on what a surface publishes now,
+    # The live model check: findings escalate on what a surface publishes now,
     # not on a date typed into the watchlist.
     "patchapi-providers",
     "patchapi-schemas",

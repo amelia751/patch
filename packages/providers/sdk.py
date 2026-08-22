@@ -1,6 +1,6 @@
 """Does the registry still ship the SDK this tree depends on?
 
-The model probe asks a publisher which models it still lists. This asks the same
+The model check asks a publisher which models it still lists. This asks the same
 question of a package registry, because the other way a provider breaks a
 customer is through the client library: the package is unpublished, the author
 marks it deprecated in favour of a rewrite, or a new major lands with a
@@ -16,7 +16,7 @@ dependency updater; a break only matters here when it comes from an API provider
 the project subscribed to.
 
 `UNKNOWN` stays separate from `NOT_FOUND` for the same reason it does in the
-model probe. A rate-limited registry answers 429, and reading that as "your SDK
+model check. A rate-limited registry answers 429, and reading that as "your SDK
 was unpublished" would open pull requests against every project at once.
 """
 
@@ -32,7 +32,7 @@ from urllib.parse import quote
 
 import httpx
 
-from packages.providers.probe_result import ProbeResult, ProbeStatus
+from packages.providers.live_result import LiveResult, LiveStatus
 
 NPM: Final[str] = "npm"
 PYPI: Final[str] = "pypi"
@@ -273,25 +273,25 @@ async def fetch_packages(
     return found
 
 
-def package_probe_result(identifier: str, release: PackageRelease | None) -> ProbeResult:
+def package_live_result(identifier: str, release: PackageRelease | None) -> LiveResult:
     """Existence only. Deprecation is a notice, not a disappearance."""
     ecosystem = (split_sdk_identifier(identifier) or ("", ""))[0]
     if release is None:
-        return ProbeResult(
+        return LiveResult(
             identifier=identifier,
             surface=ecosystem or "registry",
-            status=ProbeStatus.UNKNOWN,
+            status=LiveStatus.UNKNOWN,
             checked_at=_now(),
             detail="registry did not answer; existence unknown",
             source_url="",
         )
-    status = ProbeStatus.RESOLVES if release.exists else ProbeStatus.NOT_FOUND
+    status = LiveStatus.RESOLVES if release.exists else LiveStatus.NOT_FOUND
     detail = (
         f"{ecosystem} publishes {release.name} at {release.latest}"
         if release.exists
         else f"{ecosystem} no longer serves {release.name}"
     )
-    return ProbeResult(
+    return LiveResult(
         identifier=identifier,
         surface=ecosystem or "registry",
         status=status,
@@ -301,15 +301,15 @@ def package_probe_result(identifier: str, release: PackageRelease | None) -> Pro
     )
 
 
-async def probe_packages(
+async def live_packages(
     identifiers: Iterable[str], *, client: httpx.AsyncClient | None = None
-) -> tuple[ProbeResult, ...]:
-    """The SDK half of the inventory probe, in the shape the poller expects."""
+) -> tuple[LiveResult, ...]:
+    """The SDK half of the inventory check, in the shape the poller expects."""
     wanted = [item for item in identifiers if is_sdk_identifier(item)]
     if not wanted:
         return ()
     releases = await fetch_packages(wanted, client=client)
-    return tuple(package_probe_result(item, releases.get(item)) for item in wanted)
+    return tuple(package_live_result(item, releases.get(item)) for item in wanted)
 
 
 __all__ = [
@@ -324,10 +324,10 @@ __all__ = [
     "fetch_package",
     "fetch_packages",
     "is_sdk_identifier",
+    "live_packages",
     "major_of",
-    "package_probe_result",
+    "package_live_result",
     "packages_calling",
-    "probe_packages",
     "provider_for_package",
     "sdk_identifier",
     "service_hosts_for_package",

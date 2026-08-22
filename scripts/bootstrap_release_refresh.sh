@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The scheduled probe that keeps the Releases tab honest.
+# The scheduled liveness check that keeps the Releases tab honest.
 #
-# Classification reads `identifier_probes` to tell a model that is actually gone
+# Classification reads `identifier_liveness` to tell a model that is actually gone
 # from one that merely has a date typed against it. Probing every indexed
 # identifier costs several calls to a Google surface, which is far too slow to
 # hang off a page load, so nothing writes that table during a request. This
@@ -132,7 +132,7 @@ SCHEDULER_ARGS=(
   --oauth-service-account-email="$SCHEDULER_SA"
   --oauth-token-scope="https://www.googleapis.com/auth/cloud-platform"
   --attempt-deadline=180s
-  --description="Probe indexed identifiers and refresh the Releases tab"
+  --description="Check indexed identifiers and refresh the Releases tab"
 )
 if gcloud scheduler jobs describe "$JOB" --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
   gcloud scheduler jobs update http "$JOB" "${SCHEDULER_ARGS[@]}" --quiet >/dev/null

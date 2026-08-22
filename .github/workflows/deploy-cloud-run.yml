@@ -258,9 +258,9 @@ jobs:
       - name: Deploy the agent lane
         if: steps.db.outputs.ready == 'true'
         run: |
-          # A turn calls the model, the probe, and web search, so one request is
-          # minutes rather than milliseconds: concurrency 1 and a long timeout,
-          # matched by the subscription's ack deadline.
+          # A turn calls the model, the liveness check, and web search, so one
+          # request is minutes rather than milliseconds: concurrency 1 and a long
+          # timeout, matched by the subscription's ack deadline.
           gcloud run deploy "${AGENTS_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \

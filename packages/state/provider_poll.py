@@ -6,10 +6,10 @@ work: that produces a batch job with one hardcoded consumer, and a second
 consumer — the Change Intelligence agent, a notifier, an audit sink — has
 nowhere to attach.
 
-So this module probes, diffs against what the last poll concluded, and publishes
-one `provider-change-detected` per transition. Recording the consequence,
-writing an undocumented retirement, and reclassifying affected projects all
-happen in subscribers.
+So this module checks each surface, diffs against what the last poll concluded,
+and publishes one `provider-change-detected` per transition. Recording the
+consequence, writing an undocumented retirement, and reclassifying affected
+projects all happen in subscribers.
 
 Publishing transitions rather than state is what makes a short interval
 affordable. "Still 404" every fifteen minutes is not news and costs a message;
@@ -32,7 +32,7 @@ from packages.events.provider_events import (
     provider_change_detected_event,
 )
 from packages.events.publisher import publish_async
-from packages.providers.google.probe import ProbeResult, ProbeStatus
+from packages.providers.google.live import LiveResult, LiveStatus
 
 if TYPE_CHECKING:
     import asyncpg
@@ -67,27 +67,27 @@ class Transition:
     checked_at: str
 
 
-def classify_transition(previous: str, current: ProbeStatus) -> str | None:
-    """Name the transition between two probe answers, or `None` if nothing happened.
+def classify_transition(previous: str, current: LiveStatus) -> str | None:
+    """Name the transition between two answers, or `None` if nothing happened.
 
     `unknown` is never a transition in either direction. Arriving at it means the
     check did not run, and leaving it means the check finally ran — neither is a
     change in what the provider serves.
     """
-    if current is ProbeStatus.UNKNOWN:
+    if current is LiveStatus.UNKNOWN:
         return None
-    settled = previous in {ProbeStatus.RESOLVES.value, ProbeStatus.NOT_FOUND.value}
-    if current is ProbeStatus.NOT_FOUND:
-        if previous == ProbeStatus.NOT_FOUND.value:
+    settled = previous in {LiveStatus.RESOLVES.value, LiveStatus.NOT_FOUND.value}
+    if current is LiveStatus.NOT_FOUND:
+        if previous == LiveStatus.NOT_FOUND.value:
             return None
         return TRANSITION_RETIRED
-    if previous == ProbeStatus.RESOLVES.value:
+    if previous == LiveStatus.RESOLVES.value:
         return None
     return TRANSITION_RESTORED if settled else TRANSITION_APPEARED
 
 
 def detect_transitions(
-    previous: dict[tuple[str, str], str], results: tuple[ProbeResult, ...]
+    previous: dict[tuple[str, str], str], results: tuple[LiveResult, ...]
 ) -> list[Transition]:
     """Diff this poll against the last one."""
     transitions: list[Transition] = []
@@ -118,7 +118,7 @@ async def announce(
     Returns the event ids that reached the topic and the `(identifier, surface)`
     pairs whose announcement did not. A publish failure is logged by the
     publisher and reported here rather than raised, because the caller has to
-    know which probe rows it must not commit yet.
+    know which liveness rows it must not commit yet.
     """
     occurred_at = datetime.now(UTC).isoformat(timespec="seconds")
     published: list[str] = []
@@ -154,12 +154,12 @@ async def announce(
 class PollOutcome:
     """What one poll observed and announced.
 
-    `results` is carried so the caller can reuse the probe answers instead of
-    asking the surface a second time.
+    `results` is carried so the caller can reuse the answers instead of asking
+    the surface a second time.
     """
 
     provider: str
-    results: tuple[ProbeResult, ...]
+    results: tuple[LiveResult, ...]
     transitions: tuple[Transition, ...]
     published: tuple[str, ...]
 
@@ -167,7 +167,7 @@ class PollOutcome:
 async def poll_provider(
     connection: asyncpg.Connection, *, provider: str = DEFAULT_PROVIDER
 ) -> PollOutcome:
-    """Probe, diff, announce, then record. In that order, deliberately.
+    """Check, diff, announce, then record. In that order, deliberately.
 
     Recording before announcing would lose events: the stored status is the only
     memory of what the last poll concluded, so committing `not_found` and then
@@ -177,11 +177,11 @@ async def poll_provider(
     handle through the idempotency key — instead of at-most-once, which silently
     drops the one event that mattered.
     """
-    from packages.providers.google.probe import probe_identifiers
-    from packages.providers.sdk import is_sdk_identifier, probe_packages
-    from packages.state.findings import previous_probe_statuses, record_probe_results
+    from packages.providers.google.live import live_identifiers
+    from packages.providers.sdk import is_sdk_identifier, live_packages
+    from packages.state.findings import previous_live_statuses, record_live_results
 
-    previous = await previous_probe_statuses(connection, provider=provider)
+    previous = await previous_live_statuses(connection, provider=provider)
     rows = await connection.fetch(_INDEXED_IDENTIFIERS_SQL, provider)
     identifiers = [str(row["identifier"]) for row in rows]
     if not identifiers:
@@ -193,8 +193,8 @@ async def poll_provider(
     # both, so the transition machinery downstream does not care which it was.
     models = [item for item in identifiers if not is_sdk_identifier(item)]
     sdks = [item for item in identifiers if is_sdk_identifier(item)]
-    results = await probe_identifiers(models) if models else ()
-    results += await probe_packages(sdks)
+    results = await live_identifiers(models) if models else ()
+    results += await live_packages(sdks)
     transitions = detect_transitions(previous, results)
     for change in transitions:
         log.info(
@@ -210,14 +210,14 @@ async def poll_provider(
     published, failed = await announce(transitions, provider=provider)
     for identifier, surface in sorted(failed):
         log.warning(
-            "holding back the probe row for %s on %s so the next poll retries the announcement",
+            "holding back the liveness row for %s on %s; the next poll retries it",
             identifier,
             surface,
         )
     recordable = tuple(
         result for result in results if (result.identifier, result.surface) not in failed
     )
-    await record_probe_results(connection, recordable, provider=provider)
+    await record_live_results(connection, recordable, provider=provider)
 
     return PollOutcome(
         provider=provider,

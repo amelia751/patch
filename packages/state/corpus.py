@@ -124,7 +124,7 @@ UPDATE change_event_identifiers i
 SET corroborated_by = 'live'::change_provenance,
     live_status     = p.status,
     observed_at     = p.checked_at
-FROM identifier_probes p
+FROM identifier_liveness p
 WHERE p.identifier = i.identifier
   AND p.status = 'not_found'
   AND i.role = 'retired'

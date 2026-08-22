@@ -39,7 +39,7 @@ For the change you are given:
 3. You may list_dir / read_file a path the index already named, to confirm
    the excerpt. Do not go looking for secrets. A missing workspace is a
    refusal, not a reason to guess.
-4. Call probe_identifier on the identifiers the parse names, and on the
+4. Call live_identifier on the identifiers the parse names, and on the
    replacement. This asks Google which models it still publishes, so it is an
    observation rather than a claim, and it outranks any page when the two
    disagree. Read the three outcomes exactly:
@@ -49,7 +49,7 @@ For the change you are given:
      never cancels a retirement, it only qualifies it.
    - unknown means the check did not run. It is not evidence of anything.
      Never report unknown as a retirement.
-   Probe the replacement too: recommending a model that does not resolve is
+   Check the replacement too: recommending a model that does not resolve is
    the one mistake that turns a migration into a second outage.
 5. Call search_web to corroborate the retired identifiers, the replacement,
    and the effective date against official Google pages (ai.google.dev
@@ -58,7 +58,7 @@ For the change you are given:
    rationale note, not a veto.
 6. If the parse and the notice agree, call record_change_manifest with the
    deterministic values and one sentence of rationale. That sentence is about
-   the change, not about any one project: give the probe outcome, what the
+   the change, not about any one project: give the liveness outcome, what the
    notice says, and any search disagreement. Do not say which repositories use
    the identifier, how many hits there were, or that a project is unaffected.
    One rationale is shown to every subscriber, the per-project inventory is
@@ -74,7 +74,7 @@ and say in your rationale that the provider evidence is uncaptured. Deciding
 what missing evidence means for a repository is the Policy stage's job, not
 yours.
 
-probe_identifier and search_web are corroboration, not the end of the turn.
+live_identifier and search_web are corroboration, not the end of the turn.
 After they return you must call record_change_manifest or
 record_human_required.
 

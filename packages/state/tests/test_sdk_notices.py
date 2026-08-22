@@ -25,7 +25,7 @@ def test_a_healthy_package_produces_no_deprecation_note() -> None:
 
 
 def test_a_deprecated_package_quotes_the_author() -> None:
-    """A liveness probe reports a deprecated package as healthy forever, so the
+    """A liveness check reports a deprecated package as healthy forever, so the
     registry's own message is the only evidence there is."""
     note = deprecation_note(
         "npm:@google/generative-ai",

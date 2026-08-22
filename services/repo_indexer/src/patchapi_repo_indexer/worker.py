@@ -731,10 +731,10 @@ async def handle_provider_change(
 ) -> HandlerResult:
     """The deterministic reaction to an announced provider transition.
 
-    This lane decides status and nothing else. It records what the probe proves
-    and reclassifies only the projects whose imported trees name the identifier,
-    which is the whole point of announcing a transition rather than rerunning a
-    batch: two projects out of a fleet are touched, not all of them.
+    This lane decides status and nothing else. It records what the liveness check
+    proves and reclassifies only the projects whose imported trees name the
+    identifier, which is the whole point of announcing a transition rather than
+    rerunning a batch: two projects out of a fleet are touched, not all of them.
 
     Rationale and a proposed replacement are the Change Intelligence lane's
     contribution to the same event, and this handler must be correct without

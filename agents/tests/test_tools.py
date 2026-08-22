@@ -12,7 +12,7 @@ import pytest
 from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.config import AgentId
 from agents.context import PathOutsideRootError, RunContext, resolve_within
-from agents.tools.change import build_probe_tools, build_provider_feed_tools
+from agents.tools.change import build_live_tools, build_provider_feed_tools
 from agents.tools.impact import build_repo_inventory_tools
 from agents.tools.patch import (
     build_migration_skill_tools,
@@ -37,40 +37,40 @@ def feed_tools(run_context):
 
 
 @pytest.fixture
-def probe_tools(run_context):
-    return {function.__name__: function for function in build_probe_tools(run_context)}
+def live_tools(run_context):
+    return {function.__name__: function for function in build_live_tools(run_context)}
 
 
 @pytest.mark.asyncio
-async def test_an_unreachable_probe_reports_unknown_not_retirement(probe_tools, monkeypatch):
-    """A probe that cannot run must never look like a confirmed removal."""
+async def test_an_unreachable_check_reports_unknown_not_retirement(live_tools, monkeypatch):
+    """A liveness check that cannot run must never look like a confirmed removal."""
 
     async def unreachable(identifiers, **kwargs):
-        from packages.providers.google.probe import ProbeResult, ProbeStatus
+        from packages.providers.google.live import LiveResult, LiveStatus
 
         return tuple(
-            ProbeResult(
+            LiveResult(
                 identifier=name,
                 surface="gemini_api",
-                status=ProbeStatus.UNKNOWN,
+                status=LiveStatus.UNKNOWN,
                 checked_at="2026-08-22T00:00:00+00:00",
-                detail="probe unavailable: no key",
+                detail="liveness check unavailable: no key",
                 source_url="",
             )
             for name in identifiers
         )
 
-    monkeypatch.setattr("agents.tools.change.probe.probe_identifiers", unreachable)
-    result = await probe_tools["probe_identifier"]([RETIRED])
+    monkeypatch.setattr("agents.tools.change.live.live_identifiers", unreachable)
+    result = await live_tools["live_identifier"]([RETIRED])
     assert result["status"] == "ok"
     assert result["unknown"] == [RETIRED]
     assert result["not_found"] == []
 
 
 @pytest.mark.asyncio
-async def test_probing_nothing_is_refused(probe_tools):
-    assert is_refusal(await probe_tools["probe_identifier"]([]))
-    assert is_refusal(await probe_tools["probe_identifier"]([f"m-{n}" for n in range(20)]))
+async def test_checking_nothing_is_refused(live_tools):
+    assert is_refusal(await live_tools["live_identifier"]([]))
+    assert is_refusal(await live_tools["live_identifier"]([f"m-{n}" for n in range(20)]))
 
 
 def test_the_demo_notice_is_discoverable(feed_tools):

@@ -129,7 +129,7 @@ async def test_the_providers_own_words_survive_a_re_read(conn: Any) -> None:
         conn,
         manifest(change_id="test-summary"),
         summary="A later, worse paraphrase.",
-        rationale="The probe agrees the identifiers no longer resolve.",
+        rationale="The liveness check agrees the identifiers no longer resolve.",
     )
 
     row = await conn.fetchrow(
@@ -137,7 +137,7 @@ async def test_the_providers_own_words_survive_a_re_read(conn: Any) -> None:
         written.change_event_id,
     )
     assert row["summary"] == "What Google published."
-    assert row["rationale"].startswith("The probe agrees")
+    assert row["rationale"].startswith("The liveness check agrees")
     assert row["normalizer_version"] == NORMALIZER_VERSION
 
 
@@ -159,7 +159,7 @@ async def test_a_behaviour_change_does_not_retire_what_it_names(conn: Any) -> No
 async def test_a_live_404_is_recorded_as_corroboration(conn: Any) -> None:
     identifier = f"test-gone-{uuid4().hex[:8]}"
     await conn.execute(
-        "INSERT INTO identifier_probes (identifier, surface, provider, status) "
+        "INSERT INTO identifier_liveness (identifier, surface, provider, status) "
         "VALUES ($1, 'gemini_api', 'google', 'not_found')",
         identifier,
     )

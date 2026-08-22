@@ -18,10 +18,10 @@ from uuid import UUID
 import asyncpg
 
 from packages.events.console_notify import EVENT_CHANGES, notify_console
-from packages.providers.google.probe import (
-    ProbeResult,
+from packages.providers.google.live import (
+    LiveResult,
     is_service_identifier,
-    probe_identifiers,
+    live_identifiers,
 )
 from packages.providers.sdk import is_sdk_identifier
 from packages.state.watchlist import watchlist_for
@@ -43,7 +43,7 @@ FindingReason = Literal[
     "fail_closed",
     "not_an_identifier",
     "new_identifier",
-    "probe_404",
+    "live_gone",
     "user",
 ]
 
@@ -201,13 +201,13 @@ ORDER BY
 """
 
 
-_UPSERT_PROBE_SQL: Final[str] = """
-INSERT INTO identifier_probes
+_UPSERT_LIVE_SQL: Final[str] = """
+INSERT INTO identifier_liveness
     (identifier, surface, provider, status, detail, source_url, checked_at)
-VALUES ($1, $2, $3, $4::probe_status, $5, $6, now())
+VALUES ($1, $2, $3, $4::live_status, $5, $6, now())
 ON CONFLICT (identifier, surface) DO UPDATE
 SET status = CASE
-        WHEN EXCLUDED.status = 'unknown'::probe_status THEN identifier_probes.status
+        WHEN EXCLUDED.status = 'unknown'::live_status THEN identifier_liveness.status
         ELSE EXCLUDED.status
     END,
     detail = EXCLUDED.detail,
@@ -221,16 +221,17 @@ SET status = CASE
 # retirement that already happened. The detail and timestamp still record that
 # the check was attempted and failed.
 
-_PREVIOUS_PROBES_SQL: Final[str] = """
+_PREVIOUS_LIVE_SQL: Final[str] = """
 SELECT identifier, surface, status::text AS status
-FROM identifier_probes
+FROM identifier_liveness
 WHERE provider = $1
 """
 
-# Only `not_found` is read back. A probe may escalate a finding, never relax one,
-# so `resolves` and `unknown` rows are kept for the audit trail and ignored here.
-_RETIRED_PROBES_SQL: Final[str] = """
-SELECT identifier FROM identifier_probes
+# Only `not_found` is read back. A liveness check may escalate a finding, never
+# relax one, so `resolves` and `unknown` rows are kept for the audit trail and
+# ignored here.
+_RETIRED_LIVE_SQL: Final[str] = """
+SELECT identifier FROM identifier_liveness
 WHERE provider = $1 AND status = 'not_found'
 """
 
@@ -300,20 +301,20 @@ def in_effect(
     effective_at: date | None,
     fail_closed: bool,
     today: date,
-    probe_retired: bool = False,
+    live_retired: bool = False,
 ) -> bool:
     """True when this note is already a break, not a future announcement.
 
-    A live probe outranks the calendar. `effective_at` is copied from a provider
+    A live check outranks the calendar. `effective_at` is copied from a provider
     page or typed into the watchlist, and both can be wrong or stale; a surface
     that no longer lists the model is the same 404 the customer's code gets.
     The reverse does not hold — see `classify`.
 
-    Absent a probe, a dated note uses the date, even if `fail_closed` is set: a
+    Absent a live check, a dated note uses the date, even if `fail_closed` is set: a
     2027 lifecycle row is not a 404 today. Missing date plus fail-closed is
     treated as already broken (the Vertex leftover case).
     """
-    if probe_retired:
+    if live_retired:
         return True
     if change_kind not in BREAKING_KINDS:
         return False
@@ -331,7 +332,7 @@ def classify(
     change_kind: str,
     effective_at: date | None = None,
     today: date | None = None,
-    probe_retired: bool = False,
+    live_retired: bool = False,
 ) -> tuple[FindingStatus, FindingReason]:
     """Deterministic inbox bucket. The model does not pick this.
 
@@ -340,8 +341,8 @@ def classify(
     hit. Watching is for notes that are not yet a break, or that this
     project does not call. Dismissed is a false positive or a human pin.
 
-    `probe_retired` is a live observation that a surface no longer publishes
-    one of these identifiers. It may only escalate. A probe that still finds
+    `live_retired` is a live observation that a surface no longer publishes
+    one of these identifiers. It may only escalate. A check that still finds
     the model does not move a finding back to Watching, because a listing can
     lag a retirement, be region-scoped, or serve an alias — so "still listed"
     is weaker evidence than "already gone" and must not overrule a dated notice.
@@ -360,7 +361,7 @@ def classify(
         effective_at=effective_at,
         fail_closed=fail_closed,
         today=today or date.today(),
-        probe_retired=probe_retired,
+        live_retired=live_retired,
     )
     if change_kind == "new_identifier":
         return "watching", "new_identifier"
@@ -369,8 +370,8 @@ def classify(
         # with a call site. Any other runtime hit is already a break.
         if change_kind in BREAKING_KINDS and not breaking:
             return "watching", "runtime_hit"
-        if probe_retired:
-            return "needs_you", "probe_404"
+        if live_retired:
+            return "needs_you", "live_gone"
         if fail_closed or vertex:
             return "needs_you", "fail_closed"
         return "needs_you", "runtime_hit"
@@ -525,13 +526,13 @@ async def project_index_ready(connection: asyncpg.Connection, project_id: UUID) 
     return bool(ready)
 
 
-async def record_probe_results(
-    connection: asyncpg.Connection, results: Sequence[ProbeResult], *, provider: str = "google"
+async def record_live_results(
+    connection: asyncpg.Connection, results: Sequence[LiveResult], *, provider: str = "google"
 ) -> int:
     """Persist what each surface said. Evidence, so `unknown` is stored too."""
     for result in results:
         await connection.execute(
-            _UPSERT_PROBE_SQL,
+            _UPSERT_LIVE_SQL,
             result.identifier,
             result.surface,
             provider,
@@ -542,7 +543,7 @@ async def record_probe_results(
     return len(results)
 
 
-async def previous_probe_statuses(
+async def previous_live_statuses(
     connection: asyncpg.Connection, *, provider: str = "google"
 ) -> dict[tuple[str, str], str]:
     """What the last poll concluded, keyed by `(identifier, surface)`.
@@ -551,19 +552,19 @@ async def previous_probe_statuses(
     this and what the surface says now.
     """
     try:
-        rows = await connection.fetch(_PREVIOUS_PROBES_SQL, provider)
+        rows = await connection.fetch(_PREVIOUS_LIVE_SQL, provider)
     except asyncpg.PostgresError as exc:  # pragma: no cover - pre-migration database
         if getattr(exc, "sqlstate", None) != _UNDEFINED_TABLE:
             raise
-        log.warning("identifier_probes is missing; every result reads as a first observation")
+        log.warning("identifier_liveness is missing; every result reads as a first observation")
         return {}
     return {(str(row["identifier"]), str(row["surface"])): str(row["status"]) for row in rows}
 
 
-async def probe_indexed_identifiers(
+async def live_indexed_identifiers(
     connection: asyncpg.Connection, *, provider: str = "google"
-) -> tuple[ProbeResult, ...]:
-    """Probe every identifier the indexer has seen, and store the answers.
+) -> tuple[LiveResult, ...]:
+    """Check every identifier the indexer has seen, and store the answers.
 
     Driven off inventory rather than off the watchlist: the point is to catch a
     model that died without anyone writing it down, which by definition is not
@@ -575,19 +576,19 @@ async def probe_indexed_identifiers(
     identifiers = [str(row["identifier"]) for row in rows]
     if not identifiers:
         return ()
-    results = await probe_identifiers(identifiers)
-    await record_probe_results(connection, results, provider=provider)
+    results = await live_identifiers(identifiers)
+    await record_live_results(connection, results, provider=provider)
     return results
 
 
-async def retired_by_probe(connection: asyncpg.Connection, provider: str) -> set[str]:
+async def retired_by_live(connection: asyncpg.Connection, provider: str) -> set[str]:
     """Identifiers a live surface has stopped publishing, with their aliases."""
     try:
-        rows = await connection.fetch(_RETIRED_PROBES_SQL, provider)
+        rows = await connection.fetch(_RETIRED_LIVE_SQL, provider)
     except asyncpg.PostgresError as exc:  # pragma: no cover - pre-migration database
         if getattr(exc, "sqlstate", None) != _UNDEFINED_TABLE:
             raise
-        log.warning("identifier_probes is missing; classifying without probe evidence")
+        log.warning("identifier_liveness is missing; classifying without liveness evidence")
         return set()
     return set(expand_identifiers([str(row["identifier"]) for row in rows]))
 
@@ -597,7 +598,7 @@ async def refresh_project_findings(
 ) -> int:
     """Reclassify every latest event for `provider` against this project's inventory."""
     events = await connection.fetch(_LATEST_EVENTS_SQL, provider)
-    retired = await retired_by_probe(connection, provider)
+    retired = await retired_by_live(connection, provider)
     identifiers = expand_identifiers(
         [item for row in events for item in (row["affected_identifiers"] or [])]
     )
@@ -626,7 +627,7 @@ async def refresh_project_findings(
             false_positive=bool(event["false_positive"]),
             change_kind=str(event["change_kind"]),
             effective_at=effective,
-            probe_retired=bool(retired & set(aliases)),
+            live_retired=bool(retired & set(aliases)),
         )
         repos, file_hits, file_count, counts, files = aggregate_hits(hits)
         await connection.execute(

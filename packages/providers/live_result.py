@@ -1,10 +1,10 @@
 """What one liveness check said, for any surface that can be asked.
 
-Shared by the model-listing probe and the package-registry probe. Both answer
-the same question about different inventory — "does this still exist" — and both
-must keep the third outcome separate: `UNKNOWN` means the check could not run,
-never that the thing is gone. Folding the two together is how a rate-limited
-registry turns into a wave of retirement notices.
+Shared by the model listing and the package registry. Both answer the same
+question about different inventory — "does this still exist" — and both must keep
+the third outcome separate: `UNKNOWN` means the check could not run, never that
+the thing is gone. Folding the two together is how a rate-limited registry turns
+into a wave of retirement notices.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from enum import StrEnum
 from typing import Any
 
 
-class ProbeStatus(StrEnum):
+class LiveStatus(StrEnum):
     """What the live surface said about an identifier."""
 
     RESOLVES = "resolves"
@@ -23,12 +23,12 @@ class ProbeStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ProbeResult:
+class LiveResult:
     """One identifier, checked against one surface, at one moment."""
 
     identifier: str
     surface: str
-    status: ProbeStatus
+    status: LiveStatus
     checked_at: str
     detail: str
     source_url: str
@@ -45,4 +45,4 @@ class ProbeResult:
         }
 
 
-__all__ = ["ProbeResult", "ProbeStatus"]
+__all__ = ["LiveResult", "LiveStatus"]

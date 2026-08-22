@@ -1,43 +1,43 @@
-"""The live identifier probe. No network: listings are injected."""
+"""The live identifier check. No network: listings are injected."""
 
 import httpx
 import pytest
 
-from packages.providers.google.probe import (
+from packages.providers.google.live import (
     GEMINI_API,
     VERTEX,
-    ProbeStatus,
-    canonical_probe_id,
+    LiveStatus,
+    canonical_live_id,
     decide,
-    is_probeable,
+    is_live_checkable,
     is_service_identifier,
-    probe_identifiers,
+    live_identifiers,
     retired_identifiers,
     strip_model_name,
 )
 
 
 def test_vertex_prefix_selects_the_surface_not_the_id() -> None:
-    assert canonical_probe_id("vertex/imagen-4.0-generate-001") == (
+    assert canonical_live_id("vertex/imagen-4.0-generate-001") == (
         VERTEX,
         "imagen-4.0-generate-001",
     )
-    assert canonical_probe_id("models/gemini-3.5-flash") == (GEMINI_API, "gemini-3.5-flash")
-    assert canonical_probe_id("gemini-3.5-flash") == (GEMINI_API, "gemini-3.5-flash")
+    assert canonical_live_id("models/gemini-3.5-flash") == (GEMINI_API, "gemini-3.5-flash")
+    assert canonical_live_id("gemini-3.5-flash") == (GEMINI_API, "gemini-3.5-flash")
 
 
-def test_third_party_ids_are_not_probeable() -> None:
-    assert not is_probeable("fal-ai/imagen4/preview")
-    assert not is_probeable("")
-    assert is_probeable("imagen-4.0-generate-001")
+def test_third_party_ids_are_not_live_checkable() -> None:
+    assert not is_live_checkable("fal-ai/imagen4/preview")
+    assert not is_live_checkable("")
+    assert is_live_checkable("imagen-4.0-generate-001")
 
 
-def test_a_service_host_is_never_probed_as_a_model() -> None:
+def test_a_service_host_is_never_checked_as_a_model() -> None:
     """The model listing has no row for a hostname, so probing one would report
     a running service as retired and the poller would announce it."""
     assert is_service_identifier("aiplatform.googleapis.com")
-    assert not is_probeable("aiplatform.googleapis.com")
-    assert not is_probeable("generativelanguage.googleapis.com")
+    assert not is_live_checkable("aiplatform.googleapis.com")
+    assert not is_live_checkable("generativelanguage.googleapis.com")
 
 
 def test_strip_model_name_handles_both_resource_shapes() -> None:
@@ -51,11 +51,11 @@ def test_missing_from_the_listing_is_not_found() -> None:
     result = decide(
         identifier="imagen-4.0-generate-001",
         surface=GEMINI_API,
-        probe_id="imagen-4.0-generate-001",
+        live_id="imagen-4.0-generate-001",
         published={"gemini-3.5-flash"},
         detail="",
     )
-    assert result.status is ProbeStatus.NOT_FOUND
+    assert result.status is LiveStatus.NOT_FOUND
 
 
 def test_no_listing_is_unknown_never_not_found() -> None:
@@ -63,11 +63,11 @@ def test_no_listing_is_unknown_never_not_found() -> None:
     result = decide(
         identifier="imagen-4.0-generate-001",
         surface=GEMINI_API,
-        probe_id="imagen-4.0-generate-001",
+        live_id="imagen-4.0-generate-001",
         published=None,
-        detail="probe unavailable: no key",
+        detail="liveness check unavailable: no key",
     )
-    assert result.status is ProbeStatus.UNKNOWN
+    assert result.status is LiveStatus.UNKNOWN
     assert retired_identifiers([result]) == ()
 
 
@@ -77,7 +77,7 @@ def test_retired_identifiers_reports_only_not_found() -> None:
         decide(
             identifier=name,
             surface=GEMINI_API,
-            probe_id=name,
+            live_id=name,
             published=published,
             detail="",
         )
@@ -95,12 +95,12 @@ async def test_a_failing_surface_yields_unknown_not_retirement() -> None:
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        results = await probe_identifiers(
+        results = await live_identifiers(
             ["imagen-4.0-generate-001"],
             environ={"GOOGLE_API_KEY": "test-key"},
             client=client,
         )
-    assert [r.status for r in results] == [ProbeStatus.UNKNOWN]
+    assert [r.status for r in results] == [LiveStatus.UNKNOWN]
     assert retired_identifiers(results) == ()
 
 
@@ -114,12 +114,12 @@ async def test_a_live_listing_separates_present_from_gone() -> None:
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        results = await probe_identifiers(
+        results = await live_identifiers(
             ["gemini-3.5-flash", "imagen-4.0-generate-001", "fal-ai/imagen4/preview"],
             environ={"GOOGLE_API_KEY": "test-key"},
             client=client,
         )
     by_id = {r.identifier: r.status for r in results}
-    assert by_id["gemini-3.5-flash"] is ProbeStatus.RESOLVES
-    assert by_id["imagen-4.0-generate-001"] is ProbeStatus.NOT_FOUND
-    assert by_id["fal-ai/imagen4/preview"] is ProbeStatus.UNKNOWN
+    assert by_id["gemini-3.5-flash"] is LiveStatus.RESOLVES
+    assert by_id["imagen-4.0-generate-001"] is LiveStatus.NOT_FOUND
+    assert by_id["fal-ai/imagen4/preview"] is LiveStatus.UNKNOWN

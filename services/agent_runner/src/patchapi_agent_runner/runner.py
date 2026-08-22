@@ -106,8 +106,8 @@ async def run_change_intelligence(
     if str(payload.get("origin") or "") == _AGENT_ORIGIN:
         return RunOutcome.skipped(external_id, "this lane wrote it")
     if not notice_available(external_id):
-        # The deterministic summary already says what the probe proved. Better
-        # that than prose invented to fill the space.
+        # The deterministic summary already says what the liveness check proved.
+        # Better that than prose invented to fill the space.
         return RunOutcome.skipped(external_id, "no provider notice covers this change")
 
     reason = _environment_reason()

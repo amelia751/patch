@@ -1,7 +1,7 @@
 """The poll that starts every provider change.
 
 Google announces a model retirement to nobody in particular, so something has to
-ask. This job asks. It probes every identifier the repo indexer has stored, diffs
+ask. This job asks. It checks every identifier the repo indexer has stored, diffs
 the answer against the last poll, and publishes `provider-change-detected` for
 each transition. Recording the undocumented break and reclassifying the projects
 that call it belong to the subscribers now, so neither happens here: doing both
@@ -15,7 +15,7 @@ only when it wrote something: a poll that finds no new notice costs a few querie
 and changes nothing.
 
 Safe to re-run, which is what makes it schedulable: events are insert-if-absent,
-probes upsert, and a human-dismissed finding stays dismissed.
+liveness rows upsert, and a human-dismissed finding stays dismissed.
 """
 
 from __future__ import annotations
@@ -106,13 +106,13 @@ async def refresh_releases(
         buckets.setdefault(str(result.status), []).append(result.identifier)
     for status in ("not_found", "unknown", "resolves"):
         names = ", ".join(sorted(buckets[status])) or "(none)"
-        log.info("probe %-9s %3d  %s", status, len(buckets[status]), names)
+        log.info("live %-9s %3d  %s", status, len(buckets[status]), names)
 
     projects = await promote_corpus(connection, provider=provider)
 
     return {
         "provider": provider,
-        "probed": len(results),
+        "checked": len(results),
         "not_found": tuple(sorted(buckets["not_found"])),
         "unknown": tuple(sorted(buckets["unknown"])),
         "announced": outcome.published,
@@ -131,8 +131,8 @@ async def _run(provider: str, dsn: str | None) -> int:
     finally:
         await connection.close()
     log.info(
-        "refresh complete: probed %d, announced %d, reclassified %d projects",
-        summary["probed"],
+        "refresh complete: checked %d, announced %d, reclassified %d projects",
+        summary["checked"],
         len(summary["announced"]),
         len(summary["projects"]),
     )
@@ -149,7 +149,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
     # httpx logs the full request URL at INFO. Defence in depth behind the
-    # header change in the probe: this job's output goes to Cloud Logging.
+    # header change in the liveness check: this job's output goes to Cloud Logging.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     try:
         return asyncio.run(_run(args.provider, args.dsn))

@@ -63,7 +63,7 @@ class ToolName(StrEnum):
     LOAD_PROVIDER_NOTICE = "load_provider_notice"
     NORMALIZE_PROVIDER_NOTICE = "normalize_provider_notice"
     RECORD_CHANGE_MANIFEST = "record_change_manifest"
-    PROBE_IDENTIFIER = "probe_identifier"
+    LIVE_IDENTIFIER = "live_identifier"
     SEARCH_WEB = "search_web"
     SEARCH_INDEX = "search_index"
 
@@ -116,7 +116,7 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.LOAD_PROVIDER_NOTICE,
             ToolName.NORMALIZE_PROVIDER_NOTICE,
             ToolName.RECORD_CHANGE_MANIFEST,
-            ToolName.PROBE_IDENTIFIER,
+            ToolName.LIVE_IDENTIFIER,
             ToolName.SEARCH_WEB,
             ToolName.LOOKUP_INDEX_USAGES,
             ToolName.SEARCH_INDEX,
