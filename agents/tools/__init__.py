@@ -13,6 +13,7 @@ from agents.config import ADK_ATTACHED_TOOLS, AgentId, ToolName, tool_allowlist
 from agents.context import RunContext
 from agents.tools.change import build_provider_feed_tools
 from agents.tools.impact import build_repo_inventory_tools
+from agents.tools.index_lookup import build_index_lookup_tools
 from agents.tools.patch import (
     build_computer_use_tools,
     build_migration_skill_tools,
@@ -29,6 +30,7 @@ from agents.tools.verification import build_evidence_tools
 # function the model can name and never reach.
 _BUILDERS: Final[tuple[Callable[[RunContext], list[Callable[..., Any]]], ...]] = (
     build_provider_feed_tools,
+    build_index_lookup_tools,
     build_repo_inventory_tools,
     build_migration_skill_tools,
     build_workspace_tools,

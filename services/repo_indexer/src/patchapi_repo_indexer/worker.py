@@ -520,18 +520,32 @@ async def handle_push(
 
     state = await store.load_state(conn, repository, branch)
     references = state.reference_count if state else len(scopes)
+    version_stale = (
+        state is not None
+        and state.status == "ready"
+        and state.indexed_sha == after
+        and state.indexer_version != INDEXER_VERSION
+    )
     if state is not None and state.status == "ready" and state.indexed_sha == after:
-        return HandlerResult(
-            action=ACTION_DROPPED,
-            repository=repository,
-            branch=branch,
-            reason="already indexed at this sha",
-            indexed_sha=after,
-            reference_count=references,
+        if not version_stale:
+            return HandlerResult(
+                action=ACTION_DROPPED,
+                repository=repository,
+                branch=branch,
+                reason="already indexed at this sha",
+                indexed_sha=after,
+                reference_count=references,
+            )
+        log.info(
+            "indexer %s → %s; re-indexing %s@%s at the same sha",
+            state.indexer_version,
+            INDEXER_VERSION,
+            repository,
+            branch,
         )
 
     changed: list[str] | None = None
-    if _SHA_RE.match(before) and before != NULL_SHA:
+    if not version_stale and _SHA_RE.match(before) and before != NULL_SHA:
         try:
             checkout = effects.ensure_checkout(repository, branch, after)
             changed = list(effects.changed_paths(checkout, before, after))

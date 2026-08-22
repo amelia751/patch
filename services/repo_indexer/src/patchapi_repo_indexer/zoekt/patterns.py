@@ -19,11 +19,13 @@ from patchapi_repo_indexer.errors import UnknownProviderError
 
 # Bumped whenever a pattern's meaning changes. Recorded alongside the watchlist
 # version so a stored finding can be traced to the regex that produced it.
-PATTERNS_VERSION: Final[str] = "1.1.0"
+PATTERNS_VERSION: Final[str] = "1.2.0"
 
-# The GA Imagen family retired by the pinned demo change: `imagen-4.0-*`, plus
-# the `fast` and `ultra` variants, plus any later family member with the same
-# shape.
+# Vertex-routed ids are a different inventory key than the bare model id.
+# Listed first so a `vertex/imagen-…` line records the prefix, not the suffix.
+GOOGLE_VERTEX_ROUTED: Final[str] = r"vertex/(?:imagen|gemini|veo)-\d[\w.-]*"
+
+# The GA Imagen family plus later members with the same shape.
 GOOGLE_IMAGEN_FAMILY: Final[str] = r"imagen-\d+\.\d+-(fast-|ultra-)?generate-\d+"
 
 # The retired preview identifier is its own finding in
@@ -31,15 +33,21 @@ GOOGLE_IMAGEN_FAMILY: Final[str] = r"imagen-\d+\.\d+-(fast-|ultra-)?generate-\d+
 # own replacement and its own deprecation date, so it gets its own pattern.
 GOOGLE_IMAGEN_PREVIEW: Final[str] = r"imagen-[\d.]+-[\w-]*preview[\w-]*"
 
-# Retired 2026-06-01. Must not match gemini-2.5-flash or gemini-3.5-flash.
+# Any Gemini generation id. The inbox join decides which of these are retired;
+# the index only names what the tree contains.
+GOOGLE_GEMINI_FAMILY: Final[str] = r"gemini-\d+\.\d+[\w.-]*"
+
+# Retired 2026-06-01. Kept as a tighter alias of GOOGLE_GEMINI_FAMILY so older
+# tests and stored findings can still name the regex that produced them.
 GOOGLE_GEMINI20_FAMILY: Final[str] = r"gemini-2\.0-flash(-lite)?(-\d+)?"
 
 PROVIDER_PATTERNS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyType(
     {
         DEFAULT_PROVIDER: (
+            GOOGLE_VERTEX_ROUTED,
             GOOGLE_IMAGEN_FAMILY,
             GOOGLE_IMAGEN_PREVIEW,
-            GOOGLE_GEMINI20_FAMILY,
+            GOOGLE_GEMINI_FAMILY,
         ),
     }
 )
@@ -117,8 +125,10 @@ def match_identifiers(line: str, patterns: Sequence[re.Pattern[str]]) -> tuple[s
 
 __all__ = [
     "GOOGLE_GEMINI20_FAMILY",
+    "GOOGLE_GEMINI_FAMILY",
     "GOOGLE_IMAGEN_FAMILY",
     "GOOGLE_IMAGEN_PREVIEW",
+    "GOOGLE_VERTEX_ROUTED",
     "PATTERNS_VERSION",
     "PROVIDER_PATTERNS",
     "compile_patterns",

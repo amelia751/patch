@@ -29,7 +29,7 @@ prose specification is
 |---|---|
 | **In** | trusted-source snapshot: `source_url`, `retrieved_at`, `content_uri`, `content_sha256`, `provider` |
 | **Out** | `ChangeManifest` |
-| **Guardrail** | **may not access GitHub source code at all** |
+| **Guardrail** | index + read-only files; no GitHub write, no `apply_patch`, no shell |
 
 Distinguishes announcement date from effective/shutdown date, extracts affected
 identifiers and the recommended replacement, captures migration constraints, and

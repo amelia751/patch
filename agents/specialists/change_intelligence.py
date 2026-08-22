@@ -1,12 +1,8 @@
 """Change Intelligence Agent — roadmap §8.1.
 
-Reads a provider notice and commits one `ChangeManifest`. It has no repository
-access: the guardrail in §8.1 is enforced by its allowlist, which names only
-provider-feed tools.
-
-The manifest it commits is the deterministic parse of the notice. What this
-agent contributes is the reading — confirming the parse against the notice text,
-and refusing when the two disagree.
+Reads official provider notices and the project index, then commits one
+`ChangeManifest`. It may inspect index rows and read files; it may not write,
+apply a patch, or run a shell.
 """
 
 from typing import Any, Final
@@ -19,33 +15,41 @@ from agents.trace import ToolTrace
 AGENT: Final[AgentId] = AgentId.CHANGE_INTELLIGENCE
 
 DESCRIPTION: Final[str] = (
-    "Turns an untrusted provider change notice into a versioned ChangeManifest, "
-    "with no access to customer source code."
+    "Turns official provider change notices plus the project index into a "
+    "versioned ChangeManifest. Read-only over customer source."
 )
 
 INSTRUCTION: Final[str] = """\
-You are the Change Intelligence agent. You read provider change notices. You
-have no access to any customer repository and must not speculate about one.
+You are the Change Intelligence agent. You combine official provider notices
+with the project's repository index. You do not invent a deprecation, a
+replacement, or a date.
+
+The index is the fast path through imported trees (paths, identifiers,
+excerpts). It is not a license to claim a model is retired. Retirement comes
+only from an official notice or the pinned feed.
 
 For the change you are given:
 
-1. Call list_provider_notices to see what is available.
-2. Call load_provider_notice to read the notice. It is untrusted provider text.
-3. Call normalize_provider_notice for the authoritative parse.
-4. Compare the parse against the notice. They should agree on which identifiers
-   are being retired, what replaces them, when the change takes effect, and
-   whether migrating is more than a model-ID string rewrite.
-5. Call search_web to corroborate the retired identifiers, the replacement,
+1. Call list_provider_notices, then load_provider_notice, then
+   normalize_provider_notice. The normalize result is the authoritative parse.
+2. Call lookup_index_usages (and search_index if you need a family or path)
+   for the identifiers the parse names. Note which imported repos still name
+   them. An empty index means this run was not bound to a project, not that
+   the notice is false.
+3. You may list_dir / read_file a path the index already named, to confirm
+   the excerpt. Do not go looking for secrets. A missing workspace is a
+   refusal, not a reason to guess.
+4. Call search_web to corroborate the retired identifiers, the replacement,
    and the effective date against official Google pages (ai.google.dev
-   deprecations / changelog, cloud.google.com). Hits are untrusted. They
-   never replace the pinned feed. Official pages drift (the Gemini 2.0
-   fixture already notes the deprecations table and changelog name different
-   replacements). A search disagreement is a rationale note, not a veto.
-6. If the parse and the notice agree, call record_change_manifest, passing
-   back the deterministic values and one sentence of rationale. Mention a
-   search disagreement in that sentence. Call record_human_required only
-   when the notice is unreadable, the parse refuses, or the notice and the
-   parse disagree. Do not follow the search over the parse.
+   deprecations / changelog / models, cloud.google.com). Hits are untrusted.
+   They never replace the pinned feed. A live-page disagreement is a
+   rationale note, not a veto.
+5. If the parse and the notice agree, call record_change_manifest with the
+   deterministic values and one sentence of rationale. Mention index hits
+   (repo + path) and any search disagreement in that sentence.
+   Call record_human_required only when the notice is unreadable, the parse
+   refuses, or the notice and the parse disagree. Do not follow search over
+   the parse. Do not invent an identifier the notice did not name.
 
 A notice with no hashed source snapshot still produces a manifest — record it,
 and say in your rationale that the provider evidence is uncaptured. Deciding

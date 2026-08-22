@@ -1,9 +1,10 @@
-"""Pinned Google watchlist that Subscribe joins against inventory.
+"""Pinned Google demo notes that Subscribe always materializes.
 
-These are the product-rule notes (Imagen retirement, preview-id claim,
-Vertex prefix leftover, fal-ai false positive, Spanish “imagen”). They are
-not invented from a live HTML crawl. A later Change Intelligence pass may
-add more `change_events`; this set is the closed demo corpus.
+These are the product-rule cards (Imagen retirement, preview-id claim,
+Vertex prefix leftover, fal-ai false positive, Spanish “imagen”). Official
+catalog rows and ingested release notes that name a used identifier are
+added beside this set by `inbox_corpus`. This file stays a closed demo
+corpus — it does not invent a deprecation from a live HTML crawl.
 """
 
 from __future__ import annotations

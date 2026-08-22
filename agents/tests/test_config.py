@@ -62,8 +62,9 @@ def test_every_agent_can_stop_for_a_human():
 @pytest.mark.parametrize(
     ("agent", "forbidden"),
     [
-        # Roadmap §8.1: Change Intelligence may not reach repository source.
+        # Change Intelligence may read the index and files, not scan or write.
         (AgentId.CHANGE_INTELLIGENCE, ToolName.SCAN_REPOSITORY),
+        (AgentId.CHANGE_INTELLIGENCE, ToolName.APPLY_PATCH),
         # Roadmap §8.4: the Patch agent cannot open a pull request...
         (AgentId.PATCH, ToolName.OPEN_PULL_REQUEST),
         # ...nor grade its own work.
@@ -81,8 +82,7 @@ def test_every_agent_can_stop_for_a_human():
         (AgentId.VERIFICATION, ToolName.APPLY_PATCH),
         (AgentId.VERIFICATION, ToolName.RUN_COMMAND),
         (AgentId.VERIFICATION, ToolName.COMPUTER_USE_STEP),
-        # Roadmap §8.1: Change Intelligence may not reach the workspace.
-        (AgentId.CHANGE_INTELLIGENCE, ToolName.READ_FILE),
+        # Change Intelligence may not execute or edit in the workspace.
         (AgentId.CHANGE_INTELLIGENCE, ToolName.RUN_COMMAND),
         (AgentId.POLICY, ToolName.SEARCH_WEB),
         (AgentId.PR, ToolName.SEARCH_WEB),
@@ -124,6 +124,21 @@ def test_every_reasoning_agent_holds_the_search_child_grant():
         assert ToolName.SEARCH_WEB in tool_allowlist(agent)
     for agent in DETERMINISTIC_STAGES:
         assert ToolName.SEARCH_WEB not in tool_allowlist(agent)
+
+
+def test_change_intelligence_holds_the_index_and_readonly_workspace():
+    granted = tool_allowlist(AgentId.CHANGE_INTELLIGENCE)
+    for name in (
+        ToolName.LOOKUP_INDEX_USAGES,
+        ToolName.SEARCH_INDEX,
+        ToolName.READ_FILE,
+        ToolName.LIST_DIR,
+        ToolName.SEARCH_WEB,
+        ToolName.RECORD_CHANGE_MANIFEST,
+    ):
+        assert name in granted
+    assert ToolName.RUN_COMMAND not in granted
+    assert ToolName.APPLY_PATCH not in granted
 
 
 def test_the_patch_agent_holds_the_debug_loop():

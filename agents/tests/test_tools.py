@@ -199,11 +199,16 @@ def test_lookup_index_usages_is_a_hint_not_a_scan(repo_root):
             }
         ],
     )
-    tools = {f.__name__: f for f in build_repo_inventory_tools(context)}
+    from agents.tools.index_lookup import build_index_lookup_tools
+
+    tools = {f.__name__: f for f in build_index_lookup_tools(context)}
     result = tools["lookup_index_usages"]([RETIRED])
     assert result["status"] == "ok"
     assert result["count"] == 1
     assert result["usages"][0]["repository"] == "amelia751/mcp-image-gen"
+    search = tools["search_index"]("mcp-image")
+    assert search["count"] == 1
+    assert search["usages"][0]["file_path"] == "src/image_gen/server.py"
 
 
 def test_impact_cannot_report_affected_without_a_scan_hit(tmp_path, repo_root):

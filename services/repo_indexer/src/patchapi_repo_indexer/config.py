@@ -15,7 +15,7 @@ from patchapi_repo_indexer.errors import UnknownProviderError
 
 # Bumped when the inventory-building logic changes shape. Recorded on every
 # inventory so a stored document can be traced to the indexer that wrote it.
-INDEXER_VERSION: Final[str] = "1.3.0"
+INDEXER_VERSION: Final[str] = "1.4.0"
 
 # Document version of the inventory contract itself. Consumers refuse a version
 # they do not know rather than misread a document written by a newer producer.

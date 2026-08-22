@@ -331,7 +331,7 @@ both tests:
 
 | Component | Model judgement? | Distinct identity? | Verdict |
 |---|---|---|---|
-| Change Intelligence | Yes — extracts semantics from untrusted prose | Yes — must be denied all source access | **Agent** |
+| Change Intelligence | Yes — extracts semantics from untrusted prose | Yes — index + read-only files; no write, no GitHub | **Agent** |
 | Impact | Yes — runtime vs test vs docs vs dead code | Yes — read-only source, no write | **Agent** |
 | Patch | Yes — the core reasoning task | Yes — sandbox workspace only | **Agent** |
 | Verification | Yes — and hard constraint #6 forbids self-grading | Yes — read evidence, cannot modify | **Agent** |

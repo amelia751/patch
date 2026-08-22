@@ -22,7 +22,7 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.5.1"
+FLEET_VERSION: Final[str] = "1.6.0"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
@@ -58,12 +58,13 @@ class ToolName(StrEnum):
     that the functions it registers and this enum are the same set.
     """
 
-    # Change Intelligence — provider feed, read-only, no repository access.
+    # Change Intelligence — provider feed plus the project index (read-only).
     LIST_PROVIDER_NOTICES = "list_provider_notices"
     LOAD_PROVIDER_NOTICE = "load_provider_notice"
     NORMALIZE_PROVIDER_NOTICE = "normalize_provider_notice"
     RECORD_CHANGE_MANIFEST = "record_change_manifest"
     SEARCH_WEB = "search_web"
+    SEARCH_INDEX = "search_index"
 
     # Impact — deterministic repository inventory, no provider fetch, no writes.
     SCAN_REPOSITORY = "scan_repository"
@@ -115,12 +116,17 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.NORMALIZE_PROVIDER_NOTICE,
             ToolName.RECORD_CHANGE_MANIFEST,
             ToolName.SEARCH_WEB,
+            ToolName.LOOKUP_INDEX_USAGES,
+            ToolName.SEARCH_INDEX,
+            ToolName.READ_FILE,
+            ToolName.LIST_DIR,
         }
     ),
     AgentId.IMPACT: frozenset(
         {
             ToolName.SCAN_REPOSITORY,
             ToolName.LOOKUP_INDEX_USAGES,
+            ToolName.SEARCH_INDEX,
             ToolName.CLASSIFY_REPOSITORY_PATH,
             ToolName.RECORD_IMPACT_REPORT,
             ToolName.SEARCH_WEB,
@@ -163,7 +169,7 @@ ADK_ATTACHED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.SEARCH_WEB}
 PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
     {
         **dict.fromkeys(AgentId, "1.1.0"),
-        AgentId.CHANGE_INTELLIGENCE: "1.2.0",
+        AgentId.CHANGE_INTELLIGENCE: "1.3.0",
         AgentId.PATCH: "1.3.0",
     }
 )

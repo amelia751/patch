@@ -1,7 +1,9 @@
-"""Project-scoped change inbox: watchlist joined to `provider_usages`.
+"""Project-scoped change inbox: official notes joined to the repo index.
 
-Change Intelligence never sees the tree. This module is the deterministic
-join the Changes tab reads. A human-dismissed row is left alone on refresh.
+`change_events` is filled from the pinned watchlist plus official catalog /
+release-note rows that name an identifier this project's indexer stored.
+Classification (Need you / Watching / Dismissed) is deterministic. A
+human-dismissed row is left alone on refresh.
 """
 
 from __future__ import annotations
@@ -487,9 +489,11 @@ async def refresh_project_findings(
 async def backfill_project(
     connection: asyncpg.Connection, project_id: UUID, provider: str
 ) -> dict[str, Any]:
-    """Subscribe kickoff: pin the watchlist, join, set the overlay."""
+    """Subscribe kickoff: pin official notes, join the index, set the overlay."""
+    from packages.state.inbox_corpus import ensure_inbox_corpus
+
     await mark_scan(connection, project_id, provider, status="scanning", progress_percent=20)
-    await ensure_watchlist(connection, provider)
+    await ensure_inbox_corpus(connection, project_id, provider)
     await mark_scan(connection, project_id, provider, status="scanning", progress_percent=55)
     written = await refresh_project_findings(connection, project_id, provider)
     ready = await project_index_ready(connection, project_id)
@@ -525,7 +529,9 @@ async def refresh_after_repo_ready(
         project_id = row["project_id"]
         provider = str(row["provider"])
         try:
-            await ensure_watchlist(connection, provider)
+            from packages.state.inbox_corpus import ensure_inbox_corpus
+
+            await ensure_inbox_corpus(connection, project_id, provider)
             await refresh_project_findings(connection, project_id, provider)
             ready = await project_index_ready(connection, project_id)
             await mark_scan(
@@ -548,7 +554,8 @@ async def refresh_after_repo_ready(
 async def refresh_subscribed_projects(connection: asyncpg.Connection, provider: str) -> int:
     """New-release hook: re-join every project watching this provider."""
     try:
-        await ensure_watchlist(connection, provider)
+        from packages.state.inbox_corpus import ensure_inbox_corpus
+
         rows = await connection.fetch(_SUBSCRIBED_PROJECTS_FOR_PROVIDER_SQL, provider)
     except Exception as exc:
         if _is_undefined_table(exc):
@@ -557,6 +564,7 @@ async def refresh_subscribed_projects(connection: asyncpg.Connection, provider: 
         raise
     count = 0
     for row in rows:
+        await ensure_inbox_corpus(connection, row["project_id"], provider)
         await refresh_project_findings(connection, row["project_id"], provider)
         ready = await project_index_ready(connection, row["project_id"])
         await mark_scan(
@@ -585,7 +593,9 @@ async def inbox_payload(
         provider,
     )
     if subscribed:
-        await ensure_watchlist(connection, provider)
+        from packages.state.inbox_corpus import ensure_inbox_corpus
+
+        await ensure_inbox_corpus(connection, project_id, provider)
         await refresh_project_findings(connection, project_id, provider)
     scan = await read_scan(connection, project_id, provider)
     changes = await list_project_changes(connection, project_id) if subscribed else []

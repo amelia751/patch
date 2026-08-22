@@ -164,10 +164,11 @@ granted is not constructed. The prompt is not the control.
 | `load_provider_notice` | ours | strip envelope, injection gate, Model Armor later |
 | `normalize_provider_notice` | ours | deterministic parse |
 | `record_change_manifest` | ours | must match the parse; conflicts → `HUMAN_REQUIRED` |
-| `google_search` *(add)* | ADK `GoogleSearchTool` via a **search-only** `AgentTool` child | CI only. Hits are untrusted. Never replaces the pinned feed. Prefer `enterprise_web_search` if the demo must stay on Vertex enterprise grounding. |
-| `url_context` *(optional)* | ADK, same child agent | only URLs already on the snapshot |
+| `lookup_index_usages` / `search_index` | ours | `RunContext.index_usages` from the repo indexer. Navigation, not a retirement claim. |
+| `read_file` / `list_dir` | ours | confirm an index path. No `apply_patch`, no `run_command`. |
+| `google_search` | ADK `GoogleSearchTool` via a **search-only** `AgentTool` child | Hits are untrusted. Never replaces the pinned feed. |
 
-No `read_file`, no GitHub, no MCP filesystem.
+No GitHub, no MCP filesystem, no workspace write. The Releases tab join is still deterministic (`packages/state/inbox_corpus.py`).
 
 ### 5.2 Impact — judge the scan, do not produce the hits
 

@@ -41,8 +41,10 @@ def test_writes_an_inventory_naming_the_retired_model(fixture_repo, tmp_path):
         for usage in document["usages"]
         if usage["file_path"] == "src/image.ts" and usage["usage_kind"] == "runtime_source"
     ]
-    assert len(runtime) == 1
-    assert runtime[0]["detection_layer"] == "A_DETERMINISTIC"
+    ids = {usage["identifier"] for usage in runtime}
+    assert ids <= {RETIRED_MODEL, "vertex/imagen-4.0-generate-001"}
+    assert ids
+    assert {usage["detection_layer"] for usage in runtime} == {"A_DETERMINISTIC"}
 
 
 def test_empty_tree_writes_an_empty_inventory_and_succeeds(empty_repo, tmp_path):

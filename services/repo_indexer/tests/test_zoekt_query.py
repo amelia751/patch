@@ -14,8 +14,10 @@ from patchapi_repo_indexer.errors import UnknownProviderError, ZoektUnavailableE
 from patchapi_repo_indexer.zoekt import query as query_module
 from patchapi_repo_indexer.zoekt.patterns import (
     GOOGLE_GEMINI20_FAMILY,
+    GOOGLE_GEMINI_FAMILY,
     GOOGLE_IMAGEN_FAMILY,
     GOOGLE_IMAGEN_PREVIEW,
+    GOOGLE_VERTEX_ROUTED,
     compile_patterns,
     match_identifiers,
     patterns_for,
@@ -102,11 +104,12 @@ def test_the_preview_pattern_is_its_own_finding():
     assert re.search(GOOGLE_IMAGEN_PREVIEW, GA_MODEL) is None
 
 
-def test_the_patterns_do_not_match_the_replacement_model():
+def test_the_gemini_family_names_current_and_retired_ids():
     compiled = compile_patterns(patterns_for("google"))
-    assert match_identifiers("gemini-3.1-flash-image", compiled) == ()
-    assert match_identifiers("gemini-3.5-flash", compiled) == ()
-    assert match_identifiers("gemini-2.5-flash", compiled) == ()
+    assert match_identifiers("gemini-3.1-flash-image", compiled) == ("gemini-3.1-flash-image",)
+    assert match_identifiers("gemini-3.5-flash", compiled) == ("gemini-3.5-flash",)
+    assert match_identifiers("gemini-2.5-flash", compiled) == ("gemini-2.5-flash",)
+    assert re.search(GOOGLE_GEMINI_FAMILY, "gemini-3.5-flash")
 
 
 def test_the_gemini20_pattern_matches_the_retired_flash_family():
@@ -121,7 +124,7 @@ def test_match_identifiers_names_the_concrete_model_in_a_line():
 
     found = match_identifiers(f'  model: "vertex/{GA_MODEL}",', compiled)
 
-    assert found == (GA_MODEL,)
+    assert found == (f"vertex/{GA_MODEL}",)
 
 
 def test_match_identifiers_reports_two_models_on_one_line():
@@ -135,15 +138,16 @@ def test_match_identifiers_reports_two_models_on_one_line():
 def test_an_identifier_outside_the_family_is_added_as_a_literal():
     patterns = patterns_for("google", ["imagegeneration@006"])
 
-    assert patterns[:2] == (GOOGLE_IMAGEN_FAMILY, GOOGLE_IMAGEN_PREVIEW)
+    assert patterns[:3] == (GOOGLE_VERTEX_ROUTED, GOOGLE_IMAGEN_FAMILY, GOOGLE_IMAGEN_PREVIEW)
     assert re.search(patterns[-1], "imagegeneration@006")
 
 
 def test_a_watchlist_identifier_the_family_covers_is_not_duplicated():
     assert patterns_for("google", [GA_MODEL]) == (
+        GOOGLE_VERTEX_ROUTED,
         GOOGLE_IMAGEN_FAMILY,
         GOOGLE_IMAGEN_PREVIEW,
-        GOOGLE_GEMINI20_FAMILY,
+        GOOGLE_GEMINI_FAMILY,
     )
 
 
