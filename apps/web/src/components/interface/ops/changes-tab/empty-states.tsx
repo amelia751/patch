@@ -14,7 +14,7 @@ export function NoProjectEmptyState() {
           <Bell className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No changes
+          No Releases
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
           Select a project to watch subscribed providers for API and service releases.
@@ -46,12 +46,12 @@ export function NoDetectionsEmptyState({
           <Bell className="h-5 w-5 text-[var(--text-secondary)]" />
         </div>
         <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-          No changes
+          No Releases
         </h2>
         <p className="text-xs text-[var(--text-secondary)] mb-6 leading-relaxed">
           {subscribed
             ? "No notes from your subscribed providers match this project yet."
-            : "Subscribe to Google Cloud from the marketplace to watch it for API and service releases."}
+            : "Subscribe to providers from the marketplace to watch it for API and service releases."}
         </p>
         {!subscribed && onBrowseSubscriptions && (
           <Button
