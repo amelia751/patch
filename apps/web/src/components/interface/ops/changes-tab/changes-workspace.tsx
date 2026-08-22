@@ -23,6 +23,17 @@ import {
 
 type Section = "releases" | "runs";
 
+/** Whether two poll responses describe the same inbox.
+ *
+ * Compared as JSON because the payload is plain data from the API and any
+ * difference in it is a difference worth re-rendering for. Cheap at inbox
+ * sizes, and far cheaper than the remount it avoids.
+ */
+function sameChanges(previous: ProjectChange[], next: ProjectChange[]): boolean {
+  if (previous.length !== next.length) return false;
+  return JSON.stringify(previous) === JSON.stringify(next);
+}
+
 function initialWorkspace(): { runs: MockRun[]; progress: Record<string, RunProgress> } {
   const runs = seedRuns();
   const progress: Record<string, RunProgress> = {};
@@ -78,7 +89,11 @@ export function ChangesTab({
   const loadChanges = useCallback(async (id: string, signal?: AbortSignal) => {
     const payload = await fetchProjectChanges(id);
     if (signal?.aborted) return payload;
-    setChanges(payload.changes);
+    // The inbox re-polls on a timer and almost every response is identical.
+    // Keeping the previous array when nothing moved means an unchanged poll
+    // renders nothing at all, rather than remounting every card underneath the
+    // reader.
+    setChanges((prev) => (sameChanges(prev, payload.changes) ? prev : payload.changes));
     setSubscribed(payload.subscribed);
     const scanningNow = payload.subscribed && payload.scan.status === "scanning";
     setScanning(scanningNow);

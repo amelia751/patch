@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import {
   AlertDialog,
@@ -409,12 +409,33 @@ export function ChangesInbox({
   const [pendingRepo, setPendingRepo] = useState<string | null>(null);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const [expandedChanges, setExpandedChanges] = useState<Set<string>>(new Set());
+  // Cards already offered a default. The inbox re-polls every few seconds, and
+  // without this the default would be reapplied on every response — reopening
+  // panels the reader just closed and closing the ones they opened.
+  const seenChanges = useRef<Set<string>>(new Set());
+  const seenProviders = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setExpandedProviders(new Set(changes.map((change) => change.provider)));
-    setExpandedChanges(
-      new Set(changes.filter((change) => change.status === "needs_you").map((change) => change.id)),
-    );
+    const freshProviders = changes
+      .map((change) => change.provider)
+      .filter((provider) => !seenProviders.current.has(provider));
+    const freshChanges = changes.filter((change) => !seenChanges.current.has(change.id));
+    if (freshProviders.length === 0 && freshChanges.length === 0) return;
+
+    for (const change of changes) seenChanges.current.add(change.id);
+    for (const provider of freshProviders) seenProviders.current.add(provider);
+
+    if (freshProviders.length > 0) {
+      setExpandedProviders((prev) => new Set([...prev, ...freshProviders]));
+    }
+    // A release that arrives already needing action opens itself once; one that
+    // becomes needs_you later does not steal the reader's place on the page.
+    const toOpen = freshChanges
+      .filter((change) => change.status === "needs_you")
+      .map((change) => change.id);
+    if (toOpen.length > 0) {
+      setExpandedChanges((prev) => new Set([...prev, ...toOpen]));
+    }
   }, [changes]);
 
   const filtered = useMemo(() => {
