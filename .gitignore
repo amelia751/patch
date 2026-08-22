@@ -79,7 +79,13 @@ crash.log
 # ---------------------------------------------------------------------------
 # Demo / sandbox artifacts (generated; not source)
 # ---------------------------------------------------------------------------
+# Pinned checkouts and service account keys live here and must stay out.
+# `demo/fixtures` is the exception and is tracked explicitly (`git add -f`):
+# those notices are source, and Change Intelligence can only refuse without
+# them. An exception cannot be written here, because git will not re-include a
+# path from inside an excluded directory.
 /demo/
 /artifacts/
+/submission/
 /sandbox-workspaces/
 /tmp-patchapi/

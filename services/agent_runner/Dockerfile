@@ -24,8 +24,6 @@ COPY packages/policy/pyproject.toml packages/policy/
 COPY services/control_api/pyproject.toml services/control_api/
 COPY services/repo_indexer/pyproject.toml services/repo_indexer/
 COPY services/agent_runner/pyproject.toml services/agent_runner/
-COPY agents/pyproject.toml agents/
-COPY db/pyproject.toml db/
 
 COPY packages/schemas packages/schemas
 COPY packages/events packages/events
@@ -34,6 +32,9 @@ COPY packages/providers packages/providers
 COPY packages/state packages/state
 COPY packages/repo_scan packages/repo_scan
 COPY packages/policy packages/policy
+# patchapi-state depends on patchapi-control-api, so the member has to be
+# resolvable in full rather than by its manifest alone.
+COPY services/control_api services/control_api
 COPY services/agent_runner services/agent_runner
 
 RUN uv sync --frozen --package patchapi-agent-runner --no-dev

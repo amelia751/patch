@@ -15,11 +15,16 @@
 **/node_modules
 **/.next
 apps
-agents
-demo
+# `agents` and `sandbox` stay in context: patchapi-agents declares
+# `package = false`, so the Change Intelligence image imports the fleet from
+# source rather than installing it. Together they are under 1.5 MB.
+# demo is 1.3 GB of pinned checkouts. The provider notices inside it are 16 KB
+# and the agent lane cannot read a change without them. The exclusion is on the
+# children rather than the directory so the exception can re-include one.
+demo/*
+!demo/fixtures
 docs
 infra
-sandbox
 skills
 tests
 db

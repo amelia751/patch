@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "provider": "google",
+  "change_id": "gemini20-flash-shutdown-2026-06-01",
+  "change_type": "model_retirement",
+  "severity": "critical",
+  "effective_at": "2026-06-01",
+  "affected_identifiers": [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-lite-001"
+  ],
+  "recommended_replacement": "gemini-3.5-flash",
+  "semantic_migration_required": false,
+  "migration_constraints": [
+    "The retired Gemini 2.0 Flash identifiers and gemini-3.5-flash share generateContent; replacing the model string is the complete migration."
+  ],
+  "source_urls": [
+    "https://ai.google.dev/gemini-api/docs/deprecations",
+    "https://ai.google.dev/gemini-api/docs/changelog"
+  ],
+  "source_snapshots": [
+    {
+      "source_url": "https://ai.google.dev/gemini-api/docs/deprecations",
+      "retrieved_at": "2026-08-13T21:40:14Z",
+      "content_uri": "file://demo/fixtures/pages/gemini20-deprecations.excerpt.html",
+      "content_sha256": "7e0447598869d8afa7200861e700d79f643efe6c1e494c29613ed9d0df1c665a",
+      "media_type": "text/html"
+    }
+  ],
+  "trust": "untrusted_provider_input"
+}

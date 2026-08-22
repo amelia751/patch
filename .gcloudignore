@@ -1,0 +1,41 @@
+# What may be uploaded to Cloud Build.
+#
+# Without this file gcloud derives the upload set from .gitignore, which ignores
+# all of /demo/ and so drops the provider notices the Change Intelligence image
+# has to carry. Written out explicitly rather than negated, because a directory
+# excluded by .gitignore cannot be re-included from inside it.
+#
+# The demo tree also holds service account keys. They are named here so that
+# loosening the directory to admit 16 KB of notices cannot sweep a credential
+# into a build context.
+.git
+.github
+.venv
+.secrets
+.fleet
+.cursor
+.claude
+.codex
+.gemini
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/node_modules
+**/.next
+
+# Credentials and pinned checkouts. Everything under demo/ except the notices.
+demo/*.json
+demo/*.pem
+demo/egaki
+demo/storygen
+demo/adversarial
+demo/setup-ledger.ndjson
+
+artifacts
+submission
+sandbox-workspaces
+tmp-patchapi
+.env
+.env.*
+!.env.example
