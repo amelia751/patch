@@ -107,6 +107,22 @@ def _print_topology(fleet: dict[AgentId, object]) -> None:
         print(f"  {'':<20} tools: {tools}")
 
 
+async def _publish(manifest: ChangeManifest, dsn: str) -> str:
+    """Land a recorded manifest on the Releases tab and reclassify."""
+    import asyncpg
+
+    from packages.state.discovery import record_manifest_release
+
+    payload = json.loads(manifest.model_dump_json())
+    connection = await asyncpg.connect(dsn)
+    try:
+        if await record_manifest_release(connection, payload):
+            return f"published {manifest.change_id} as a release"
+        return f"{manifest.change_id} is already covered by an existing release"
+    finally:
+        await connection.close()
+
+
 async def _run(
     change_id: str,
     feed_dir: Path,
@@ -114,6 +130,7 @@ async def _run(
     trace_out: Path | None,
     project: str | None,
     dsn: str | None,
+    publish: bool,
 ) -> tuple[int, str]:
     from agents.orchestrator import Orchestrator
 
@@ -179,6 +196,9 @@ async def _run(
     if not trace.calls("record_change_manifest"):
         return EXIT_FAIL, "no record_change_manifest call in the trace"
 
+    if publish and dsn:
+        print(f"\nreleases: {await _publish(reloaded, dsn)}")
+
     return EXIT_PASS, f"{served} produced a valid ChangeManifest for {manifest.change_id}"
 
 
@@ -206,6 +226,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_DSN_FILE,
         help="file holding the Postgres DSN used with --project",
     )
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="write the recorded manifest to the Releases tab and reclassify",
+    )
     args = parser.parse_args(argv)
 
     reason = adk_unavailable_reason()
@@ -231,9 +256,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"vertex:         project {applied['GOOGLE_CLOUD_PROJECT']} @ {config.location}")
 
     dsn = None
-    if args.project:
+    if args.project or args.publish:
         if not args.dsn_file.is_file():
-            print(f"FAIL: --project needs a DSN; {args.dsn_file} does not exist")
+            print(f"FAIL: --project/--publish need a DSN; {args.dsn_file} does not exist")
             return EXIT_FAIL
         dsn = args.dsn_file.read_text(encoding="utf-8").strip()
 
@@ -246,6 +271,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.trace_out,
                 args.project,
                 dsn,
+                args.publish,
             )
         )
     # A failed run is a FAIL line and an exit code, not a traceback: this is a
