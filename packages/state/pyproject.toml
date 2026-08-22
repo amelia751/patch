@@ -57,6 +57,7 @@ only-include = ["__init__.py"]
 "config.py" = "packages/state/config.py"
 "dashboard.py" = "packages/state/dashboard.py"
 "discovery.py" = "packages/state/discovery.py"
+"enrichment.py" = "packages/state/enrichment.py"
 "findings.py" = "packages/state/findings.py"
 "inbox_corpus.py" = "packages/state/inbox_corpus.py"
 "index_inventory.py" = "packages/state/index_inventory.py"
