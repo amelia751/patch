@@ -44,7 +44,7 @@ Against `patch-505223` these are already in place:
 
 - `identitytoolkit.googleapis.com` and `securetoken.googleapis.com` enabled
 - the email/password provider enabled (`signIn.email.enabled`)
-- `localhost` among the authorized domains, for local development
+- `localhost` and the Cloud Run dashboard hosts among the authorized domains
 
 ## Tests
 

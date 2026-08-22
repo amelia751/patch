@@ -5,7 +5,7 @@ import { SignInPanel } from "./sign-in-dialog";
 import { SignUpPanel } from "./sign-up-dialog";
 import { EmailVerificationDialog } from "./email-verification-dialog";
 import { ForgotPasswordDialog } from "./forgot-password-dialog";
-import { ResetPasswordDialog } from "./reset-password-dialog";
+import { CheckEmailDialog } from "./check-email-dialog";
 import { useUnauthenticatedAuthFlow } from "./use-unauthenticated-auth-flow";
 import { cn } from "@/lib/utils";
 
@@ -111,14 +111,18 @@ export function RootAuthGate({ className }: RootAuthGateProps) {
         onSubmit={flow.handleForgotPassword}
         onShowSignIn={flow.handleShowSignIn}
         isSubmitting={flow.isSubmitting}
+        error={flow.authError}
       />
-      <ResetPasswordDialog
-        open={flow.showResetPassword}
-        onOpenChange={flow.setShowResetPassword}
-        onSubmit={flow.handleResetPassword}
-        onResend={flow.handleResendResetCode}
+      <CheckEmailDialog
+        open={flow.showCheckEmail}
+        onOpenChange={flow.setShowCheckEmail}
         email={flow.pendingEmail}
-        isSubmitting={flow.isSubmitting}
+        onShowSignIn={flow.handleShowSignIn}
+        description={
+          flow.checkEmailKind === "verify"
+            ? "We sent a verification link. Open it to confirm this address."
+            : "If an account exists for that address, we sent a reset link. Open it to choose a new password."
+        }
       />
     </div>
   );

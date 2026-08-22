@@ -28,6 +28,7 @@ interface ForgotPasswordDialogProps {
   onSubmit: (email: string) => void;
   onShowSignIn: () => void;
   isSubmitting?: boolean;
+  error?: string | null;
 }
 
 export function ForgotPasswordDialog({
@@ -36,6 +37,7 @@ export function ForgotPasswordDialog({
   onSubmit,
   onShowSignIn,
   isSubmitting = false,
+  error = null,
 }: ForgotPasswordDialogProps) {
   const [email, setEmail] = useState("");
 
@@ -59,7 +61,7 @@ export function ForgotPasswordDialog({
                 Forgot Password
               </DialogTitle>
               <DialogDescription className={cn("text-xs", authMuted)}>
-                We&apos;ll send you a code to reset your password.
+                We&apos;ll email you a link to reset your password.
               </DialogDescription>
             </div>
           </div>
@@ -88,9 +90,11 @@ export function ForgotPasswordDialog({
                 Sending...
               </>
             ) : (
-              "Send Reset Code"
+              "Send reset link"
             )}
           </Button>
+
+          {error ? <p className="text-xs text-red-400 text-center">{error}</p> : null}
 
           <div className={cn("text-center text-xs", authMuted)}>
             Remember your password?{" "}

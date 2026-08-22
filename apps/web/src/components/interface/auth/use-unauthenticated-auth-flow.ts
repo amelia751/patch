@@ -31,7 +31,8 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
   const [showSignUp, setShowSignUp] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showCheckEmail, setShowCheckEmail] = useState(false);
+  const [checkEmailKind, setCheckEmailKind] = useState<"reset" | "verify">("reset");
   const [pendingEmail, setPendingEmail] = useState("");
   const [pendingPassword, setPendingPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,7 +86,7 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
       if (result.needsVerification) {
         setPendingEmail(email);
         setPendingPassword(password);
-        setShowVerification(true);
+        setShowCheckEmail(true);
       }
     } catch (error: unknown) {
       console.error("Sign up failed:", error);
@@ -144,8 +145,9 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
     try {
       await forgotPassword(email);
       setPendingEmail(email);
+      setCheckEmailKind("reset");
       setShowForgotPassword(false);
-      setShowResetPassword(true);
+      setShowCheckEmail(true);
     } catch (error: unknown) {
       console.error("Failed to send reset code:", error);
       const message =
@@ -161,7 +163,7 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
     setAuthError(null);
     try {
       await resetPassword(pendingEmail, code, newPassword);
-      setShowResetPassword(false);
+      setShowCheckEmail(false);
       setPendingEmail("");
       goToSignIn();
     } catch (error: unknown) {
@@ -171,16 +173,6 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
       setAuthError(message);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleResendResetCode = async () => {
-    if (pendingEmail) {
-      try {
-        await forgotPassword(pendingEmail);
-      } catch (error) {
-        console.error("Failed to resend reset code:", error);
-      }
     }
   };
 
@@ -203,8 +195,9 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
     setShowVerification,
     showForgotPassword,
     setShowForgotPassword,
-    showResetPassword,
-    setShowResetPassword,
+    showCheckEmail,
+    setShowCheckEmail,
+    checkEmailKind,
     pendingEmail,
     setPendingEmail,
     isSubmitting,
@@ -221,7 +214,6 @@ export function useUnauthenticatedAuthFlow(options?: UseUnauthenticatedAuthFlowO
     handleShowForgotPassword,
     handleForgotPassword,
     handleResetPassword,
-    handleResendResetCode,
     onSignInOpenChange,
     onSignUpOpenChange,
   };

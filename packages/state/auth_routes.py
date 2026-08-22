@@ -1,9 +1,4 @@
-"""Console auth HTTP surface: Google/GitHub OAuth and session reads.
-
-Mounted by the wired control plane (`packages.state.serve`), not by the unwired
-service, so the OpenAPI contract for health and `/v1/*` stays unchanged until
-email routes exist.
-"""
+"""Console auth HTTP surface: email/password, Google/GitHub OAuth, sessions."""
 
 from __future__ import annotations
 
@@ -14,20 +9,28 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
 
 from packages.auth.config import load_config
 from packages.auth.errors import AuthConfigurationError, AuthUnavailableError
 from packages.auth.github_oauth import (
     authorization_url as github_authorization_url,
+)
+from packages.auth.github_oauth import (
     exchange_code as github_exchange_code,
+)
+from packages.auth.github_oauth import (
     fetch_installation,
     find_installation_for_login,
     install_url,
 )
 from packages.auth.google_oauth import (
     authorization_url as google_authorization_url,
+)
+from packages.auth.google_oauth import (
     exchange_code as google_exchange_code,
 )
+from packages.auth.identity_platform import get_identity_service
 from packages.state.pool import StateUnavailableError
 from packages.state.session import (
     COOKIE_NAME,
@@ -44,12 +47,61 @@ from packages.state.users import (
     record_github_installation,
     upsert_github_user,
     upsert_google_user,
+    upsert_password_user,
 )
 
 if TYPE_CHECKING:
     import asyncpg
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class _EmailBody(BaseModel):
+    email: str = Field(min_length=3)
+
+
+class _PasswordBody(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
+
+
+class _SignupBody(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
+    display_name: str = ""
+
+
+class _ResetBody(BaseModel):
+    code: str = Field(min_length=1)
+    new_password: str = Field(min_length=1)
+    email: str = ""
+
+
+class _VerifyBody(BaseModel):
+    code: str = Field(min_length=1)
+    email: str = ""
+
+
+def _auth_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, AuthConfigurationError):
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "identity_platform",
+                "detail": str(exc),
+            },
+            status_code=503,
+        )
+    if isinstance(exc, AuthUnavailableError):
+        return JSONResponse(
+            {
+                "error": "dependency_unavailable",
+                "dependency": "identity_platform",
+                "detail": str(exc),
+            },
+            status_code=503,
+        )
+    return JSONResponse({"detail": str(exc)}, status_code=400)
 
 
 def _pool(request: Request) -> asyncpg.Pool:
@@ -129,6 +181,112 @@ def _google_redirect_uri(request: Request, fallback: str) -> str:
     return _oauth_callback_uri(request, "/api/auth/google/callback", fallback)
 
 
+@router.post("/signup")
+async def signup(request: Request, body: _SignupBody) -> JSONResponse:
+    """Register an email/password account. Google emails the verification link."""
+    identity = get_identity_service()
+    try:
+        created = await identity.sign_up(
+            body.email.strip(), body.password, body.display_name.strip()
+        )
+        token = created.get("id_token") or ""
+        if token:
+            try:
+                await identity.send_email_verification_code(token)
+            except (ValueError, AuthUnavailableError):
+                pass
+        user = await upsert_password_user(
+            _pool(request),
+            email=body.email.strip().lower(),
+            display_name=body.display_name.strip(),
+            identity_platform_uid=str(created.get("user_sub") or ""),
+            email_verified=False,
+        )
+    except (AuthConfigurationError, AuthUnavailableError, StateUnavailableError, ValueError) as exc:
+        return _auth_error(exc)
+    return JSONResponse(
+        {
+            "ok": True,
+            "confirmed": False,
+            "user": user,
+            "message": "Check your email for a verification link.",
+        }
+    )
+
+
+@router.post("/login")
+async def login(request: Request, body: _PasswordBody) -> JSONResponse:
+    """Exchange email and password for a console session cookie."""
+    identity = get_identity_service()
+    try:
+        tokens = await identity.sign_in(body.email.strip(), body.password)
+        profile = await identity.get_user(tokens.id_token)
+        user = await upsert_password_user(
+            _pool(request),
+            email=profile.email,
+            display_name=profile.name or "",
+            identity_platform_uid=profile.sub,
+            email_verified=profile.email_verified,
+        )
+    except (AuthConfigurationError, AuthUnavailableError, StateUnavailableError, ValueError) as exc:
+        return _auth_error(exc)
+    session = issue(UUID(user["id"]), load_session_secret())
+    body_out = JSONResponse({"ok": True, "access_token": session, "user": user})
+    _set_session(body_out, session)
+    return body_out
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: _EmailBody) -> JSONResponse:
+    """Ask Identity Platform to email a password-reset link.
+
+    Always reports success so the form cannot probe which addresses exist.
+    """
+    identity = get_identity_service()
+    try:
+        await identity.forgot_password(body.email.strip())
+    except (AuthConfigurationError, AuthUnavailableError) as exc:
+        return _auth_error(exc)
+    except ValueError as exc:
+        return _auth_error(exc)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/reset-password")
+async def reset_password(body: _ResetBody) -> JSONResponse:
+    """Complete a reset with the `oobCode` from the emailed link."""
+    identity = get_identity_service()
+    try:
+        await identity.confirm_forgot_password(
+            body.email.strip(), body.code.strip(), body.new_password
+        )
+    except (AuthConfigurationError, AuthUnavailableError, ValueError) as exc:
+        return _auth_error(exc)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/verify")
+async def verify_email(body: _VerifyBody) -> JSONResponse:
+    """Apply the `oobCode` from a verification link."""
+    identity = get_identity_service()
+    try:
+        await identity.confirm_sign_up(body.email.strip(), body.code.strip())
+    except (AuthConfigurationError, AuthUnavailableError, ValueError) as exc:
+        return _auth_error(exc)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/resend-code")
+async def resend_code(body: _EmailBody) -> JSONResponse:
+    """Re-send a password-reset link. Verification resend needs a signed-in session."""
+    identity = get_identity_service()
+    try:
+        await identity.forgot_password(body.email.strip())
+    except (AuthConfigurationError, AuthUnavailableError, ValueError) as exc:
+        return _auth_error(exc)
+    return JSONResponse({"ok": True})
+
+
 @router.get("/google")
 async def google_start(request: Request, response: Response) -> JSONResponse:
     """Return the Google authorization URL the dashboard navigates to."""
@@ -170,6 +328,12 @@ async def google_callback(request: Request, code: str | None = None, state: str 
         )
         profile = await google_exchange_code(bound, code)
         user = await upsert_google_user(_pool(request), profile)
+        try:
+            await get_identity_service().create_oauth_user(
+                profile.email, profile.name or profile.email
+            )
+        except (AuthConfigurationError, AuthUnavailableError, ValueError):
+            pass
     except (AuthConfigurationError, AuthUnavailableError, StateUnavailableError, ValueError):
         return RedirectResponse(f"{frontend}/?auth=error&message=google_sign_in_failed")
     token = issue(UUID(user["id"]), load_session_secret())

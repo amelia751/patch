@@ -5,5 +5,6 @@ export { EmailVerificationDialog } from "./email-verification-dialog";
 export { UserSettingsDialog } from "./user-settings-dialog";
 export { ForgotPasswordDialog } from "./forgot-password-dialog";
 export { ResetPasswordDialog } from "./reset-password-dialog";
+export { CheckEmailDialog } from "./check-email-dialog";
 export { GoogleIcon } from "./icons";
 

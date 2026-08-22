@@ -318,7 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return {
           needsVerification: true,
           email,
-          message: data.message || "Please check your email for verification code",
+          message: data.message || "Please check your email for a verification link",
         };
       }
       
@@ -382,6 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include",
       body: JSON.stringify({ email }),
     });
 

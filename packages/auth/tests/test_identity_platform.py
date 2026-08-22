@@ -231,6 +231,7 @@ async def test_sign_up_reports_unconfirmed_so_the_prompt_shows() -> None:
     result = await service.sign_up("a@b.com", "pw", "Someone")
 
     assert result["user_sub"] == "local-123"
+    assert result["id_token"] == "id"
     assert result["confirmed"] is False
 
 

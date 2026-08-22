@@ -232,6 +232,69 @@ async def _upsert_installation(
     )
 
 
+async def upsert_password_user(
+    pool: asyncpg.Pool,
+    *,
+    email: str,
+    display_name: str,
+    identity_platform_uid: str,
+    email_verified: bool = False,
+) -> dict[str, Any]:
+    """Insert or update the console user for an email/password sign-in.
+
+    Passwords stay in Identity Platform. This row is the dashboard profile.
+    An existing Google/GitHub user with the same email is reused, not forked.
+    """
+    name = display_name.strip() or email.split("@", 1)[0]
+    try:
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """
+                    INSERT INTO users (
+                        email, display_name, identity_platform_uid,
+                        email_verified, type, settings
+                    )
+                    VALUES ($1, $2, $3, $4, 'personal', '{}'::jsonb)
+                    ON CONFLICT (email) DO UPDATE
+                    SET identity_platform_uid = COALESCE(
+                            users.identity_platform_uid, EXCLUDED.identity_platform_uid
+                        ),
+                        email_verified = users.email_verified OR EXCLUDED.email_verified,
+                        updated_at = now()
+                    RETURNING id, email, display_name, avatar_url, email_verified,
+                              type, settings, created_at
+                    """,
+                    email.strip().lower(),
+                    name,
+                    identity_platform_uid,
+                    email_verified,
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO user_identities (
+                        user_id, provider, provider_user_id, username, email
+                    )
+                    VALUES ($1, 'password', $2, $3, $4)
+                    ON CONFLICT (user_id, provider) DO UPDATE
+                    SET provider_user_id = EXCLUDED.provider_user_id,
+                        email = EXCLUDED.email,
+                        username = EXCLUDED.username
+                    """,
+                    row["id"],
+                    identity_platform_uid,
+                    name,
+                    email.strip().lower(),
+                )
+            user = await read_user(pool, row["id"])
+            await read_personal_organization(pool, row["id"], given_name=name.split()[0])
+            return user
+    except Exception as exc:
+        raise StateUnavailableError(
+            f"could not persist password user: {type(exc).__name__}"
+        ) from exc
+
+
 async def read_user(pool: asyncpg.Pool, user_id: UUID) -> dict[str, Any] | None:
     """Return the `/me` payload, or None if the id is unknown."""
     try:

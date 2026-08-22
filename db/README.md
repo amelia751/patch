@@ -72,7 +72,7 @@ project_provider_subscriptions
 | Table | Role |
 |---|---|
 | `users` | Console profile. `identity_platform_uid` links Identity Platform. No password column. |
-| `user_identities` | Linked logins (`github` / `google`). Supplies `github_id` / `github_username`. |
+| `user_identities` | Linked logins (`github` / `google` / `password`). Supplies `github_id` / `github_username`. |
 | `github_connections` | GitHub App installation id only. `github_app_installed` means a row exists. |
 | `projects` | `POST /api/projects/` — name, status, owner, optional `cloud_provider`. |
 | `project_repositories` | Imported `owner/repo`. Listing live GitHub repos is an API call, not this table. |

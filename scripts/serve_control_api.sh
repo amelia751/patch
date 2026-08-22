@@ -28,6 +28,7 @@ export DATABASE_URL
 DATABASE_URL="$(tr -d '\n' <"$DSN_FILE")"
 export PATCHAPI_CORS_ORIGINS="${PATCHAPI_CORS_ORIGINS:-http://localhost:3000}"
 export PATCHAPI_FRONTEND_ORIGIN="${PATCHAPI_FRONTEND_ORIGIN:-http://localhost:3000}"
+export PATCHAPI_IDENTITY_ACTION_URL="${PATCHAPI_IDENTITY_ACTION_URL:-http://localhost:3000/auth/action}"
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8080}"
 # patchapi-state is installed as a wheel copy. Without the repo root on

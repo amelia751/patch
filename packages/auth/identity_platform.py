@@ -214,6 +214,7 @@ class IdentityPlatformService:
         )
         return {
             "user_sub": data.get("localId", ""),
+            "id_token": data.get("idToken", ""),
             "confirmed": False,
             "delivery": {"AttributeName": "email"},
         }
