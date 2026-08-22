@@ -175,11 +175,15 @@ async def published_gemini(client: httpx.AsyncClient, key: str) -> set[str]:
     """Every model id `generativelanguage` currently lists."""
     published: set[str] = set()
     page_token = ""
+    # The key travels as a header, never as `?key=`. A query string is echoed by
+    # request loggers, proxies, and httpx's own INFO line, which would put a live
+    # credential into Cloud Logging on every scheduled run.
+    headers = {"x-goog-api-key": key, "Accept": "application/json"}
     while True:
-        params: dict[str, str | int] = {"key": key, "pageSize": PAGE_SIZE}
+        params: dict[str, str | int] = {"pageSize": PAGE_SIZE}
         if page_token:
             params["pageToken"] = page_token
-        response = await client.get(GEMINI_MODELS_URL, params=params)
+        response = await client.get(GEMINI_MODELS_URL, headers=headers, params=params)
         if response.status_code >= 400:
             raise ProbeUnavailableError(f"Gemini models.list returned {response.status_code}")
         payload = response.json()
