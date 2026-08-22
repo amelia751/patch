@@ -1,26 +1,18 @@
-"""The loop that keeps the Releases tab current.
+"""The poll that starts every provider change.
 
-Classification reads `identifier_probes` to decide whether a model is gone for
-real or merely dated in a watchlist. Nothing writes that table during a request:
-probing every indexed identifier means several calls to a Google surface, which
-is far too slow to hang off a page load. So the tab can only be as fresh as the
-last time this loop ran.
+Google announces a model retirement to nobody in particular, so something has to
+ask. This job asks. It probes every identifier the repo indexer has stored, diffs
+the answer against the last poll, and publishes `provider-change-detected` for
+each transition. Recording the undocumented break and reclassifying the projects
+that call it belong to the subscribers now, so neither happens here: doing both
+would race the event lane to write the same row.
 
-Four steps, in order:
-
-1. Poll: probe every identifier the repo indexer has stored, diff against the
-   last poll, and publish `provider-change-detected` for each transition. This
-   is the step that belongs here permanently.
-2. Write a change event for any identifier that stopped resolving and that no
-   existing notice covers — the break nobody announced.
-3. Refresh the watchlist / catalog / release-note corpus for each subscribed
-   project.
-4. Reclassify, so probe evidence moves live call sites out of Watching.
-
-Steps 2 to 4 duplicate what the `provider-change-detected` subscribers do, and
-are kept only until events are carrying the load. They are the net: while the
-pipeline is being wired, a dropped message degrades the tab's freshness rather
-than its correctness. Delete them once the subscribers are proven, not before.
+What has no event source is the notice corpus. Lifecycle rows arrive as a
+committed snapshot and release notes arrive from a BigQuery query, neither of
+which announces itself, so a pass over subscribed projects is still the only
+thing that moves a newly published notice into the inbox. That pass reclassifies
+only when it wrote something: a poll that finds no new notice costs a few queries
+and changes nothing.
 
 Safe to re-run, which is what makes it schedulable: events are insert-if-absent,
 probes upsert, and a human-dismissed finding stays dismissed.
@@ -53,13 +45,46 @@ ORDER BY p.name
 """
 
 
+async def promote_corpus(
+    connection: asyncpg.Connection, *, provider: str = DEFAULT_PROVIDER
+) -> dict[str, int]:
+    """Pull newly published notices into the inbox, and reclassify if any landed.
+
+    A notice is covered provider-wide, so the second project to ask for the same
+    identifier inserts nothing. That makes a per-project "did I write anything"
+    test the wrong gate — it would skip every project but the first. The gate is
+    therefore the whole pass: if the provider gained a notice, every subscribed
+    project is reclassified; if it gained none, none are.
+    """
+    from packages.state.findings import refresh_project_findings
+    from packages.state.inbox_corpus import ensure_inbox_corpus
+
+    rows = await connection.fetch(_SUBSCRIBED_SQL, provider)
+    if not rows:
+        log.info("no project is subscribed to %s", provider)
+        return {}
+
+    added = 0
+    for row in rows:
+        counts = await ensure_inbox_corpus(connection, row["id"], provider)
+        added += counts["watchlist"] + counts["catalog"] + counts["notes"]
+    if not added:
+        log.info("no new notice for %s; %d projects left as classified", provider, len(rows))
+        return {}
+
+    log.info("%d new notices; reclassifying %d subscribed projects", added, len(rows))
+    projects: dict[str, int] = {}
+    for row in rows:
+        written = await refresh_project_findings(connection, row["id"], provider)
+        projects[str(row["name"])] = written
+        log.info("%s: %d findings", row["name"], written)
+    return projects
+
+
 async def refresh_releases(
     connection: asyncpg.Connection, *, provider: str = DEFAULT_PROVIDER
 ) -> dict[str, Any]:
-    """Run the full refresh and return what it observed."""
-    from packages.state.discovery import record_discovered_retirements, refresh_subscribed
-    from packages.state.findings import refresh_project_findings
-    from packages.state.inbox_corpus import ensure_inbox_corpus
+    """Poll for transitions, promote new notices, and report what moved."""
     from packages.state.provider_poll import poll_provider
 
     outcome = await poll_provider(connection, provider=provider)
@@ -80,27 +105,7 @@ async def refresh_releases(
         names = ", ".join(sorted(buckets[status])) or "(none)"
         log.info("probe %-9s %3d  %s", status, len(buckets[status]), names)
 
-    discovered = await record_discovered_retirements(connection, provider=provider, results=results)
-    for external_id in discovered:
-        log.info("recorded undocumented retirement %s", external_id)
-
-    rows = await connection.fetch(_SUBSCRIBED_SQL, provider)
-    projects: dict[str, int] = {}
-    for row in rows:
-        counts = await ensure_inbox_corpus(connection, row["id"], provider)
-        written = await refresh_project_findings(connection, row["id"], provider)
-        projects[str(row["name"])] = written
-        log.info(
-            "%s: %d findings (watchlist %d, catalog %d, notes %d)",
-            row["name"],
-            written,
-            counts["watchlist"],
-            counts["catalog"],
-            counts["notes"],
-        )
-    if not rows:
-        log.info("no project is subscribed to %s", provider)
-        await refresh_subscribed(connection, provider)
+    projects = await promote_corpus(connection, provider=provider)
 
     return {
         "provider": provider,
@@ -108,7 +113,6 @@ async def refresh_releases(
         "not_found": tuple(sorted(buckets["not_found"])),
         "unknown": tuple(sorted(buckets["unknown"])),
         "announced": outcome.published,
-        "discovered": tuple(discovered),
         "projects": projects,
     }
 
@@ -124,9 +128,9 @@ async def _run(provider: str, dsn: str | None) -> int:
     finally:
         await connection.close()
     log.info(
-        "refresh complete: probed %d, %d undocumented, %d projects",
+        "refresh complete: probed %d, announced %d, reclassified %d projects",
         summary["probed"],
-        len(summary["discovered"]),
+        len(summary["announced"]),
         len(summary["projects"]),
     )
     return EXIT_OK
