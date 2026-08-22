@@ -370,7 +370,6 @@ function RunDetail({
   }, [run.id, run.machine]);
 
   const tree = picked ?? current;
-  const needLabel = run.need === "gcp" ? "Connect GCP" : "Add secret";
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
@@ -378,17 +377,25 @@ function RunDetail({
         <div className="px-5 py-3 border-b border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
             {run.pauseReason ??
-              (run.need === "gcp"
-                ? "This project has no GCP connection. The agent will open a sandbox after you connect one."
-                : "GEMINI_API_KEY is not on this project. The verifier will call the replacement and will not invent a key.")}
+              "This run is waiting on you. Connect GCP and add the project secret so the agent can continue."}
           </p>
-          <Button
-            size="sm"
-            className="h-7 shrink-0 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={() => (run.need === "gcp" ? setGcpOpen(true) : setSecretOpen(true))}
-          >
-            {needLabel}
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => setGcpOpen(true)}
+            >
+              Connect GCP
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setSecretOpen(true)}
+            >
+              Add secret
+            </Button>
+          </div>
         </div>
       )}
       <AddSecretDialog

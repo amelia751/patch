@@ -100,7 +100,7 @@ export interface MockRun {
   attempt: number;
   attemptBudget: number;
   pauseReason?: string;
-  /** What a Need-you pause is actually waiting on. Sandbox allocation is never this. */
+  /** Setup actions on the Need-you banner. Both buttons live on the same pause. */
   need?: "secret" | "gcp";
   commands: SandboxCommand[];
   diffs: DiffFile[];
@@ -590,15 +590,13 @@ export function seedRuns(): MockRun[] {
 
   add("chg_flash_image_preview", "start", "PR_CREATED", ago(4 * 60 * 1000));
   add("imagen4-retirement-2026-08-17", "start", "HUMAN_REQUIRED", ago(2 * 60 * 60 * 1000), {
-    need: "gcp",
     pauseReason:
-      "This project has no GCP connection. The agent will open a sandbox after you connect one.",
+      "This run is waiting on you. Connect GCP and add GEMINI_API_KEY so the agent can continue.",
   });
   add("ui-issue-long-title", "start", "HUMAN_REQUIRED", ago(50 * 60 * 1000), {
     repo: "amelia751/egaki",
-    need: "secret",
     pauseReason:
-      "GEMINI_API_KEY is not on this project. The verifier will call the replacement and will not invent a key.",
+      "This run is waiting on you. Connect GCP and add GEMINI_API_KEY so the agent can continue.",
   });
   add("ui-changelog-immutable", "start", "UNAFFECTED", ago(6 * 60 * 60 * 1000));
   add("ui-scheduled-window", "prepare", "HELD", ago(18 * 60 * 60 * 1000));
