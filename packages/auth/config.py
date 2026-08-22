@@ -129,6 +129,16 @@ class IdentityPlatformConfig:
             )
         return self.project
 
+    def continue_url(self, mode: str) -> str:
+        """Where Google sends the browser after an emailed action.
+
+        The hosted handler consumes the `oobCode` before redirecting, so this
+        URL carries `mode` only. Our page uses that to show reset vs verify
+        instead of an empty 'missing code' card.
+        """
+        base = self.action_url.split("?", 1)[0].rstrip("/")
+        return f"{base}?mode={mode}"
+
     def url(self, method: str) -> str:
         """Key-authenticated Identity Toolkit endpoint for `method`."""
         return f"{IDENTITY_TOOLKIT_BASE}/accounts:{method}?key={self.require_api_key()}"

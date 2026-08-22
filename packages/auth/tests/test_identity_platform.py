@@ -210,6 +210,23 @@ async def test_forgot_password_still_surfaces_other_failures() -> None:
         await service.forgot_password("someone@example.com")
 
 
+def test_continue_url_keeps_mode_after_google_strips_the_code() -> None:
+    config = IdentityPlatformConfig(
+        api_key="k", project="p", action_url="https://app.example/auth/action"
+    )
+    assert config.continue_url("resetPassword").endswith("?mode=resetPassword")
+    assert config.continue_url("verifyEmail").endswith("?mode=verifyEmail")
+
+
+async def test_forgot_password_continue_url_names_reset() -> None:
+    service, recorder = _service({})
+
+    await service.forgot_password("a@b.com")
+
+    assert recorder.calls[0][1]["requestType"] == "PASSWORD_RESET"
+    assert recorder.calls[0][1]["continueUrl"].endswith("?mode=resetPassword")
+
+
 # -- compatibility shims ---------------------------------------------------
 
 

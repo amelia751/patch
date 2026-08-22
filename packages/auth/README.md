@@ -35,8 +35,10 @@ resolved separately, from `GOOGLE_APPLICATION_CREDENTIALS`; only
 `create_oauth_user` and `sign_out` need it.
 
 `PATCHAPI_IDENTITY_ACTION_URL` is where Google's emails send the browser back
-to. Its host must also appear in the project's authorized domains, or Identity
-Platform refuses to mint the link.
+to. The hosted handler consumes the code first, so the control plane appends
+`?mode=resetPassword` or `?mode=verifyEmail` so the page still knows which
+flow it is. Its host must also appear in the project's authorized domains, or
+Identity Platform refuses to mint the link.
 
 ## Project prerequisites
 

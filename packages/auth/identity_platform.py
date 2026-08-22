@@ -288,7 +288,7 @@ class IdentityPlatformService:
             {
                 "requestType": "VERIFY_EMAIL",
                 "idToken": access_token,
-                "continueUrl": self._config.action_url,
+                "continueUrl": self._config.continue_url("verifyEmail"),
             },
         )
         return {"delivery": {"AttributeName": "email", "Destination": data.get("email", "")}}
@@ -317,7 +317,7 @@ class IdentityPlatformService:
                 {
                     "requestType": "PASSWORD_RESET",
                     "email": email,
-                    "continueUrl": self._config.action_url,
+                    "continueUrl": self._config.continue_url("resetPassword"),
                 },
             )
         except ValueError as exc:
