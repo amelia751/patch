@@ -6,6 +6,7 @@ import { SectionRail, SectionRailButton } from "@/components/interface/shared/se
 import { Spinner } from "@/components/ui/spinner";
 import type { ChangeActionId, RunProgress } from "./actions";
 import { ChangesInbox } from "./changes-tab";
+import { ReleasesLoadingState } from "./empty-states";
 import type { SecretRepoOption, SecretWorkspaceOption } from "@/components/interface/secret-managers";
 import { dismissProjectChange, fetchProjectChanges, reopenProjectChange } from "./api";
 import { runKey, type ProjectChange } from "./data";
@@ -39,6 +40,8 @@ export function ChangesTab({
   workspaces = [],
   repos = [],
   secretsPreviewMode = false,
+  inboxTick = 0,
+  assumeSubscribed = false,
 }: {
   hasProject?: boolean;
   projectId?: string;
@@ -47,6 +50,8 @@ export function ChangesTab({
   workspaces?: SecretWorkspaceOption[];
   repos?: SecretRepoOption[];
   secretsPreviewMode?: boolean;
+  inboxTick?: number;
+  assumeSubscribed?: boolean;
 }) {
   const [section, setSection] = useState<Section>("releases");
   const [boot] = useState(initialWorkspace);
@@ -54,7 +59,8 @@ export function ChangesTab({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(boot.runs[0]?.id ?? null);
   const [progress, setProgress] = useState<Record<string, RunProgress>>(boot.progress);
   const [changes, setChanges] = useState<ProjectChange[]>([]);
-  const [subscribed, setSubscribed] = useState(false);
+  const [subscribed, setSubscribed] = useState(assumeSubscribed);
+  const [inboxLoading, setInboxLoading] = useState(Boolean(hasProject && projectId));
   const [scanning, setScanning] = useState(false);
   const [scanPct, setScanPct] = useState(0);
 
@@ -85,8 +91,13 @@ export function ChangesTab({
       setChanges([]);
       setSubscribed(false);
       setScanning(false);
+      setInboxLoading(false);
       return;
     }
+    if (assumeSubscribed) {
+      setSubscribed(true);
+    }
+    setInboxLoading(true);
     const controller = new AbortController();
     let timer: number | undefined;
 
@@ -94,12 +105,14 @@ export function ChangesTab({
       try {
         const payload = await loadChanges(projectId, controller.signal);
         if (controller.signal.aborted) return;
+        setInboxLoading(false);
         const next = payload.subscribed && payload.scan.status === "scanning" ? 1500 : 5000;
         timer = window.setTimeout(() => {
           void tick(next);
         }, intervalMs);
       } catch {
         if (controller.signal.aborted) return;
+        setInboxLoading(false);
         timer = window.setTimeout(() => {
           void tick(4000);
         }, 4000);
@@ -111,7 +124,7 @@ export function ChangesTab({
       controller.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [hasProject, loadChanges, projectId]);
+  }, [assumeSubscribed, hasProject, inboxTick, loadChanges, projectId]);
 
   useEffect(() => {
     if (!hasActive) return;
@@ -192,7 +205,9 @@ export function ChangesTab({
       </SectionRail>
 
       <div className="flex-1 min-w-0 overflow-hidden">
-        {scanning ? (
+        {inboxLoading && changes.length === 0 ? (
+          <ReleasesLoadingState />
+        ) : scanning ? (
           <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
             <div className="w-full max-w-sm px-6 text-center">
               <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)]">

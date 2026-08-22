@@ -122,6 +122,8 @@ function SystemPageContent() {
 
   // Tab state (CI/CD and Knowledge hidden until those surfaces are ready)
   const [activeTab, setActiveTab] = useState("code");
+  const [inboxTick, setInboxTick] = useState(0);
+  const [assumeSubscribed, setAssumeSubscribed] = useState(false);
 
   const setMainWorkspaceTab = useCallback((tab: string) => {
     if (tab === "pipeline" || tab === "knowledge") tab = "code";
@@ -892,7 +894,11 @@ function SystemPageContent() {
           <SubscriptionTab
             hasProject={!!configureProject}
             projectId={configureProject?.id}
-            onOpenChanges={() => setMainWorkspaceTab("changes")}
+            onOpenChanges={() => {
+              setAssumeSubscribed(true);
+              setInboxTick((tick) => tick + 1);
+              setMainWorkspaceTab("changes");
+            }}
           />
         </TabsContent>
       </Tabs>

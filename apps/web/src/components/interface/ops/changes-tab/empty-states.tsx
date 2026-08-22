@@ -1,8 +1,18 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Bell, FolderPlus, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
+
+export function ReleasesLoadingState() {
+  return (
+    <div className="h-full flex flex-col items-center justify-center bg-[var(--bg-primary)]">
+      <Spinner className="h-5 w-5 text-[var(--text-secondary)] mb-3" />
+      <p className="text-xs text-[var(--text-secondary)]">Loading releases</p>
+    </div>
+  );
+}
 
 export function NoProjectEmptyState() {
   const router = useRouter();
