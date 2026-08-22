@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - resolved statically, never at runtime
     from packages.schemas.base import StrictModel, VersionedContract
-    from packages.schemas.change_manifest import ChangeManifest
+    from packages.schemas.change_manifest import ChangeManifest, IdentifierReplacement
     from packages.schemas.config import (
         ALLOWED_EVIDENCE_URI_SCHEMES,
         CONTRACT_VERSIONS,
@@ -71,6 +71,7 @@ _EXPORTS: dict[str, str] = {
     "CheckOutcome": "enums",
     "EvidenceKind": "enums",
     "EvidenceRef": "evidence",
+    "IdentifierReplacement": "change_manifest",
     "IllegalRunStateTransitionError": "run_state",
     "ImpactFinding": "impact_report",
     "ImpactReport": "impact_report",
@@ -111,6 +112,7 @@ __all__ = [
     "CheckOutcome",
     "EvidenceKind",
     "EvidenceRef",
+    "IdentifierReplacement",
     "IllegalRunStateTransitionError",
     "ImpactFinding",
     "ImpactReport",

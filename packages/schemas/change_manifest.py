@@ -11,7 +11,7 @@ from typing import ClassVar, Self
 
 from pydantic import AnyHttpUrl, Field, model_validator
 
-from packages.schemas.base import VersionedContract
+from packages.schemas.base import StrictModel, VersionedContract
 from packages.schemas.enums import ChangeType, Severity, TrustClassification
 from packages.schemas.evidence import SourceSnapshot
 from packages.schemas.fields import ChangeId, Identifier, NonEmptyLine, ProviderId
@@ -22,6 +22,22 @@ from packages.schemas.fields import ChangeId, Identifier, NonEmptyLine, Provider
 _REQUIRES_EFFECTIVE_DATE: frozenset[ChangeType] = frozenset(
     {ChangeType.MODEL_RETIREMENT, ChangeType.ENDPOINT_REMOVAL}
 )
+
+
+class IdentifierReplacement(StrictModel):
+    """Where one retired identifier goes, when they do not all go together.
+
+    `recommended_replacement` says one thing for the whole notice, which is
+    right for most of them. It is wrong for a notice retiring a family whose
+    members land in different places — the ultra and fast Imagen variants need
+    not move where the base one moves. Listing an identifier here overrides the
+    notice-wide answer for that identifier only.
+    """
+
+    identifier: Identifier
+    replacement: Identifier | None = None
+    semantic_migration_required: bool = False
+    note: NonEmptyLine | None = None
 
 
 class ChangeManifest(VersionedContract):
@@ -36,6 +52,10 @@ class ChangeManifest(VersionedContract):
     affected_identifiers: list[Identifier] = Field(min_length=1)
     recommended_replacement: Identifier | None = None
     semantic_migration_required: bool
+    # Optional refinement of the two fields above. Absent means the notice-wide
+    # replacement applies to every affected identifier, which is what almost
+    # every notice means.
+    per_identifier: list[IdentifierReplacement] = Field(default_factory=list)
     migration_constraints: list[NonEmptyLine] = Field(default_factory=list)
     source_urls: list[AnyHttpUrl] = Field(min_length=1)
     source_snapshots: list[SourceSnapshot] = Field(default_factory=list)
@@ -60,7 +80,34 @@ class ChangeManifest(VersionedContract):
             raise ValueError("announced_at must not be later than effective_at")
         if self.trust is not TrustClassification.UNTRUSTED_PROVIDER_INPUT:
             raise ValueError("a ChangeManifest always describes untrusted provider input")
+        affected = set(self.affected_identifiers)
+        seen: set[str] = set()
+        for entry in self.per_identifier:
+            if entry.identifier not in affected:
+                raise ValueError(
+                    f"per_identifier names {entry.identifier!r}, "
+                    "which is not one of the affected identifiers"
+                )
+            if entry.identifier in seen:
+                raise ValueError(f"per_identifier repeats {entry.identifier!r}")
+            seen.add(entry.identifier)
+            if entry.replacement is not None and entry.replacement in affected:
+                raise ValueError(
+                    f"per_identifier sends {entry.identifier!r} to {entry.replacement!r}, "
+                    "which this notice also retires"
+                )
         return self
+
+    def replacement_for(self, identifier: str) -> tuple[str | None, bool]:
+        """Where `identifier` goes, and whether the move changes request shape.
+
+        Falls back to the notice-wide answer, so a caller never has to know
+        whether this manifest bothered to refine anything.
+        """
+        for entry in self.per_identifier:
+            if entry.identifier == identifier:
+                return entry.replacement, entry.semantic_migration_required
+        return self.recommended_replacement, self.semantic_migration_required
 
     @property
     def has_verifiable_evidence(self) -> bool:
