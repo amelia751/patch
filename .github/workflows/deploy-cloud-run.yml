@@ -28,10 +28,12 @@ env:
   API_SERVICE: patchapi-api
   INDEXER_SERVICE: patchapi-indexer
   AGENTS_SERVICE: patchapi-agents
+  GHTOOLS_SERVICE: patchapi-github-tools
   WEB_SA: patchapi-web@patch-505223.iam.gserviceaccount.com
   API_SA: patchapi-api@patch-505223.iam.gserviceaccount.com
   INDEXER_SA: patchapi-indexer@patch-505223.iam.gserviceaccount.com
   AGENTS_SA: patchapi-agents@patch-505223.iam.gserviceaccount.com
+  GHTOOLS_SA: patchapi-github-tools@patch-505223.iam.gserviceaccount.com
   # Stable Cloud Run URLs (name + project number + region). Confirmed by
   # scripts/bootstrap_cloud_run.sh; changing any of the three changes the URL.
   WEB_URL: https://patchapi-web-913371146929.us-central1.run.app
@@ -288,3 +290,48 @@ jobs:
             --push-auth-service-account="patchapi-pubsub-push@patch-505223.iam.gserviceaccount.com" \
             --ack-deadline=600 \
             --quiet
+
+  github-tools:
+    name: patchapi-github-tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/913371146929/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: patchapi-github-deploy@patch-505223.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Auth Docker to Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push the GitHub capability adapter
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/github-tools:${{ github.sha }}
+        run: |
+          docker build -f services/github_tools/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy the GitHub capability adapter
+        run: |
+          # No database and no Pub/Sub: this service holds the App private key,
+          # so it is reachable only over Cloud Run IAM and knows nothing else.
+          # Identity and invoker grants come from scripts/bootstrap_github_tools.sh.
+          gcloud run deploy "${GHTOOLS_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --service-account="${GHTOOLS_SA}" \
+            --no-allow-unauthenticated \
+            --ingress=all \
+            --port=8080 \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=120 \
+            --min-instances=0 \
+            --max-instances=3 \
+            --set-env-vars="PATCHAPI_ENV=cloud,GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem" \
+            --set-secrets="GITHUB_APP_ID=patchapi-github-app-id:latest,GITHUB_APP_INSTALLATION_ID=patchapi-github-app-installation-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest"

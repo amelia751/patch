@@ -94,3 +94,18 @@ The verifier lints, unit-tests, boots the app, and probes the boundary over
 HTTP. Its final leg reads the demo fork through a real installation token when
 App credentials are present, and prints an explicit `SKIP` when they are not. It
 is never faked.
+
+## Deployed
+
+`https://patchapi-github-tools-913371146929.us-central1.run.app`, private. The
+image is built from `services/github_tools/Dockerfile` by the `github-tools` job
+in `.github/workflows/deploy-cloud-run.yml`; the identity, the secret grants, and
+the invoker list come from `scripts/bootstrap_github_tools.sh`.
+
+Deployed, the private key is mounted as a file rather than resolved through
+`GITHUB_APP_PRIVATE_KEY_SECRET`, so the image needs no Secret Manager client and
+the key never passes through application code on its way in.
+
+Only `patchapi-agents` and `patchapi-api` may invoke it. Readiness is `/readyz`,
+which reports whether the App installation resolved; `/healthz` is answered by
+Google's edge on a `run.app` host and never reaches the container.

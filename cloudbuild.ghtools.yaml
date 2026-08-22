@@ -1,0 +1,22 @@
+# Build the GitHub tool service image without a local Docker daemon.
+#
+#   gcloud builds submit --config cloudbuild.ghtools.yaml --substitutions=_TAG=manual .
+#
+# The deploy workflow builds the same Dockerfile on its own runner; this exists
+# so the image can be proven before a push turns CI into the feedback loop.
+substitutions:
+  _TAG: manual
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/github_tools/Dockerfile
+      - -t
+      - us-central1-docker.pkg.dev/patch-505223/patchapi/github-tools:${_TAG}
+      - .
+images:
+  - us-central1-docker.pkg.dev/patch-505223/patchapi/github-tools:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 1800s
