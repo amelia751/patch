@@ -71,8 +71,16 @@ VALUES (
     $19, now()
 )
 ON CONFLICT (provider, external_id) DO UPDATE
-SET title                = EXCLUDED.title,
-    product              = EXCLUDED.product,
+-- A caller with nothing better to offer passes the change id, and overwriting
+-- "Imagen 4 retirement" with "imagen4-retirement-2026-08-17" would make the
+-- card worse for no gain. Only a real title replaces a real one.
+SET title                = CASE
+        WHEN $6 <> '' AND $6 <> change_events.external_id THEN $6
+        ELSE change_events.title
+    END,
+    product              = CASE
+        WHEN $3 <> '' THEN $3 ELSE change_events.product
+    END,
     change_kind          = EXCLUDED.change_kind,
     severity             = EXCLUDED.severity,
     affected_identifiers = EXCLUDED.affected_identifiers,
@@ -190,7 +198,7 @@ async def write_manifest(
         _UPSERT_EVENT_SQL,
         manifest.change_id,
         manifest.provider,
-        product or manifest.provider.title(),
+        product,
         change_kind_for(change_type),
         str(manifest.severity),
         title or manifest.change_id,

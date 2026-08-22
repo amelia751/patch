@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from packages.schemas.config import MAX_FINDING_EXCERPT_CHARS
 from packages.schemas.impact_report import ImpactReport
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 MAX_NOTES_CHARS: Final[int] = 1000
+MAX_EXCERPT_CHARS: Final[int] = MAX_FINDING_EXCERPT_CHARS
 
 _EVENT_ID_SQL: Final[str] = """
 SELECT id FROM change_events WHERE provider = $1 AND external_id = $2
@@ -175,6 +177,84 @@ async def write_report_payload(
     return await write_report(connection, ImpactReport.model_validate(payload), **kwargs)
 
 
+def reports_from_index(
+    rows: list[dict[str, Any]],
+    *,
+    change_id: str,
+    run_id: str,
+    identifiers: set[str],
+    semantic: bool,
+    notes: str = "",
+) -> list[ImpactReport]:
+    """One report per repository, built from what the indexer already stored.
+
+    The index carries the path, line, usage kind and excerpt of every hit, which
+    is the whole of an `ImpactFinding`. Assessing from it costs no clone and no
+    sandbox: the tree was already walked once, when it was pushed.
+
+    That makes this the deterministic half. An agent may replace `notes` with a
+    better sentence, but it cannot add a finding for a file the indexer never
+    saw.
+    """
+    by_repo: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row.get("identifier") not in identifiers:
+            continue
+        by_repo.setdefault(str(row.get("repository") or ""), []).append(row)
+
+    reports: list[ImpactReport] = []
+    for repository, hits in sorted(by_repo.items()):
+        if not repository or not hits:
+            continue
+        findings = [
+            {
+                "identifier": hit["identifier"],
+                "file": hit["file_path"],
+                "kind": hit["usage_kind"],
+                "line": hit.get("line_start"),
+                "excerpt": (hit.get("excerpt") or "")[:MAX_EXCERPT_CHARS] or None,
+            }
+            for hit in hits
+        ]
+        reports.append(
+            ImpactReport.model_validate(
+                {
+                    "run_id": run_id,
+                    "change_id": change_id,
+                    "repo": repository,
+                    "base_sha": str(hits[0].get("observed_sha") or ""),
+                    "affected": True,
+                    "confidence": _confidence(hits),
+                    "migration_character": "semantic" if semantic else "mechanical",
+                    # The indexer knows where a call site is, not which suite
+                    # covers it. Naming a check nobody runs would be worse than
+                    # leaving the choice to the patch lane.
+                    "required_checks": ["verify-migration"],
+                    "findings": findings,
+                    "notes": notes or _default_notes(hits),
+                }
+            )
+        )
+    return reports
+
+
+def _confidence(hits: list[dict[str, Any]]) -> float:
+    """The weakest detection among the hits, since one report covers them all."""
+    values = [float(hit.get("confidence") or 0.0) for hit in hits]
+    return min(values) if values else 0.0
+
+
+def _default_notes(hits: list[dict[str, Any]]) -> str:
+    """A factual sentence about this repository, until an agent writes a better one."""
+    files = len({hit["file_path"] for hit in hits})
+    runtime = sum(1 for hit in hits if str(hit.get("usage_kind")) == "runtime_source")
+    return (
+        f"{len(hits)} reference{'s' if len(hits) != 1 else ''} "
+        f"across {files} file{'s' if files != 1 else ''}, "
+        f"{runtime} in code that runs."
+    )
+
+
 async def impacts_for(
     connection: asyncpg.Connection, *, project_id: str, external_id: str
 ) -> list[dict[str, Any]]:
@@ -199,10 +279,12 @@ async def impacts_for(
 
 
 __all__ = [
+    "MAX_EXCERPT_CHARS",
     "MAX_NOTES_CHARS",
     "ImpactWrite",
     "event_id_for",
     "impacts_for",
+    "reports_from_index",
     "write_report",
     "write_report_payload",
 ]

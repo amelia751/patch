@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -12,15 +11,14 @@ from patchapi_agent_runner import runner
 
 from packages.events.config import EventType, TrustLevel
 from packages.events.envelope import EventEnvelope
+from packages.schemas.change_manifest import ChangeManifest
 
 OCCURRED_AT = "2026-08-22T12:00:00+00:00"
 EXTERNAL_ID = "imagen4-retirement-2026-08-17"
 IDENTIFIER = "imagen-4.0-generate-001"
 
 
-def normalized(
-    *, external_id: str = EXTERNAL_ID, origin: str = "deterministic"
-) -> EventEnvelope:
+def normalized(*, external_id: str = EXTERNAL_ID, origin: str = "deterministic") -> EventEnvelope:
     return EventEnvelope(
         event_type=EventType.CHANGE_NORMALIZED,
         event_id="normalized-1",
@@ -41,13 +39,20 @@ class RecordingConnection:
 
     def __init__(self) -> None:
         self.executed: list[tuple[str, tuple[Any, ...]]] = []
+        self.rows: list[tuple[str, tuple[Any, ...]]] = []
 
     async def execute(self, query: str, *args: Any) -> str:
         self.executed.append((query, args))
         return "UPDATE 1"
 
     async def fetchrow(self, query: str, *args: Any) -> dict[str, Any] | None:
-        return {"external_id": EXTERNAL_ID}
+        self.rows.append((query, args))
+        return {"external_id": EXTERNAL_ID, "id": "00000000-0000-0000-0000-000000000001"}
+
+    async def fetch(self, query: str, *args: Any) -> list[dict[str, Any]]:
+        # No project subscribes in these tests, so the impact pass has nothing
+        # to assess and the corpus write is what is under examination.
+        return []
 
 
 @pytest.fixture
@@ -81,9 +86,7 @@ async def test_this_lane_does_not_react_to_its_own_output() -> None:
     """Enriching our own event would loop, with a per-turn bill attached."""
     conn = RecordingConnection()
 
-    outcome = await runner.run_change_intelligence(
-        conn, normalized(origin="change_intelligence")
-    )
+    outcome = await runner.run_change_intelligence(conn, normalized(origin="change_intelligence"))
 
     assert outcome.action == "skipped"
     assert outcome.reason == "this lane wrote it"
@@ -121,20 +124,27 @@ async def test_an_unavailable_model_does_not_nack_the_delivery(
     assert conn.executed == []
 
 
-async def test_a_recorded_manifest_becomes_rationale_on_the_event(
+def a_manifest() -> ChangeManifest:
+    return ChangeManifest.model_validate(
+        {
+            "provider": "google",
+            "change_id": EXTERNAL_ID,
+            "change_type": "model_retirement",
+            "severity": "high",
+            "effective_at": "2026-08-17",
+            "affected_identifiers": [IDENTIFIER],
+            "recommended_replacement": "gemini-3.1-flash-image",
+            "semantic_migration_required": True,
+            "source_urls": ["https://ai.google.dev/gemini-api/docs/deprecations"],
+        }
+    )
+
+
+async def test_a_recorded_manifest_becomes_a_corpus_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    @dataclass
-    class FakeManifest:
-        affected_identifiers: list[str] = field(default_factory=lambda: [IDENTIFIER])
-        recommended_replacement: str = "gemini-3.1-flash-image"
-        semantic_migration_required: bool = True
-        source_urls: list[str] = field(
-            default_factory=lambda: ["https://ai.google.dev/gemini-api/docs/deprecations"]
-        )
-
     async def fake_manifest(_change_id: str, *, run_id: str) -> tuple[Any, str]:
-        return FakeManifest(), "The probe 404s on both surfaces and the notice agrees."
+        return a_manifest(), "The probe 404s on both surfaces and the notice agrees."
 
     monkeypatch.setattr(runner, "notice_available", lambda *_a, **_k: True)
     monkeypatch.setattr(runner, "_environment_reason", lambda: None)
@@ -143,12 +153,45 @@ async def test_a_recorded_manifest_becomes_rationale_on_the_event(
 
     outcome = await runner.run_change_intelligence(conn, normalized())
 
-    assert outcome.action == "enriched"
+    assert outcome.action == "normalized"
     assert outcome.replacement == "gemini-3.1-flash-image"
-    query, args = conn.executed[0]
-    assert query.strip().startswith("UPDATE change_events")
-    assert args[1] == "The probe 404s on both surfaces and the notice agrees."
-    assert args[3] == "semantic"
+    query, args = conn.rows[0]
+    assert query.strip().startswith("INSERT INTO change_events")
+    assert EXTERNAL_ID in args
+    assert "The probe 404s on both surfaces and the notice agrees." in args
+    # One row per identifier, plus the replacement it points at.
+    identifier_writes = [
+        call
+        for call in conn.executed
+        if "change_event_identifiers" in call[0] and "INSERT" in call[0]
+    ]
+    assert len(identifier_writes) == 2
+
+
+async def test_the_rationale_may_not_describe_a_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The corpus row is shown to every subscriber, so it holds no project claim.
+
+    Enforced by where the sentence is stored rather than by reading it: nothing
+    in this path is given a project, so there is no repository for the agent to
+    describe.
+    """
+
+    async def fake_manifest(_change_id: str, *, run_id: str) -> tuple[Any, str]:
+        return a_manifest(), "Both identifiers 404."
+
+    monkeypatch.setattr(runner, "notice_available", lambda *_a, **_k: True)
+    monkeypatch.setattr(runner, "_environment_reason", lambda: None)
+    monkeypatch.setattr(runner, "_produce_manifest", fake_manifest)
+    conn = RecordingConnection()
+
+    await runner.run_change_intelligence(conn, normalized())
+
+    corpus_writes = [call for call in conn.rows if "change_events" in call[0]]
+    assert corpus_writes, "the notice should have produced a corpus row"
+    for _query, args in corpus_writes:
+        assert not any("project_id" in str(arg) for arg in args)
 
 
 async def test_an_agent_that_asks_for_a_human_writes_nothing(
