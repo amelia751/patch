@@ -58,13 +58,16 @@ async def promote_corpus(
     """
     from packages.state.findings import refresh_project_findings
     from packages.state.inbox_corpus import ensure_inbox_corpus
+    from packages.state.sdk_notices import ensure_sdk_events
 
     rows = await connection.fetch(_SUBSCRIBED_SQL, provider)
     if not rows:
         log.info("no project is subscribed to %s", provider)
         return {}
 
-    added = 0
+    # Registry answers are the same for every project, so they are fetched once
+    # for the provider rather than once per project inside the loop below.
+    added = await ensure_sdk_events(connection, provider)
     for row in rows:
         counts = await ensure_inbox_corpus(connection, row["id"], provider)
         added += counts["watchlist"] + counts["catalog"] + counts["notes"]

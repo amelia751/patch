@@ -19,4 +19,5 @@ only-include = ["__init__.py"]
 "__init__.py" = "packages/repo_scan/__init__.py"
 "classify.py" = "packages/repo_scan/classify.py"
 "config.py" = "packages/repo_scan/config.py"
+"dependencies.py" = "packages/repo_scan/dependencies.py"
 "scan.py" = "packages/repo_scan/scan.py"

@@ -63,8 +63,12 @@ SCANNED_EXTENSIONS: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Files without an extension that still carry configuration worth scanning.
-SCANNED_FILENAMES: Final[frozenset[str]] = frozenset({"Dockerfile", "Makefile", ".env"})
+# Files without a scanned extension that still carry configuration worth
+# reading. `go.mod` is here for the dependency parser, which needs the manifest
+# even though nothing in it looks like a model id.
+SCANNED_FILENAMES: Final[frozenset[str]] = frozenset(
+    {"Dockerfile", "Makefile", ".env", "go.mod"}
+)
 
 # A file larger than this is treated as generated or vendored. Reading it would
 # cost more than the signal is worth and risks pulling a bundle into evidence.

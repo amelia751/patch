@@ -178,6 +178,7 @@ async def poll_provider(
     drops the one event that mattered.
     """
     from packages.providers.google.probe import probe_identifiers
+    from packages.providers.sdk import is_sdk_identifier, probe_packages
     from packages.state.findings import previous_probe_statuses, record_probe_results
 
     previous = await previous_probe_statuses(connection, provider=provider)
@@ -187,7 +188,13 @@ async def poll_provider(
         log.info("the index names no %s identifiers; nothing to poll", provider)
         return PollOutcome(provider=provider, results=(), transitions=(), published=())
 
-    results = await probe_identifiers(identifiers)
+    # Two surfaces, one diff. A model is asked of the publisher's listing and a
+    # package of its registry, but "stopped resolving" means the same thing for
+    # both, so the transition machinery downstream does not care which it was.
+    models = [item for item in identifiers if not is_sdk_identifier(item)]
+    sdks = [item for item in identifiers if is_sdk_identifier(item)]
+    results = await probe_identifiers(models) if models else ()
+    results += await probe_packages(sdks)
     transitions = detect_transitions(previous, results)
     for change in transitions:
         log.info(

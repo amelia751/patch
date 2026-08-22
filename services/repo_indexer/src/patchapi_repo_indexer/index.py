@@ -16,13 +16,22 @@ which files moved.
 """
 
 import logging
+import os
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from packages.repo_scan import IdentifierHit, scan_text, scan_tree, should_scan_file
+from packages.providers.sdk import provider_for_package, sdk_identifier
+from packages.repo_scan import (
+    IdentifierHit,
+    is_manifest,
+    parse_manifest,
+    scan_text,
+    scan_tree,
+    should_scan_file,
+)
 from packages.repo_scan.classify import classify_path
-from packages.repo_scan.config import MAX_FILE_BYTES
+from packages.repo_scan.config import MAX_FILE_BYTES, SKIP_DIRECTORIES
 from patchapi_repo_indexer.astgrep.runner import StructuralMatch, configured_rule_dir, scan_files
 from patchapi_repo_indexer.config import (
     DEFAULT_PROVIDER,
@@ -204,9 +213,14 @@ def build_inventory_literal(
         hits: Sequence[IdentifierHit] = result.hits
         files_scanned = result.files_scanned
         scope = SCOPE_FULL_TREE
+        allowed_paths = None
     else:
         hits, files_scanned = _scan_changed_paths(root_path, changed_paths, wanted)
         scope = SCOPE_CHANGED_PATHS
+        allowed_paths = _changed_path_set(root_path, changed_paths)
+
+    usages = [_record(hit, provider) for hit in hits]
+    usages.extend(_dependency_records(root_path, provider, allowed_paths))
 
     return ApiUsageInventory(
         repository=repository,
@@ -216,8 +230,63 @@ def build_inventory_literal(
         watched_identifiers=wanted,
         scope=scope,
         files_scanned=files_scanned,
-        usages=tuple(_record(hit, provider) for hit in hits),
+        usages=tuple(usages),
     )
+
+
+def _manifest_paths(root: Path, allowed_paths: set[str] | None) -> list[str]:
+    """Every dependency manifest in the checkout, in a stable order."""
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(name for name in dirnames if name not in SKIP_DIRECTORIES)
+        for filename in sorted(filenames):
+            if not is_manifest(filename):
+                continue
+            relative = (Path(dirpath) / filename).relative_to(root).as_posix()
+            if allowed_paths is None or relative in allowed_paths:
+                found.append(relative)
+    return found
+
+
+def _dependency_records(
+    root: Path, provider: str, allowed_paths: set[str] | None
+) -> list[ApiUsageRecord]:
+    """Inventory rows for the provider's own SDK, read from the manifests.
+
+    Walked directly rather than queried from the index: a dependency table is
+    structured, and the constraint that matters (`"^1.4.0"`) is a value in it,
+    not a literal a regex over source lines would recognise as a version.
+
+    Packages outside `PROVIDER_PACKAGES` are dropped here. PatchAPI is not a
+    dependency updater — an SDK break only belongs in the inbox when it comes
+    from a provider the project subscribed to.
+    """
+    records: list[ApiUsageRecord] = []
+    for relative in _manifest_paths(root, allowed_paths):
+        file_path = root / relative
+        try:
+            if file_path.stat().st_size > MAX_FILE_BYTES:
+                continue
+            text = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for hit in parse_manifest(text, path=relative):
+            if provider_for_package(hit.ecosystem, hit.name) != provider:
+                continue
+            records.append(
+                ApiUsageRecord(
+                    provider=provider,
+                    identifier=sdk_identifier(hit.ecosystem, hit.name),
+                    file_path=relative,
+                    line_start=hit.line_number,
+                    line_end=hit.line_number,
+                    usage_kind=classify_path(relative),
+                    confidence=LITERAL_MATCH_CONFIDENCE,
+                    excerpt=hit.excerpt or f"{hit.name} {hit.constraint}".strip(),
+                )
+            )
+    records.sort(key=lambda record: (record.file_path, record.line_start, record.identifier))
+    return records
 
 
 def _changed_path_set(root: Path, changed_paths: Iterable[str]) -> set[str]:
@@ -380,6 +449,12 @@ def build_inventory_zoekt(
     else:
         files_scanned = len(allowed_paths or ())
 
+    # ast-grep confirms call sites, and a dependency table has none to confirm,
+    # so the manifest rows are appended after Layer B rather than passed through
+    # it. They carry their own evidence: the line that pins the version.
+    usages = list(_confirm_structurally(root_path, records))
+    usages.extend(_dependency_records(root_path, provider, allowed_paths))
+
     return ApiUsageInventory(
         repository=repository,
         branch=branch,
@@ -388,5 +463,5 @@ def build_inventory_zoekt(
         watched_identifiers=wanted,
         scope=scope,
         files_scanned=files_scanned,
-        usages=_confirm_structurally(root_path, records),
+        usages=tuple(usages),
     )

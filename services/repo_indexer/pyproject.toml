@@ -8,6 +8,7 @@ dependencies = [
     "patchapi-repo-scan",
     "patchapi-schemas",
     "patchapi-events",
+    "patchapi-providers",
     "patchapi-state",
     "pydantic>=2.9,<3",
     "asyncpg>=0.30,<0.31",
@@ -27,6 +28,7 @@ patchapi-repo-indexer-serve = "patchapi_repo_indexer.serve:main"
 patchapi-repo-scan = { workspace = true }
 patchapi-schemas = { workspace = true }
 patchapi-events = { workspace = true }
+patchapi-providers = { workspace = true }
 patchapi-state = { workspace = true }
 
 [build-system]

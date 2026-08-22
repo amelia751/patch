@@ -33,6 +33,8 @@ only-include = ["__init__.py"]
 [tool.hatch.build.targets.wheel.force-include]
 "__init__.py" = "packages/providers/__init__.py"
 "dotenv.py" = "packages/providers/dotenv.py"
+"probe_result.py" = "packages/providers/probe_result.py"
+"sdk.py" = "packages/providers/sdk.py"
 "google/__init__.py" = "packages/providers/google/__init__.py"
 "google/config.py" = "packages/providers/google/config.py"
 "google/deprecation_feed.py" = "packages/providers/google/deprecation_feed.py"

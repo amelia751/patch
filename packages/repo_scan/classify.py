@@ -15,6 +15,8 @@ import re
 from enum import StrEnum
 from typing import Final
 
+from packages.repo_scan.dependencies import is_manifest
+
 
 class UsageKind(StrEnum):
     RUNTIME_SOURCE = "runtime_source"
@@ -58,6 +60,10 @@ def classify_path(path: str) -> UsageKind:
         return UsageKind.TEST
     if directories & _EXAMPLE_DIRECTORIES:
         return UsageKind.EXAMPLE
+    if is_manifest(filename):
+        # Ahead of the extension rules: `requirements.txt` is what pins the SDK
+        # a service installs, and `.txt` would otherwise read it as prose.
+        return UsageKind.CONFIGURATION
     if directories & _DOC_DIRECTORIES or extension in _DOC_EXTENSIONS:
         return UsageKind.DOCUMENTATION_EXAMPLE
     if extension in _CONFIG_EXTENSIONS or filename.startswith(".env"):

@@ -64,6 +64,7 @@ only-include = ["__init__.py"]
 "refresh.py" = "packages/state/refresh.py"
 "pool.py" = "packages/state/pool.py"
 "runs.py" = "packages/state/runs.py"
+"sdk_notices.py" = "packages/state/sdk_notices.py"
 "serve.py" = "packages/state/serve.py"
 "session.py" = "packages/state/session.py"
 "users.py" = "packages/state/users.py"

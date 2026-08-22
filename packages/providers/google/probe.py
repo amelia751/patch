@@ -23,15 +23,14 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 import httpx
 
 from packages.providers.google.errors import GoogleProviderError
+from packages.providers.probe_result import ProbeResult, ProbeStatus
 
 GEMINI_MODELS_URL: Final[str] = "https://generativelanguage.googleapis.com/v1beta/models"
 VERTEX_MODELS_URLS: Final[tuple[str, ...]] = (
@@ -68,37 +67,6 @@ class ProbeUnavailableError(GoogleProviderError):
     """The probe could not reach a surface. Not evidence of retirement."""
 
 
-class ProbeStatus(StrEnum):
-    """What the live surface said about an identifier."""
-
-    RESOLVES = "resolves"
-    NOT_FOUND = "not_found"
-    UNKNOWN = "unknown"
-
-
-@dataclass(frozen=True, slots=True)
-class ProbeResult:
-    """One identifier, checked against one surface, at one moment."""
-
-    identifier: str
-    surface: str
-    status: ProbeStatus
-    checked_at: str
-    detail: str
-    source_url: str
-
-    def to_evidence(self) -> dict[str, Any]:
-        """JSON-safe record for a trace, a manifest, or a PR body."""
-        return {
-            "identifier": self.identifier,
-            "surface": self.surface,
-            "status": str(self.status),
-            "checked_at": self.checked_at,
-            "detail": self.detail,
-            "source_url": self.source_url,
-        }
-
-
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -118,10 +86,12 @@ def is_service_identifier(identifier: str) -> bool:
 
 def is_probeable(identifier: str) -> bool:
     """False for third-party ids and for anything that is not a model name."""
+    from packages.providers.sdk import is_sdk_identifier
+
     raw = identifier.strip().lower()
     if not raw:
         return False
-    if is_service_identifier(raw):
+    if is_service_identifier(raw) or is_sdk_identifier(raw):
         return False
     return not raw.startswith(FOREIGN_PREFIXES)
 

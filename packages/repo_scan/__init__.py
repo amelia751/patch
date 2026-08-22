@@ -11,6 +11,11 @@ from packages.repo_scan.classify import (
     classify_path,
 )
 from packages.repo_scan.config import SCANNER_VERSION
+from packages.repo_scan.dependencies import (
+    DependencyHit,
+    is_manifest,
+    parse_manifest,
+)
 from packages.repo_scan.scan import (
     IdentifierHit,
     ScanResult,
@@ -22,10 +27,13 @@ from packages.repo_scan.scan import (
 __all__ = [
     "RUNTIME_USAGE_KINDS",
     "SCANNER_VERSION",
+    "DependencyHit",
     "IdentifierHit",
     "ScanResult",
     "UsageKind",
     "classify_path",
+    "is_manifest",
+    "parse_manifest",
     "scan_text",
     "scan_tree",
     "should_scan_file",
