@@ -5,6 +5,11 @@ Vertex prefix leftover, fal-ai false positive, Spanish “imagen”). Official
 catalog rows and ingested release notes that name a used identifier are
 added beside this set by `inbox_corpus`. This file stays a closed demo
 corpus — it does not invent a deprecation from a live HTML crawl.
+
+Every summary here describes the change, never a project. One row is shown to
+every subscriber, so a sentence like "no usages in this project" is false for
+the next reader and contradicts the inventory rendered beside it. Which repos
+are affected is counted deterministically per project and displayed already.
 """
 
 from __future__ import annotations
@@ -75,8 +80,9 @@ GOOGLE_WATCHLIST: Final[tuple[WatchlistNote, ...]] = (
         "severity": "high",
         "title": "Gemini 2.0 Flash shutdown",
         "summary": (
-            "gemini-2.0-flash identifiers retire. No usages in this project, "
-            "so the note is watched and not opened as a finding."
+            "The gemini-2.0-flash identifiers stop being served. Each has a "
+            "direct 3.5 equivalent, so the move is a string rewrite rather "
+            "than a change of request surface."
         ),
         "source_urls": [
             "https://ai.google.dev/gemini-api/docs/deprecations",
@@ -109,9 +115,9 @@ GOOGLE_WATCHLIST: Final[tuple[WatchlistNote, ...]] = (
         "severity": "medium",
         "title": "gemini-3.1-flash-image-preview no longer resolves",
         "summary": (
-            "The pinned Egaki catalog still names the preview id. The provider "
-            "replacement is a claim — the installed SDK must resolve it before "
-            "a patch writes it."
+            "The preview id stops resolving in favour of the stable one. The "
+            "provider's replacement is a claim — the installed SDK has to "
+            "resolve it before a patch writes it."
         ),
         "source_urls": ["https://ai.google.dev/gemini-api/docs/changelog"],
         "identifiers": ["gemini-3.1-flash-image-preview"],
@@ -136,8 +142,8 @@ GOOGLE_WATCHLIST: Final[tuple[WatchlistNote, ...]] = (
         "severity": "low",
         "title": "Gemini 3.5 Flash generally available",
         "summary": (
-            "New identifier on the generateContent surface. Nothing in this "
-            "project needs to move because of it."
+            "A new identifier on the generateContent surface. Nothing is "
+            "retired by it, so adopting it is a choice rather than a repair."
         ),
         "source_urls": ["https://ai.google.dev/gemini-api/docs/models"],
         "identifiers": ["gemini-3.5-flash"],

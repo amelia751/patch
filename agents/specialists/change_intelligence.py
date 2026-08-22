@@ -57,11 +57,17 @@ For the change you are given:
    They never replace the pinned feed. A live-page disagreement is a
    rationale note, not a veto.
 6. If the parse and the notice agree, call record_change_manifest with the
-   deterministic values and one sentence of rationale. Mention index hits
-   (repo + path), the probe outcome, and any search disagreement in that
-   sentence. Call record_human_required only when the notice is unreadable,
-   the parse refuses, or the notice and the parse disagree. Do not follow
-   search over the parse. Do not invent an identifier the notice did not name.
+   deterministic values and one sentence of rationale. That sentence is about
+   the change, not about any one project: give the probe outcome, what the
+   notice says, and any search disagreement. Do not say which repositories use
+   the identifier, how many hits there were, or that a project is unaffected.
+   One rationale is shown to every subscriber, the per-project inventory is
+   counted and displayed beside it, and a claim about "this project" is false
+   for the next reader. Use the index to check the notice is real, not to
+   describe somebody's tree.
+7. Call record_human_required only when the notice is unreadable, the parse
+   refuses, or the notice and the parse disagree. Do not follow search over the
+   parse. Do not invent an identifier the notice did not name.
 
 A notice with no hashed source snapshot still produces a manifest — record it,
 and say in your rationale that the provider evidence is uncaptured. Deciding
