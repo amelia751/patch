@@ -688,6 +688,81 @@ async def test_manifest_uses_sql_when_the_backend_is_literal(
     assert world.searches == []
 
 
+# --------------------------------------------------------------------------- #
+# handle_provider_change
+# --------------------------------------------------------------------------- #
+
+
+def provider_change_event(transition: str = "retired") -> EventEnvelope:
+    return EventEnvelope(
+        event_type=EventType.PROVIDER_CHANGE_DETECTED,
+        event_id="probe-1",
+        run_id="provider-1",
+        occurred_at=OCCURRED_AT,
+        trust=TrustLevel.UNTRUSTED_PROVIDER_INPUT,
+        payload={
+            "provider": "google",
+            "identifier": IDENTIFIER,
+            "surface": "gemini_api",
+            "transition": transition,
+            "source_url": "https://ai.google.dev/gemini-api/docs/deprecations",
+            "checked_at": OCCURRED_AT,
+        },
+    )
+
+
+def _patch_provider_lanes(
+    monkeypatch: pytest.MonkeyPatch, *, external_id: str | None
+) -> list[tuple[str, str]]:
+    applied: list[tuple[str, str]] = []
+
+    async def fake_apply(_conn: Any, **kwargs: Any) -> dict[str, Any]:
+        applied.append((kwargs["identifier"], kwargs["transition"]))
+        return {"recorded": None, "reclassified": 2, "reason": None}
+
+    async def fake_event_for(_conn: Any, **_kwargs: Any) -> str | None:
+        return external_id
+
+    monkeypatch.setattr("packages.state.discovery.apply_provider_change", fake_apply)
+    monkeypatch.setattr("packages.state.enrichment.event_for_identifier", fake_event_for)
+    return applied
+
+
+async def test_a_retirement_reclassifies_and_announces_the_normalized_change(
+    conn: FakeConnection,
+    world: FakeWorld,
+    effects: worker.Effects,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The agent lane cannot explain a release it was never told about."""
+    applied = _patch_provider_lanes(monkeypatch, external_id="imagen4-retirement-2026-08-17")
+
+    result = await worker.handle_provider_change(conn, provider_change_event(), effects=effects)
+
+    assert result.action == worker.ACTION_PROVIDER_APPLIED
+    assert applied == [(IDENTIFIER, "retired")]
+    assert [EventType(item.event_type) for item in world.published] == [
+        EventType.CHANGE_NORMALIZED
+    ]
+    payload = world.published[0].payload
+    assert payload["external_id"] == "imagen4-retirement-2026-08-17"
+    assert payload["origin"] == "deterministic"
+    assert payload["affected_identifiers"] == [IDENTIFIER]
+
+
+async def test_nothing_is_announced_when_no_change_event_covers_the_identifier(
+    conn: FakeConnection,
+    world: FakeWorld,
+    effects: worker.Effects,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_provider_lanes(monkeypatch, external_id=None)
+
+    await worker.handle_provider_change(conn, provider_change_event(), effects=effects)
+
+    assert world.published == []
+
+
 def test_workspace_prefix_matches_path_segments_only() -> None:
     paths = ["apps/web/page.tsx", "apps/webhooks/main.py", "apps/web"]
     assert worker._covered("apps/web", paths) == ("apps/web", "apps/web/page.tsx")

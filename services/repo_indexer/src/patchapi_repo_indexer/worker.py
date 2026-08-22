@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from packages.events.config import EventType
+from packages.events.provider_events import change_normalized_event
 from packages.events.publisher import publish_async
 from packages.events.repo_events import branch_from_ref, index_updated_event
 from packages.state.findings import refresh_after_repo_ready
@@ -726,20 +727,35 @@ async def handle_provider_change(
     contribution to the same event, and this handler must be correct without
     them (constraint 10 — never invent a migration).
     """
-    del effects
     from packages.state.discovery import apply_provider_change
+    from packages.state.enrichment import event_for_identifier
 
     payload = envelope.payload
     identifier = _require(payload, "identifier")
+    provider = _text(payload, "provider") or DEFAULT_PROVIDER
     outcome = await apply_provider_change(
         conn,
-        provider=_text(payload, "provider") or DEFAULT_PROVIDER,
+        provider=provider,
         identifier=identifier,
         surface=_text(payload, "surface") or "",
         transition=_text(payload, "transition") or "",
         source_url=_text(payload, "source_url") or "",
         checked_at=_text(payload, "checked_at") or "",
     )
+    # Status is settled, so the release can now be explained. Publishing the
+    # external id rather than the identifier means the agent lane enriches the
+    # card a reader is already looking at instead of creating a second one.
+    external_id = await event_for_identifier(conn, provider=provider, identifier=identifier)
+    if external_id is not None:
+        await effects.publish(
+            change_normalized_event(
+                provider=provider,
+                external_id=external_id,
+                affected_identifiers=[identifier],
+                origin="deterministic",
+                occurred_at=effects.now().isoformat(),
+            )
+        )
     return HandlerResult(
         action=ACTION_PROVIDER_APPLIED,
         repository=identifier,
