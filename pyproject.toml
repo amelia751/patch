@@ -43,6 +43,10 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+# The `packages/*` members install as built wheels rather than editable trees,
+# so without this a test run imports the copy from the last `uv sync` and an
+# edit to a shared package is silently untested until someone reinstalls.
+pythonpath = ["."]
 # No `testpaths`: collection starts at the repo root so a member tree added by
 # another worker is picked up without editing this file.
 norecursedirs = [
@@ -53,7 +57,10 @@ norecursedirs = [
     "infra",
     "node_modules",
     "sandbox/runner/testdata",
-    "demo/egaki/checkout",
+    # Untracked fixture checkouts. Their suites belong to the customer trees the
+    # sandbox runs, and one of them fails on purpose — that failure is the demo,
+    # not a regression in PatchAPI.
+    "demo",
 ]
 addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
