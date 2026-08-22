@@ -61,6 +61,32 @@ EXIT_SKIP: Final[int] = 3
 DEFAULT_CHANGE_ID: Final[str] = "imagen4-retirement-2026-08-17"
 DEFAULT_FEED_DIR: Final[Path] = REPO_ROOT / "demo" / "fixtures"
 DEFAULT_RUN_ID: Final[str] = "smoke-adk-orchestrator"
+DEFAULT_DSN_FILE: Final[Path] = REPO_ROOT / ".secrets" / "database-url-proxy.txt"
+
+
+async def _load_index(project: str, dsn: str) -> tuple[list[dict], str]:
+    """Inventory rows for `project`, so the index tools are not reading an empty list."""
+    import asyncpg
+
+    from packages.state.index_inventory import index_summary, load_index_usages
+
+    connection = await asyncpg.connect(dsn)
+    try:
+        row = await connection.fetchrow(
+            "SELECT id FROM projects WHERE name = $1 OR id::text = $1", project
+        )
+        if row is None:
+            return [], f"no project named {project!r}"
+        project_id = row["id"]
+        usages = await load_index_usages(connection, project_id)
+        summary = await index_summary(connection, project_id)
+    finally:
+        await connection.close()
+    note = (
+        f"{summary['rows']} rows, {summary['repositories']} repos, "
+        f"{summary['identifiers']} identifiers"
+    )
+    return usages, note
 
 
 def _apply_repo_pins() -> None:
@@ -82,11 +108,21 @@ def _print_topology(fleet: dict[AgentId, object]) -> None:
 
 
 async def _run(
-    change_id: str, feed_dir: Path, run_id: str, trace_out: Path | None
+    change_id: str,
+    feed_dir: Path,
+    run_id: str,
+    trace_out: Path | None,
+    project: str | None,
+    dsn: str | None,
 ) -> tuple[int, str]:
     from agents.orchestrator import Orchestrator
 
     context = RunContext(run_id=run_id, repo_root=REPO_ROOT, feed_dir=feed_dir)
+    if project and dsn:
+        usages, note = await _load_index(project, dsn)
+        context.index_usages = usages
+        context.project_id = project
+        print(f"index:          {project} — {note}")
     trace = ToolTrace(run_id=run_id)
     orchestrator = Orchestrator(context, trace)
 
@@ -159,6 +195,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="write the tool trace as NDJSON to this path",
     )
+    parser.add_argument(
+        "--project",
+        default=None,
+        help="project name or id whose repo index the agent may read",
+    )
+    parser.add_argument(
+        "--dsn-file",
+        type=Path,
+        default=DEFAULT_DSN_FILE,
+        help="file holding the Postgres DSN used with --project",
+    )
     args = parser.parse_args(argv)
 
     reason = adk_unavailable_reason()
@@ -183,9 +230,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     applied = configure_vertex_environment(config)
     print(f"vertex:         project {applied['GOOGLE_CLOUD_PROJECT']} @ {config.location}")
 
+    dsn = None
+    if args.project:
+        if not args.dsn_file.is_file():
+            print(f"FAIL: --project needs a DSN; {args.dsn_file} does not exist")
+            return EXIT_FAIL
+        dsn = args.dsn_file.read_text(encoding="utf-8").strip()
+
     try:
         code, message = asyncio.run(
-            _run(args.change_id, args.feed_dir, args.run_id, args.trace_out)
+            _run(
+                args.change_id,
+                args.feed_dir,
+                args.run_id,
+                args.trace_out,
+                args.project,
+                dsn,
+            )
         )
     # A failed run is a FAIL line and an exit code, not a traceback: this is a
     # verification entry point, and its contract is the three outcomes.
