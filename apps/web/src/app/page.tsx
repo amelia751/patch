@@ -881,6 +881,10 @@ function SystemPageContent() {
             hasProject={!!configureProject}
             projectId={configureProject?.id}
             onBrowseSubscriptions={() => setMainWorkspaceTab("subscription")}
+            userId={user?.id || "default"}
+            workspaces={workspacesForSecrets}
+            repos={isAuthenticated ? secretsRepos : []}
+            secretsPreviewMode={!isAuthenticated}
           />
         </TabsContent>
 

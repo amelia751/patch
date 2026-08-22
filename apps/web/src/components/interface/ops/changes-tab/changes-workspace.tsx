@@ -6,6 +6,7 @@ import { SectionRail, SectionRailButton } from "@/components/interface/shared/se
 import { Spinner } from "@/components/ui/spinner";
 import type { ChangeActionId, RunProgress } from "./actions";
 import { ChangesInbox } from "./changes-tab";
+import type { SecretRepoOption, SecretWorkspaceOption } from "@/components/interface/secret-managers";
 import { dismissProjectChange, fetchProjectChanges, reopenProjectChange } from "./api";
 import { runKey, type ProjectChange } from "./data";
 import { RunsPanel, bucketNeedsYou } from "./runs-panel";
@@ -34,10 +35,18 @@ export function ChangesTab({
   hasProject = true,
   projectId,
   onBrowseSubscriptions,
+  userId,
+  workspaces = [],
+  repos = [],
+  secretsPreviewMode = false,
 }: {
   hasProject?: boolean;
   projectId?: string;
   onBrowseSubscriptions?: () => void;
+  userId?: string;
+  workspaces?: SecretWorkspaceOption[];
+  repos?: SecretRepoOption[];
+  secretsPreviewMode?: boolean;
 }) {
   const [section, setSection] = useState<Section>("releases");
   const [boot] = useState(initialWorkspace);
@@ -224,6 +233,11 @@ export function ChangesTab({
             selectedId={selectedRunId}
             onSelect={setSelectedRunId}
             onContinue={onContinue}
+            projectId={projectId}
+            userId={userId}
+            workspaces={workspaces}
+            repos={repos}
+            secretsPreviewMode={secretsPreviewMode}
           />
         )}
       </div>

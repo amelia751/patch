@@ -100,6 +100,8 @@ export interface MockRun {
   attempt: number;
   attemptBudget: number;
   pauseReason?: string;
+  /** What a Need-you pause is actually waiting on. Sandbox allocation is never this. */
+  need?: "secret" | "gcp";
   commands: SandboxCommand[];
   diffs: DiffFile[];
   checks: VerifyCheck[];
@@ -168,18 +170,18 @@ function pathFor(change: ProjectChange, action: ChangeActionId): MachineState[] 
   ];
 }
 
+export function needFor(change: ProjectChange): "secret" | "gcp" | undefined {
+  if (!change.replacement) return "secret";
+  if (change.migration === "semantic") return "gcp";
+  return "secret";
+}
+
 function pauseFor(change: ProjectChange, action: ChangeActionId): string | undefined {
   if (action === "prepare" || (action === "start" && isDocsOnly(change))) return undefined;
-  if (!change.replacement) {
-    return "No replacement is named. Continuing still stops at a pull request — it will not invent an identifier.";
+  if (needFor(change) === "gcp") {
+    return "This project has no GCP connection. The agent will open a sandbox after you connect one.";
   }
-  if (change.migration === "semantic") {
-    return "Seed / numberOfImages have no Gemini equivalent. Continue only if those options escalate, not drop.";
-  }
-  if (action === "review") {
-    return `Named replacement is ${change.replacement}. Allow it and continue to an isolated patch?`;
-  }
-  return undefined;
+  return "GEMINI_API_KEY is not on this project. The verifier will call the replacement and will not invent a key.";
 }
 
 function diffsFor(change: ProjectChange): DiffFile[] {
@@ -399,7 +401,9 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
     "POLICY_EVALUATION",
     "result",
     path.includes("HUMAN_REQUIRED")
-      ? "HUMAN_REQUIRED — a sandbox is not opened until a human continues."
+      ? needFor(change) === "gcp"
+        ? "HUMAN_REQUIRED — GCP is not connected. The agent allocates the sandbox after you connect."
+        : "HUMAN_REQUIRED — GEMINI_API_KEY is missing. The agent allocates the sandbox after you add it."
       : "ALLOW patch and PR. Merge remains off.",
   );
 
@@ -499,6 +503,7 @@ export interface CreateRunOpts {
   attempt?: number;
   id?: string;
   pauseReason?: string;
+  need?: "secret" | "gcp";
 }
 
 export function createRun(
@@ -532,6 +537,7 @@ export function createRun(
     attempt: opts?.attempt ?? 1,
     attemptBudget: 3,
     pauseReason: opts?.pauseReason ?? pauseFor(change, action),
+    need: opts?.need ?? (path.includes("HUMAN_REQUIRED") ? needFor(change) : undefined),
     commands: commandsFor(change),
     diffs: diffsFor(change),
     checks: checksFor(change, machine === "FAILED"),
@@ -560,7 +566,7 @@ export function seedRuns(): MockRun[] {
     action: ChangeActionId,
     at: MachineState,
     createdAt: number,
-    extra?: Pick<CreateRunOpts, "attempt" | "pauseReason"> & { repo?: string },
+    extra?: Pick<CreateRunOpts, "attempt" | "pauseReason" | "need"> & { repo?: string },
   ) => {
     const change = changeById(id);
     if (!change) return;
@@ -575,6 +581,7 @@ export function seedRuns(): MockRun[] {
           createdAt,
           attempt: extra?.attempt,
           pauseReason: extra?.pauseReason,
+          need: extra?.need,
           id: `run-seed-${id}-${extra?.repo ?? change.repo ?? "unscoped"}`,
         },
       ),
@@ -582,9 +589,16 @@ export function seedRuns(): MockRun[] {
   };
 
   add("chg_flash_image_preview", "start", "PR_CREATED", ago(4 * 60 * 1000));
-  add("imagen4-retirement-2026-08-17", "start", "HUMAN_REQUIRED", ago(2 * 60 * 60 * 1000));
+  add("imagen4-retirement-2026-08-17", "start", "HUMAN_REQUIRED", ago(2 * 60 * 60 * 1000), {
+    need: "gcp",
+    pauseReason:
+      "This project has no GCP connection. The agent will open a sandbox after you connect one.",
+  });
   add("ui-issue-long-title", "start", "HUMAN_REQUIRED", ago(50 * 60 * 1000), {
     repo: "amelia751/egaki",
+    need: "secret",
+    pauseReason:
+      "GEMINI_API_KEY is not on this project. The verifier will call the replacement and will not invent a key.",
   });
   add("ui-changelog-immutable", "start", "UNAFFECTED", ago(6 * 60 * 60 * 1000));
   add("ui-scheduled-window", "prepare", "HELD", ago(18 * 60 * 60 * 1000));

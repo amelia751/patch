@@ -22,6 +22,8 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { AddSecretDialog, type SecretRepoOption, type SecretWorkspaceOption } from "@/components/interface/secret-managers";
+import { GCPConnectMethodDialog } from "@/components/interface/ops/configure-tab/gcp-connect-method-dialog";
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
 import {
   MACHINE_LABEL,
@@ -36,6 +38,12 @@ import {
   type RunBucket,
   type TreeId,
 } from "./run-scripts";
+
+const GCP_ENV_OPTIONS = [
+  { value: "development", label: "Development" },
+  { value: "staging", label: "Staging" },
+  { value: "production", label: "Production" },
+];
 
 function timeAgo(ts: number): string {
   const seconds = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -108,11 +116,21 @@ export function RunsPanel({
   selectedId,
   onSelect,
   onContinue,
+  projectId,
+  userId = "default",
+  workspaces = [],
+  repos = [],
+  secretsPreviewMode = false,
 }: {
   runs: MockRun[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onContinue: (id: string) => void;
+  projectId?: string;
+  userId?: string;
+  workspaces?: SecretWorkspaceOption[];
+  repos?: SecretRepoOption[];
+  secretsPreviewMode?: boolean;
 }) {
   const selected = runs.find((run) => run.id === selectedId) ?? runs[0] ?? null;
 
@@ -135,7 +153,17 @@ export function RunsPanel({
   return (
     <div className="h-full flex min-w-0 bg-[var(--bg-primary)]">
       <RunsList runs={runs} selected={selected} onSelect={onSelect} />
-      {selected && <RunDetail run={selected} onContinue={() => onContinue(selected.id)} />}
+      {selected && (
+        <RunDetail
+          run={selected}
+          onContinue={() => onContinue(selected.id)}
+          projectId={projectId}
+          userId={userId}
+          workspaces={workspaces}
+          repos={repos}
+          secretsPreviewMode={secretsPreviewMode}
+        />
+      )}
     </div>
   );
 }
@@ -312,32 +340,87 @@ function RunsList({
   );
 }
 
-function RunDetail({ run, onContinue }: { run: MockRun; onContinue: () => void }) {
+function RunDetail({
+  run,
+  onContinue,
+  projectId,
+  userId,
+  workspaces,
+  repos,
+  secretsPreviewMode,
+}: {
+  run: MockRun;
+  onContinue: () => void;
+  projectId?: string;
+  userId: string;
+  workspaces: SecretWorkspaceOption[];
+  repos: SecretRepoOption[];
+  secretsPreviewMode: boolean;
+}) {
   const current = treeForMachine(run.machine);
   const [picked, setPicked] = useState<TreeId | null>(null);
+  const [secretOpen, setSecretOpen] = useState(false);
+  const [gcpOpen, setGcpOpen] = useState(false);
+  const [gcpEnv, setGcpEnv] = useState("development");
 
   useEffect(() => {
     setPicked(null);
+    setSecretOpen(false);
+    setGcpOpen(false);
   }, [run.id, run.machine]);
 
   const tree = picked ?? current;
+  const needLabel = run.need === "gcp" ? "Connect GCP" : "Add secret";
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
       {run.machine === "HUMAN_REQUIRED" && (
         <div className="px-5 py-3 border-b border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
-            {run.pauseReason ?? "A human has to confirm before a sandbox is allocated."}
+            {run.pauseReason ??
+              (run.need === "gcp"
+                ? "This project has no GCP connection. The agent will open a sandbox after you connect one."
+                : "GEMINI_API_KEY is not on this project. The verifier will call the replacement and will not invent a key.")}
           </p>
           <Button
             size="sm"
             className="h-7 shrink-0 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={onContinue}
+            onClick={() => (run.need === "gcp" ? setGcpOpen(true) : setSecretOpen(true))}
           >
-            Allocate sandbox
+            {needLabel}
           </Button>
         </div>
       )}
+      <AddSecretDialog
+        open={secretOpen}
+        onOpenChange={setSecretOpen}
+        mode="add"
+        projectId={projectId}
+        workspaces={workspaces}
+        repoFullName={run.repo ?? repos[0]?.fullName ?? null}
+        repos={repos}
+        secretsPreviewMode={secretsPreviewMode}
+        onSaved={() => {
+          setSecretOpen(false);
+          onContinue();
+        }}
+      />
+      <GCPConnectMethodDialog
+        open={gcpOpen}
+        onOpenChange={setGcpOpen}
+        userId={userId}
+        environment={gcpEnv}
+        onEnvironmentChange={setGcpEnv}
+        environmentOptions={GCP_ENV_OPTIONS}
+        projectId={projectId}
+        workspaces={workspaces}
+        repoFullName={run.repo ?? null}
+        repos={repos}
+        onConnectSuccess={() => {
+          setGcpOpen(false);
+          onContinue();
+        }}
+      />
       {(run.machine === "FAILED" || run.machine === "BLOCKED") && (
         <div className="px-5 py-3 border-b border-red-500/30 bg-red-500/5">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
