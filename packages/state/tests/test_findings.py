@@ -134,6 +134,66 @@ def test_replacement_with_runtime_is_need_you() -> None:
     assert (status, reason) == ("needs_you", "runtime_hit")
 
 
+def test_probe_404_beats_a_future_effective_date() -> None:
+    """The bug this fixes: a live 404 while the pinned date still read as future."""
+    status, reason = classify(
+        identifiers=["imagen-4.0-generate-001"],
+        hits=[{"usage_kind": "runtime_source", "identifier": "imagen-4.0-generate-001"}],
+        fail_closed=False,
+        false_positive=False,
+        change_kind="deprecation",
+        effective_at=date(2026, 12, 1),
+        today=date(2026, 8, 22),
+        probe_retired=True,
+    )
+    assert (status, reason) == ("needs_you", "probe_404")
+
+
+def test_probe_404_escalates_a_docs_only_hit() -> None:
+    status, reason = classify(
+        identifiers=["imagen-4.0-generate-001"],
+        hits=[{"usage_kind": "documentation_example", "identifier": "imagen-4.0-generate-001"}],
+        fail_closed=False,
+        false_positive=False,
+        change_kind="deprecation",
+        effective_at=date(2026, 12, 1),
+        today=date(2026, 8, 22),
+        probe_retired=True,
+    )
+    assert (status, reason) == ("needs_you", "docs_only")
+
+
+def test_a_resolving_probe_does_not_relax_a_dated_notice() -> None:
+    """`gemini-3.1-flash-image-preview` still lists, but the notice dates it retired.
+
+    A listing can lag, be region-scoped, or serve an alias, so "still there" is
+    weaker evidence than "already gone" and may not move a row back to Watching.
+    """
+    status, reason = classify(
+        identifiers=["gemini-3.1-flash-image-preview"],
+        hits=[{"usage_kind": "runtime_source", "identifier": "gemini-3.1-flash-image-preview"}],
+        fail_closed=False,
+        false_positive=False,
+        change_kind="replacement",
+        effective_at=date(2026, 7, 17),
+        today=date(2026, 8, 22),
+        probe_retired=False,
+    )
+    assert (status, reason) == ("needs_you", "runtime_hit")
+
+
+def test_probe_404_does_not_resurrect_a_false_positive() -> None:
+    status, reason = classify(
+        identifiers=["fal-ai/imagen4/preview"],
+        hits=[{"usage_kind": "runtime_source", "identifier": "fal-ai/imagen4/preview"}],
+        fail_closed=False,
+        false_positive=True,
+        change_kind="other",
+        probe_retired=True,
+    )
+    assert (status, reason) == ("dismissed", "false_positive")
+
+
 def test_new_identifier_with_runtime_stays_watching() -> None:
     status, reason = classify(
         identifiers=["gemini-3.5-flash"],

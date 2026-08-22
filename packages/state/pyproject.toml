@@ -12,6 +12,9 @@ dependencies = [
     "patchapi-auth",
     "patchapi-control-api",
     "patchapi-events",
+    # The live model probe: findings escalate on what a surface publishes now,
+    # not on a date typed into the watchlist.
+    "patchapi-providers",
     "patchapi-schemas",
     "uvicorn>=0.30,<0.40",
 ]
@@ -32,6 +35,7 @@ patchapi-events = { workspace = true }
 patchapi-schemas = { workspace = true }
 patchapi-control-api = { workspace = true }
 patchapi-auth = { workspace = true }
+patchapi-providers = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

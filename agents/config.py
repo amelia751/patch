@@ -63,6 +63,7 @@ class ToolName(StrEnum):
     LOAD_PROVIDER_NOTICE = "load_provider_notice"
     NORMALIZE_PROVIDER_NOTICE = "normalize_provider_notice"
     RECORD_CHANGE_MANIFEST = "record_change_manifest"
+    PROBE_IDENTIFIER = "probe_identifier"
     SEARCH_WEB = "search_web"
     SEARCH_INDEX = "search_index"
 
@@ -115,6 +116,7 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.LOAD_PROVIDER_NOTICE,
             ToolName.NORMALIZE_PROVIDER_NOTICE,
             ToolName.RECORD_CHANGE_MANIFEST,
+            ToolName.PROBE_IDENTIFIER,
             ToolName.SEARCH_WEB,
             ToolName.LOOKUP_INDEX_USAGES,
             ToolName.SEARCH_INDEX,
@@ -169,7 +171,7 @@ ADK_ATTACHED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.SEARCH_WEB}
 PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
     {
         **dict.fromkeys(AgentId, "1.1.0"),
-        AgentId.CHANGE_INTELLIGENCE: "1.3.0",
+        AgentId.CHANGE_INTELLIGENCE: "1.4.0",
         AgentId.PATCH: "1.3.0",
     }
 )
