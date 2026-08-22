@@ -7,21 +7,9 @@ import { useRouter } from "next/navigation";
 
 export function SubscriptionLoadingState() {
   return (
-    <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
-      <div className="w-full max-w-sm px-6 text-center">
-        <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-          <Rss className="h-5 w-5 text-primary" />
-        </div>
-        <p className="text-sm font-semibold text-[var(--text-primary)]">
-          Loading subscriptions
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
-          Checking which providers this project watches
-        </p>
-        <div className="mt-4 flex items-center justify-center">
-          <Spinner className="h-4 w-4 text-[var(--text-secondary)]" />
-        </div>
-      </div>
+    <div className="h-full flex flex-col items-center justify-center bg-[var(--bg-primary)]">
+      <Spinner className="h-5 w-5 text-[var(--text-secondary)] mb-3" />
+      <p className="text-xs text-[var(--text-secondary)]">Loading subscriptions</p>
     </div>
   );
 }
