@@ -64,6 +64,26 @@ PROVIDER_PACKAGES: Final[Mapping[str, tuple[tuple[str, str], ...]]] = {
     ),
 }
 
+# The API host each client library talks to. A tree that depends on
+# `google-genai` calls Vertex AI whether or not the hostname appears in its
+# source, so a whole-service shutdown reaches it through the manifest when
+# nothing in the code names the host.
+PACKAGE_SERVICE_HOSTS: Final[Mapping[str, tuple[str, ...]]] = {
+    "npm:@google/genai": ("generativelanguage.googleapis.com", "aiplatform.googleapis.com"),
+    "npm:@google/generative-ai": ("generativelanguage.googleapis.com",),
+    "npm:@google-cloud/aiplatform": ("aiplatform.googleapis.com",),
+    "npm:@google-cloud/vertexai": ("aiplatform.googleapis.com",),
+    "pypi:google-genai": ("generativelanguage.googleapis.com", "aiplatform.googleapis.com"),
+    "pypi:google-generativeai": ("generativelanguage.googleapis.com",),
+    "pypi:google-cloud-aiplatform": ("aiplatform.googleapis.com",),
+    "pypi:vertexai": ("aiplatform.googleapis.com",),
+    "go:google.golang.org/genai": (
+        "generativelanguage.googleapis.com",
+        "aiplatform.googleapis.com",
+    ),
+    "go:cloud.google.com/go/aiplatform": ("aiplatform.googleapis.com",),
+}
+
 _MAJOR: Final[re.Pattern[str]] = re.compile(r"(\d+)")
 
 
@@ -124,6 +144,23 @@ def watched_packages(provider: str) -> tuple[str, ...]:
     return tuple(
         sdk_identifier(ecosystem, name)
         for ecosystem, name in PROVIDER_PACKAGES.get(provider, ())
+    )
+
+
+def service_hosts_for_package(identifier: str) -> tuple[str, ...]:
+    """The API hosts this client library calls, or nothing when it is unmapped."""
+    return PACKAGE_SERVICE_HOSTS.get(identifier.strip(), ())
+
+
+def packages_calling(hosts: Iterable[str]) -> tuple[str, ...]:
+    """Every watched package that speaks to any of `hosts`."""
+    wanted = {host.strip() for host in hosts if host.strip()}
+    if not wanted:
+        return ()
+    return tuple(
+        identifier
+        for identifier, served in PACKAGE_SERVICE_HOSTS.items()
+        if wanted.intersection(served)
     )
 
 
@@ -278,6 +315,7 @@ async def probe_packages(
 __all__ = [
     "GO",
     "NPM",
+    "PACKAGE_SERVICE_HOSTS",
     "PROVIDER_PACKAGES",
     "PYPI",
     "SDK_ECOSYSTEMS",
@@ -288,9 +326,11 @@ __all__ = [
     "is_sdk_identifier",
     "major_of",
     "package_probe_result",
+    "packages_calling",
     "probe_packages",
     "provider_for_package",
     "sdk_identifier",
+    "service_hosts_for_package",
     "split_sdk_identifier",
     "watched_packages",
 ]

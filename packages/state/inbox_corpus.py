@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from packages.providers.google.probe import is_service_identifier
+from packages.providers.sdk import is_sdk_identifier, packages_calling
 from packages.state.findings import (
     BREAKING_KINDS,
     canonical_identifier,
@@ -93,7 +94,7 @@ def identifier_is_covered(identifier: str, covered: set[str]) -> bool:
 def product_for_identifier(identifier: str) -> str:
     """Family label for an inbox card. Not a routing decision."""
     lowered = canonical_identifier(identifier).lower()
-    if is_service_identifier(lowered):
+    if is_service_identifier(lowered) or is_sdk_identifier(lowered):
         return lowered
     if lowered.startswith("imagen-") or "/imagen-" in lowered:
         return "Imagen"
@@ -204,12 +205,17 @@ def service_identifiers_for_note(
     hosts_by_product: Mapping[str, tuple[str, ...]],
     usage_identifiers: Iterable[str],
 ) -> list[str]:
-    """API hosts this project calls that belong to the note's product.
+    """What this project holds that belongs to the note's product.
 
     A whole-service shutdown names the product ("Dialogflow"), never a host and
     never a model, so text matching finds nothing to join on. The catalog knows
     which host answers for that product and the index knows whether the tree
-    calls it; this is the join between the two.
+    reaches it; this is the join between the two.
+
+    A tree reaches a service two ways. It may name the host, which the indexer
+    records. Far more often it imports the client library and never writes the
+    hostname down at all — so a depended-on package that speaks to one of the
+    product's hosts counts, and the manifest line becomes the evidence.
 
     Restricted to breaking kinds on purpose. Matching a product is far coarser
     than matching a model id — every feature note for Vertex AI would otherwise
@@ -221,7 +227,10 @@ def service_identifiers_for_note(
     if not hosts:
         return []
     usages = expand_usage_set(usage_identifiers)
-    return [host for host in hosts if host in usages]
+    speakers = set(packages_calling(hosts))
+    matched = [host for host in hosts if host in usages]
+    matched.extend(sorted(speakers.intersection(usages)))
+    return matched
 
 
 def release_note_event(

@@ -171,6 +171,25 @@ def test_service_match_is_limited_to_breaking_kinds() -> None:
     )
 
 
+def test_a_service_shutdown_reaches_a_project_through_its_client_library() -> None:
+    """Most trees never write the hostname down; they import the SDK.
+
+    The identifier returned is the package, not the host, because the package is
+    what the index actually holds — a host nobody wrote would name no evidence.
+    """
+    hits = service_identifiers_for_note(
+        "Vertex AI", "deprecation", _HOSTS, ["pypi:google-genai", "gemini-3.5-flash"]
+    )
+    assert hits == ["pypi:google-genai"]
+
+
+def test_a_client_library_for_another_service_is_not_a_match() -> None:
+    assert (
+        service_identifiers_for_note("Dialogflow", "deprecation", _HOSTS, ["pypi:google-genai"])
+        == []
+    )
+
+
 def test_note_text_extracts_a_service_host() -> None:
     hits = note_identifiers_in_text(
         "Requests to dialogflow.googleapis.com stop being served on 2027-01-31.",
