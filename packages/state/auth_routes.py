@@ -82,6 +82,10 @@ class _VerifyBody(BaseModel):
     email: str = ""
 
 
+class _CodeBody(BaseModel):
+    code: str = Field(min_length=1)
+
+
 def _auth_error(exc: Exception) -> JSONResponse:
     if isinstance(exc, AuthConfigurationError):
         return JSONResponse(
@@ -250,6 +254,17 @@ async def forgot_password(body: _EmailBody) -> JSONResponse:
     except ValueError as exc:
         return _auth_error(exc)
     return JSONResponse({"ok": True})
+
+
+@router.post("/reset-info")
+async def reset_info(body: _CodeBody) -> JSONResponse:
+    """Name the account a reset link is for, so the form can show it."""
+    identity = get_identity_service()
+    try:
+        email = await identity.inspect_reset_code(body.code.strip())
+    except (AuthConfigurationError, AuthUnavailableError, ValueError) as exc:
+        return _auth_error(exc)
+    return JSONResponse({"ok": True, "email": email})
 
 
 @router.post("/reset-password")

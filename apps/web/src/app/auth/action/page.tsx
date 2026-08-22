@@ -2,10 +2,17 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { KeyRound, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  authField,
+  authHeadline,
+  authLabel,
+  authMuted,
+} from "@/components/interface/auth/auth-surface";
 import { cn } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -23,12 +30,14 @@ function ActionInner() {
   const params = useSearchParams();
   const mode = params.get("mode") || "";
   const oobCode = params.get("oobCode") || "";
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [loadingEmail, setLoadingEmail] = useState(false);
 
   const rules = useMemo(
     () => ({
@@ -74,6 +83,35 @@ function ActionInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, oobCode]);
 
+  useEffect(() => {
+    if (mode !== "resetPassword" || !oobCode) return;
+    let cancelled = false;
+    setLoadingEmail(true);
+    void (async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/auth/reset-info`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: oobCode }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.detail || "That reset link is not valid.");
+        }
+        if (!cancelled) setEmail(typeof payload.email === "string" ? payload.email : "");
+      } catch (exc) {
+        if (!cancelled) {
+          setError(exc instanceof Error ? exc.message : "That reset link is not valid.");
+        }
+      } finally {
+        if (!cancelled) setLoadingEmail(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, oobCode]);
+
   async function onReset(event: FormEvent) {
     event.preventDefault();
     if (!valid || !oobCode) return;
@@ -101,30 +139,43 @@ function ActionInner() {
     mode === "verifyEmail"
       ? "Verify email"
       : mode === "resetPassword"
-        ? "Reset password"
+        ? "Reset your password"
         : "Continue";
+
+  const Icon = mode === "verifyEmail" ? Mail : KeyRound;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#111111] px-6 py-12">
       <div className="w-full max-w-md rounded-xl border border-[#2e2e2e] bg-[#1a1a1a] p-6 shadow-2xl">
-        <h1 className="text-lg font-semibold text-[#e0e0e0]">{heading}</h1>
-        <p className="mt-1 text-xs text-[#888888]">
-          {done
-            ? "You can sign in now."
-            : mode === "resetPassword" && oobCode
-              ? "Choose a new password for this account."
-              : mode === "resetPassword"
-                ? "If you already chose a new password on the previous page, you can sign in."
-                : mode === "verifyEmail"
-                  ? "Confirming this address."
-                  : "This link is missing a reset or verification code."}
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-primary-strong flex items-center justify-center shrink-0">
+            <Icon className="h-5 w-5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className={cn("text-sm font-semibold", authHeadline)}>{heading}</h1>
+            <p className={cn("text-xs mt-0.5", authMuted)}>
+              {done
+                ? "You can sign in now."
+                : mode === "resetPassword" && oobCode
+                  ? email
+                    ? `for ${email}`
+                    : loadingEmail
+                      ? "Checking this link…"
+                      : "Choose a new password for this account."
+                  : mode === "resetPassword"
+                    ? "If you already chose a new password on the previous page, you can sign in."
+                    : mode === "verifyEmail"
+                      ? "Confirming this address."
+                      : "This link is missing a reset or verification code."}
+            </p>
+          </div>
+        </div>
 
         {error ? <p className="mt-4 text-sm text-red-400">{error}</p> : null}
 
         {done ? (
           <Button
-            className="mt-6 w-full h-10 bg-primary text-primary-foreground"
+            className="mt-6 w-full h-10 bg-primary hover:bg-primary-hover text-primary-foreground"
             onClick={() => {
               window.location.href = "/?auth=success";
             }}
@@ -135,7 +186,7 @@ function ActionInner() {
 
         {!done && mode === "resetPassword" && !oobCode ? (
           <Button
-            className="mt-6 w-full h-10 bg-primary text-primary-foreground"
+            className="mt-6 w-full h-10 bg-primary hover:bg-primary-hover text-primary-foreground"
             onClick={() => {
               window.location.href = "/?auth=success";
             }}
@@ -144,24 +195,26 @@ function ActionInner() {
           </Button>
         ) : null}
 
-        {!done && mode === "resetPassword" && oobCode ? (
+        {!done && mode === "resetPassword" && oobCode && !error ? (
           <form onSubmit={onReset} className="mt-6 space-y-4">
             <div className="grid gap-2">
-              <Label className="text-xs text-[#888888]">New password</Label>
+              <Label className={cn("text-xs", authLabel)}>New password</Label>
               <Input
                 type="password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="h-10 bg-[#111111] border-[#2e2e2e] text-[#e0e0e0]"
+                className={cn("h-10 text-sm focus:border-primary focus:ring-primary/20", authField)}
               />
             </div>
             <div className="grid gap-2">
-              <Label className="text-xs text-[#888888]">Confirm password</Label>
+              <Label className={cn("text-xs", authLabel)}>Confirm password</Label>
               <Input
                 type="password"
+                autoComplete="new-password"
                 value={confirm}
                 onChange={(event) => setConfirm(event.target.value)}
-                className="h-10 bg-[#111111] border-[#2e2e2e] text-[#e0e0e0]"
+                className={cn("h-10 text-sm focus:border-primary focus:ring-primary/20", authField)}
               />
             </div>
             <div className="grid gap-1">
@@ -174,11 +227,11 @@ function ActionInner() {
             </div>
             <Button
               type="submit"
-              disabled={!valid || submitting || !oobCode}
-              className="w-full h-10 bg-primary text-primary-foreground disabled:opacity-50"
+              disabled={!valid || submitting || loadingEmail}
+              className="w-full h-10 bg-primary hover:bg-primary-hover text-primary-foreground text-sm shadow-sm disabled:opacity-50"
             >
               {submitting ? <Spinner className="h-4 w-4 mr-2" /> : null}
-              Save password
+              Save
             </Button>
           </form>
         ) : null}

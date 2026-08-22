@@ -327,6 +327,18 @@ class IdentityPlatformService:
             raise
         return {"delivery": {"AttributeName": "email"}}
 
+    async def inspect_reset_code(self, code: str) -> str:
+        """Return the address a reset code is bound to, without consuming it.
+
+        Identity Platform answers `resetPassword` with only an `oobCode` by
+        naming the account. The page uses that to show who the form is for.
+        """
+        data = await self._post(self._config.url("resetPassword"), {"oobCode": code})
+        email = (data.get("email") or "").strip()
+        if not email:
+            raise ValueError(_ERROR_MESSAGES["INVALID_OOB_CODE"])
+        return email
+
     async def confirm_forgot_password(self, email: str, code: str, new_password: str) -> bool:
         """Complete a reset with the emailed code and a new password."""
         await self._post(

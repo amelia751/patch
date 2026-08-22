@@ -181,6 +181,16 @@ async def test_reset_sends_only_the_code_and_new_password() -> None:
     assert payload == {"oobCode": "oob-code", "newPassword": "N3w-Passw0rd!"}
 
 
+async def test_inspect_reset_code_does_not_set_a_password() -> None:
+    service, recorder = _service({"email": "a@b.com", "requestType": "PASSWORD_RESET"})
+
+    email = await service.inspect_reset_code("oob-code")
+
+    assert email == "a@b.com"
+    _, payload = recorder.calls[0]
+    assert payload == {"oobCode": "oob-code"}
+
+
 # -- enumeration resistance ------------------------------------------------
 
 

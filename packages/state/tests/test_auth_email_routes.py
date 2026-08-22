@@ -11,6 +11,7 @@ def test_email_routes_are_mounted() -> None:
         '@router.post("/signup")',
         '@router.post("/login")',
         '@router.post("/forgot-password")',
+        '@router.post("/reset-info")',
         '@router.post("/reset-password")',
         '@router.post("/verify")',
     ):
