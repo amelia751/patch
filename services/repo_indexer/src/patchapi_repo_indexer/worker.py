@@ -93,6 +93,7 @@ ACTION_INDEXED: Final[str] = "indexed"
 ACTION_REFERENCED: Final[str] = "referenced"
 ACTION_RELEASED: Final[str] = "released"
 ACTION_DROPPED: Final[str] = "dropped"
+ACTION_PROVIDER_APPLIED: Final[str] = "provider_change_applied"
 
 # Where a manifest answer came from. Recorded rather than logged because the two
 # have different recall: the index finds family members nobody enumerated, the
@@ -711,6 +712,44 @@ async def handle_manifest(
     return ManifestResult(source=source, affected=tuple(affected), reason=reason)
 
 
+async def handle_provider_change(
+    conn: asyncpg.Connection, envelope: EventEnvelope, *, effects: Effects = DEFAULT_EFFECTS
+) -> HandlerResult:
+    """The deterministic reaction to an announced provider transition.
+
+    This lane decides status and nothing else. It records what the probe proves
+    and reclassifies only the projects whose imported trees name the identifier,
+    which is the whole point of announcing a transition rather than rerunning a
+    batch: two projects out of a fleet are touched, not all of them.
+
+    Rationale and a proposed replacement are the Change Intelligence lane's
+    contribution to the same event, and this handler must be correct without
+    them (constraint 10 — never invent a migration).
+    """
+    del effects
+    from packages.state.discovery import apply_provider_change
+
+    payload = envelope.payload
+    identifier = _require(payload, "identifier")
+    outcome = await apply_provider_change(
+        conn,
+        provider=_text(payload, "provider") or DEFAULT_PROVIDER,
+        identifier=identifier,
+        surface=_text(payload, "surface") or "",
+        transition=_text(payload, "transition") or "",
+        source_url=_text(payload, "source_url") or "",
+        checked_at=_text(payload, "checked_at") or "",
+    )
+    return HandlerResult(
+        action=ACTION_PROVIDER_APPLIED,
+        repository=identifier,
+        branch="-",
+        reason=outcome["reason"],
+        notified_projects=(),
+        usages_written=int(outcome["reclassified"]),
+    )
+
+
 Handler = Callable[..., Awaitable[HandlerResult | ManifestResult]]
 
 # The events this worker acts on. A subscription whose type is absent here is a
@@ -721,6 +760,7 @@ HANDLERS: Final[Mapping[EventType, Handler]] = MappingProxyType(
         EventType.PROJECT_REPO_ADDED: handle_repo_added,
         EventType.PROJECT_REPO_REMOVED: handle_repo_removed,
         EventType.REPO_PUSH: handle_push,
+        EventType.PROVIDER_CHANGE_DETECTED: handle_provider_change,
         EventType.CHANGE_NORMALIZED: handle_manifest,
     }
 )

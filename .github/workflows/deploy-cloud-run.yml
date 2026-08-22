@@ -204,7 +204,7 @@ jobs:
             --member="serviceAccount:patchapi-pubsub-push@patch-505223.iam.gserviceaccount.com" \
             --role="roles/run.invoker" \
             --quiet
-          for event in repo-push project-repo-added project-repo-removed; do
+          for event in repo-push project-repo-added project-repo-removed provider-change-detected; do
             gcloud pubsub subscriptions update "patchapi-dev-${event}-sub" \
               --project="${PROJECT_ID}" \
               --push-endpoint="${INDEXER_URL}/v1/events" \

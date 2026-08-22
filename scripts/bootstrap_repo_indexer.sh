@@ -118,7 +118,10 @@ for event in repo-push project-repo-added project-repo-removed index-updated; do
     --quiet >/dev/null
 done
 
-for event in repo-push project-repo-added project-repo-removed; do
+# `provider-change-detected` is pushed here too: the deterministic reaction to a
+# retirement is a findings reclassification scoped to the projects that name the
+# identifier, and this worker already owns the index that answers which ones.
+for event in repo-push project-repo-added project-repo-removed provider-change-detected; do
   ensure_push_sub "${PREFIX}-${event}" "${PREFIX}-${event}-sub"
 done
 

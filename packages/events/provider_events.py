@@ -89,7 +89,7 @@ def change_normalized_event(
     *,
     provider: str,
     external_id: str,
-    identifier: str,
+    affected_identifiers: list[str],
     origin: str,
     occurred_at: str,
 ) -> EventEnvelope:
@@ -100,6 +100,9 @@ def change_normalized_event(
     status a finding gets, the agent later adds rationale and a proposed
     replacement, and each is a legitimate reason to refresh the projects that
     call the identifier.
+
+    The payload key is `affected_identifiers` because that is what the indexer's
+    manifest handler reads to answer which repositories a change reaches.
     """
     key = f"change-normalized:{provider}:{external_id}:{origin}"
     return EventEnvelope(
@@ -111,7 +114,7 @@ def change_normalized_event(
         payload={
             "provider": provider,
             "external_id": external_id,
-            "identifier": identifier,
+            "affected_identifiers": list(affected_identifiers),
             "origin": origin,
         },
     ).with_idempotency_key(key)

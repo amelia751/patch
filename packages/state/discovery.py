@@ -26,6 +26,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
+from packages.events.provider_events import TRANSITION_RETIRED
 from packages.providers.google.probe import (
     GEMINI_API,
     ProbeResult,
@@ -136,6 +137,70 @@ async def record_discovered_retirements(
     return written
 
 
+# Read through `project_provider_usages` rather than joining `provider_usages`
+# directly: that view owns the project-to-repository join and the workspace path
+# prefix filter, so a project only matches on call sites it can actually see.
+_PROJECTS_USING_SQL: Final[str] = """
+SELECT DISTINCT u.project_id
+FROM project_provider_usages u
+JOIN project_provider_subscriptions s ON s.project_id = u.project_id
+JOIN providers p ON p.id = s.provider_id AND p.slug = u.provider
+WHERE u.provider = $1 AND p.retired_at IS NULL AND u.identifier = ANY($2::text[])
+"""
+
+
+async def projects_using(
+    connection: asyncpg.Connection, provider: str, identifiers: list[str]
+) -> list[UUID]:
+    """Subscribed projects whose imported trees name any of `identifiers`."""
+    rows = await connection.fetch(_PROJECTS_USING_SQL, provider, identifiers)
+    return [UUID(str(row["project_id"])) for row in rows]
+
+
+async def apply_provider_change(
+    connection: asyncpg.Connection,
+    *,
+    provider: str,
+    identifier: str,
+    surface: str,
+    transition: str,
+    source_url: str,
+    checked_at: str,
+) -> dict[str, Any]:
+    """The deterministic reaction to one announced provider transition.
+
+    Deliberately narrow. It records what the probe proves and reclassifies the
+    projects that actually call the identifier — not every subscribed project,
+    which is what made the batch job expensive. It never writes a rationale or
+    names a replacement: that is the Change Intelligence lane's contribution,
+    and this lane must stay correct without it.
+    """
+    from packages.state.findings import refresh_project_findings
+
+    if transition != TRANSITION_RETIRED:
+        # `restored` and `appeared` change no finding on their own. The probe row
+        # is already updated, so the next classification picks them up.
+        return {"recorded": None, "reclassified": 0, "reason": f"{transition} needs no action"}
+
+    result = ProbeResult(
+        identifier=identifier,
+        surface=surface,
+        status=ProbeStatus.NOT_FOUND,
+        checked_at=checked_at,
+        detail="",
+        source_url=source_url,
+    )
+    recorded = await record_discovered_retirements(connection, provider=provider, results=(result,))
+    affected = await projects_using(connection, provider, [identifier])
+    for project_id in affected:
+        await refresh_project_findings(connection, project_id, provider)
+    return {
+        "recorded": recorded[0] if recorded else None,
+        "reclassified": len(affected),
+        "reason": None,
+    }
+
+
 async def record_manifest_release(connection: asyncpg.Connection, payload: dict[str, Any]) -> bool:
     """Persist a Change Intelligence manifest as a release, then reclassify."""
     from packages.state.inbox_corpus import upsert_event_from_manifest
@@ -158,8 +223,10 @@ async def refresh_subscribed(connection: asyncpg.Connection, provider: str) -> i
 
 __all__ = [
     "DEPRECATIONS_URL",
+    "apply_provider_change",
     "discovery_event",
     "indexed_identifiers",
+    "projects_using",
     "record_discovered_retirements",
     "record_manifest_release",
     "refresh_subscribed",
