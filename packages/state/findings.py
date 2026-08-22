@@ -8,7 +8,6 @@ human-dismissed row is left alone on refresh.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
@@ -404,7 +403,7 @@ async def ensure_watchlist(connection: asyncpg.Connection, provider: str) -> int
             note["summary"],
             note["source_urls"],
             note["identifiers"],
-            json.dumps(note["replacements"]),
+            note["replacements"],
             _as_date(note["announced_at"]),
             _as_date(note["effective_at"]),
             note["fail_closed"],
@@ -611,8 +610,8 @@ async def refresh_project_findings(
             repos,
             file_hits,
             file_count,
-            json.dumps(counts),
-            json.dumps(files),
+            counts,
+            files,
         )
         written += 1
     return written

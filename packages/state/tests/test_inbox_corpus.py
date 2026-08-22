@@ -4,6 +4,7 @@ from datetime import date
 
 from packages.state.google_models import ModelChange, load_google_models
 from packages.state.inbox_corpus import (
+    _event_args,
     catalog_notes_for_usages,
     identifier_is_covered,
     manifest_event,
@@ -138,3 +139,14 @@ def test_manifest_event_requires_source_url() -> None:
 def test_product_and_cover_helpers() -> None:
     assert product_for_identifier("vertex/imagen-4.0-generate-001") == "Imagen"
     assert identifier_is_covered("models/imagen-4.0-generate-001", {"imagen-4.0-generate-001"})
+
+
+def test_jsonb_arguments_are_bound_as_objects() -> None:
+    """The pool's jsonb encoder is json.dumps, so a pre-serialized argument is
+    encoded twice and stores the scalar "[]" instead of an empty array."""
+    note = catalog_notes_for_usages(
+        (_change("imagen-4.0-generate-001"),), ["imagen-4.0-generate-001"], []
+    )[0]
+    replacements = _event_args(note)[9]
+    assert not isinstance(replacements, str)
+    assert replacements == note["replacements"]

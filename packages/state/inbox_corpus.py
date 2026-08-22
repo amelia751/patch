@@ -15,7 +15,6 @@ join against inventory rather than a dump of every Google retirement.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -320,7 +319,7 @@ def _event_args(note: WatchlistNote) -> tuple[Any, ...]:
         note["summary"],
         note["source_urls"],
         note["identifiers"],
-        json.dumps(note["replacements"]),
+        note["replacements"],
         _as_date(note["announced_at"]),
         _as_date(note["effective_at"]),
         note["fail_closed"],

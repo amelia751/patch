@@ -345,7 +345,7 @@ async def insert_connection(
             parsed.adapter,
             parsed.source_url,
             parsed.canonical_url,
-            json.dumps(parsed.parsed),
+            parsed.parsed,
             actor,
         )
     if row is None:

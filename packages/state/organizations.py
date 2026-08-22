@@ -6,7 +6,6 @@ once from the sign-in profile and then kept in `users.settings`.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -92,7 +91,7 @@ async def read_personal_organization(
                     WHERE id = $1
                     """,
                     user_id,
-                    json.dumps(merged),
+                    merged,
                 )
             elif not slug:
                 slug = organization_slug(name)
@@ -138,7 +137,7 @@ async def update_personal_organization(
                 WHERE id = $1
                 """,
                 user_id,
-                json.dumps(merged),
+                merged,
             )
         return personal_organization(user_id, next_name, next_slug)
     except StateUnavailableError:
