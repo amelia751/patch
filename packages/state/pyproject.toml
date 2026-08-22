@@ -78,6 +78,7 @@ only-include = ["__init__.py"]
 "gcp_catalog.py" = "packages/state/gcp_catalog.py"
 "google_models.py" = "packages/state/google_models.py"
 "google_release_notes.py" = "packages/state/google_release_notes.py"
+"provider_poll.py" = "packages/state/provider_poll.py"
 "provider_refresh.py" = "packages/state/provider_refresh.py"
 "provider_routes.py" = "packages/state/provider_routes.py"
 "provider_urls.py" = "packages/state/provider_urls.py"

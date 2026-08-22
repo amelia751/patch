@@ -8,13 +8,19 @@ last time this loop ran.
 
 Four steps, in order:
 
-1. Probe every identifier the repo indexer has stored, and record what each
-   Google surface says about it now.
+1. Poll: probe every identifier the repo indexer has stored, diff against the
+   last poll, and publish `provider-change-detected` for each transition. This
+   is the step that belongs here permanently.
 2. Write a change event for any identifier that stopped resolving and that no
    existing notice covers — the break nobody announced.
 3. Refresh the watchlist / catalog / release-note corpus for each subscribed
    project.
 4. Reclassify, so probe evidence moves live call sites out of Watching.
+
+Steps 2 to 4 duplicate what the `provider-change-detected` subscribers do, and
+are kept only until events are carrying the load. They are the net: while the
+pipeline is being wired, a dropped message degrades the tab's freshness rather
+than its correctness. Delete them once the subscribers are proven, not before.
 
 Safe to re-run, which is what makes it schedulable: events are insert-if-absent,
 probes upsert, and a human-dismissed finding stays dismissed.
@@ -52,10 +58,21 @@ async def refresh_releases(
 ) -> dict[str, Any]:
     """Run the full refresh and return what it observed."""
     from packages.state.discovery import record_discovered_retirements, refresh_subscribed
-    from packages.state.findings import probe_indexed_identifiers, refresh_project_findings
+    from packages.state.findings import refresh_project_findings
     from packages.state.inbox_corpus import ensure_inbox_corpus
+    from packages.state.provider_poll import poll_provider
 
-    results = await probe_indexed_identifiers(connection, provider=provider)
+    outcome = await poll_provider(connection, provider=provider)
+    results = outcome.results
+    for change in outcome.transitions:
+        log.info(
+            "transition %s %s -> %s",
+            change.identifier,
+            change.previous_status,
+            change.current_status,
+        )
+    log.info("announced %d provider change events", len(outcome.published))
+
     buckets: dict[str, list[str]] = {"resolves": [], "not_found": [], "unknown": []}
     for result in results:
         buckets.setdefault(str(result.status), []).append(result.identifier)
@@ -90,6 +107,7 @@ async def refresh_releases(
         "probed": len(results),
         "not_found": tuple(sorted(buckets["not_found"])),
         "unknown": tuple(sorted(buckets["unknown"])),
+        "announced": outcome.published,
         "discovered": tuple(discovered),
         "projects": projects,
     }

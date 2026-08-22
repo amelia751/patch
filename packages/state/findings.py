@@ -183,10 +183,25 @@ INSERT INTO identifier_probes
     (identifier, surface, provider, status, detail, source_url, checked_at)
 VALUES ($1, $2, $3, $4::probe_status, $5, $6, now())
 ON CONFLICT (identifier, surface) DO UPDATE
-SET status = EXCLUDED.status,
+SET status = CASE
+        WHEN EXCLUDED.status = 'unknown'::probe_status THEN identifier_probes.status
+        ELSE EXCLUDED.status
+    END,
     detail = EXCLUDED.detail,
     source_url = EXCLUDED.source_url,
     checked_at = now()
+"""
+
+# `unknown` means the check did not run, so it must not erase a definite answer:
+# a listing call that fails once would otherwise look like a transition back to
+# "gone" on the next successful poll, and the pipeline would announce a
+# retirement that already happened. The detail and timestamp still record that
+# the check was attempted and failed.
+
+_PREVIOUS_PROBES_SQL: Final[str] = """
+SELECT identifier, surface, status::text AS status
+FROM identifier_probes
+WHERE provider = $1
 """
 
 # Only `not_found` is read back. A probe may escalate a finding, never relax one,
@@ -498,6 +513,24 @@ async def record_probe_results(
             result.source_url,
         )
     return len(results)
+
+
+async def previous_probe_statuses(
+    connection: asyncpg.Connection, *, provider: str = "google"
+) -> dict[tuple[str, str], str]:
+    """What the last poll concluded, keyed by `(identifier, surface)`.
+
+    Read before the upsert overwrites it: a transition is the difference between
+    this and what the surface says now.
+    """
+    try:
+        rows = await connection.fetch(_PREVIOUS_PROBES_SQL, provider)
+    except asyncpg.PostgresError as exc:  # pragma: no cover - pre-migration database
+        if getattr(exc, "sqlstate", None) != _UNDEFINED_TABLE:
+            raise
+        log.warning("identifier_probes is missing; every result reads as a first observation")
+        return {}
+    return {(str(row["identifier"]), str(row["surface"])): str(row["status"]) for row in rows}
 
 
 async def probe_indexed_identifiers(
