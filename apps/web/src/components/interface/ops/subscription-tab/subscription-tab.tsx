@@ -22,6 +22,7 @@ import {
   MarketplaceEmptyState,
   NoProjectEmptyState,
   SubscribedEmptyState,
+  SubscriptionLoadingState,
 } from "./empty-states";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -66,7 +67,8 @@ export function SubscriptionTab({
   onOpenChanges?: () => void;
 }) {
   const [section, setSection] = useState<Section>("marketplace");
-  const [offers, setOffers] = useState<MarketplaceOffer[]>([MOCK_GOOGLE_OFFER]);
+  const [offers, setOffers] = useState<MarketplaceOffer[]>([]);
+  const [loading, setLoading] = useState(Boolean(hasProject && projectId));
   const [query, setQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [unsubscribeOpen, setUnsubscribeOpen] = useState(false);
@@ -90,10 +92,23 @@ export function SubscriptionTab({
   }, []);
 
   useEffect(() => {
-    if (!hasProject || !projectId) return;
-    void loadOffers(projectId).catch(() => {
-      setOffers([MOCK_GOOGLE_OFFER]);
-    });
+    if (!hasProject || !projectId) {
+      setOffers([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void loadOffers(projectId)
+      .catch(() => {
+        if (!cancelled) setOffers([MOCK_GOOGLE_OFFER]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [hasProject, loadOffers, projectId]);
 
   const watching = offers.filter((offer) => offer.subscribed);
@@ -159,6 +174,10 @@ export function SubscriptionTab({
 
   if (!hasProject) {
     return <NoProjectEmptyState />;
+  }
+
+  if (loading) {
+    return <SubscriptionLoadingState />;
   }
 
   const poolEmpty = section === "subscribed" ? watching.length === 0 : offers.length === 0;
