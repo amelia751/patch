@@ -121,6 +121,19 @@ def test_future_retirement_with_runtime_stays_watching() -> None:
     assert (status, reason) == ("watching", "runtime_hit")
 
 
+def test_replacement_with_runtime_is_need_you() -> None:
+    status, reason = classify(
+        identifiers=["gemini-3.1-flash-image-preview"],
+        hits=[{"usage_kind": "runtime_source", "identifier": "gemini-3.1-flash-image-preview"}],
+        fail_closed=False,
+        false_positive=False,
+        change_kind="replacement",
+        effective_at=date(2026, 7, 17),
+        today=date(2026, 8, 22),
+    )
+    assert (status, reason) == ("needs_you", "runtime_hit")
+
+
 def test_new_identifier_with_runtime_stays_watching() -> None:
     status, reason = classify(
         identifiers=["gemini-3.5-flash"],

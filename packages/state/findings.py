@@ -248,8 +248,7 @@ def in_effect(
         return False
     if effective_at is not None:
         return effective_at <= today
-    del fail_closed  # undated breaking notes are already a break
-    return True
+    return True  # undated breaking note; fail_closed is unused once a date exists
 
 
 def classify(
@@ -287,7 +286,9 @@ def classify(
     if change_kind == "new_identifier":
         return "watching", "new_identifier"
     if runtime:
-        if not breaking:
+        # A dated deprecation that has not taken effect yet is Watching even
+        # with a call site. Any other runtime hit is already a break.
+        if change_kind in BREAKING_KINDS and not breaking:
             return "watching", "runtime_hit"
         if fail_closed or vertex:
             return "needs_you", "fail_closed"
