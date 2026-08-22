@@ -6,11 +6,10 @@ implements them; this package implements them and therefore already depends on
 the control plane. Putting the wiring in the service would close that into a
 cycle the workspace cannot resolve.
 
-What is deliberately *not* wired: the provider-check dispatcher. Pub/Sub does
-not exist yet (roadmap phase 4), so `POST /v1/provider-checks` answers 503
-naming the missing transport. Supplying a fake that accepted triggers and
-dropped them would make the dashboard's "Check now" button report success for
-work nobody enqueued.
+The provider-check dispatcher is wired only where a refresh job exists to run.
+A local checkout has none, and `/readyz` reporting the transport as unwired is
+the truth: a stub that accepted triggers and dropped them would make the
+dashboard's "Check now" button report success for work nobody started.
 """
 
 from __future__ import annotations
@@ -21,7 +20,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING
 
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from patchapi_control_api.app import create_app
+from patchapi_control_api.dependencies import EVENT_TRANSPORT
+from patchapi_control_api.errors import dependency_unavailable
 from patchapi_control_api.ports import ReadinessProbe
 
 from packages.state.auth_routes import router as auth_router
@@ -33,6 +36,7 @@ from packages.state.notification_routes import router as notification_router
 from packages.state.organization_routes import router as organization_router
 from packages.state.pool import StateUnavailableError, create_pool, ping
 from packages.state.project_routes import router as project_router
+from packages.state.provider_check import RefreshJobUnavailableError, build_dispatcher
 from packages.state.provider_routes import router as provider_router
 from packages.state.runs import PostgresRunStateReader
 
@@ -88,7 +92,19 @@ def build_app() -> FastAPI:
             app.state.console_hub = None
             await pool.close()
 
-    app = create_app(allowed_origins=cors_origins())
+    app = create_app(
+        allowed_origins=cors_origins(),
+        provider_check_dispatcher=build_dispatcher(),
+    )
+
+    @app.exception_handler(RefreshJobUnavailableError)
+    async def _refresh_unavailable(_request: Request, exc: RefreshJobUnavailableError) -> Response:
+        # Mapped here rather than in the adapter: the adapter reports what Cloud
+        # Run said, and only the composition root knows that answer is being
+        # served over HTTP.
+        error = dependency_unavailable(EVENT_TRANSPORT, str(exc))
+        return JSONResponse(error.detail, status_code=error.status_code)
+
     app.include_router(auth_router)
     app.include_router(github_router)
     app.include_router(project_router)

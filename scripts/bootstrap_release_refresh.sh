@@ -23,6 +23,7 @@ REGION="${GCP_REGION:-us-central1}"
 JOB="${PATCHAPI_REFRESH_JOB:-patchapi-refresh-releases}"
 REFRESH_SA_ID="${PATCHAPI_REFRESH_SA:-patchapi-refresh}"
 SCHEDULER_SA_ID="${PATCHAPI_SCHEDULER_SA:-patchapi-scheduler}"
+API_SA_ID="${PATCHAPI_API_SA:-patchapi-api}"
 SCHEDULE="${PATCHAPI_REFRESH_SCHEDULE:-0 */6 * * *}"
 PREFIX="${PATCHAPI_PUBSUB_TOPIC_PREFIX:-patchapi-dev}"
 SQL_INSTANCE="${PATCHAPI_SQL_INSTANCE:-${PROJECT_ID}:${REGION}:patchapi-console}"
@@ -111,11 +112,15 @@ else
   gcloud run jobs create "$JOB" "${JOB_ARGS[@]}" --quiet
 fi
 
-# Scoped to this one job rather than project-wide run.invoker: the scheduler has
-# no reason to be able to execute anything else.
-gcloud run jobs add-iam-policy-binding "$JOB" \
-  --project="$PROJECT_ID" --region="$REGION" \
-  --member="serviceAccount:${SCHEDULER_SA}" --role=roles/run.invoker --quiet >/dev/null
+# Scoped to this one job rather than project-wide run.invoker: neither caller
+# has a reason to be able to execute anything else. The control plane is here
+# because the console's "Check now" button starts this same job rather than
+# reimplementing the poll inside a request.
+for caller in "$SCHEDULER_SA" "$(sa_email "$API_SA_ID")"; do
+  gcloud run jobs add-iam-policy-binding "$JOB" \
+    --project="$PROJECT_ID" --region="$REGION" \
+    --member="serviceAccount:${caller}" --role=roles/run.invoker --quiet >/dev/null
+done
 
 SCHEDULER_ARGS=(
   --project="$PROJECT_ID"
