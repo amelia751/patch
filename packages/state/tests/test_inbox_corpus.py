@@ -43,6 +43,17 @@ def test_catalog_notes_only_for_used_uncovered_ids() -> None:
     assert notes == ()
 
 
+def test_future_catalog_retirement_is_not_fail_closed() -> None:
+    notes = catalog_notes_for_usages(
+        (_change("gemini-3.1-flash-image", effective="2027-05-28T00:00:00Z", replacement=None),),
+        ["gemini-3.1-flash-image"],
+        [],
+        today=date(2026, 8, 22),
+    )
+    assert notes[0]["fail_closed"] is False
+    assert notes[0]["severity"] == "medium"
+
+
 def test_catalog_notes_emit_an_uncovered_retirement() -> None:
     notes = catalog_notes_for_usages(
         (_change("gemini-1.5-flash-001", replacement="gemini-2.5-flash"),),

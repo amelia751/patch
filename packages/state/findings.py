@@ -238,12 +238,18 @@ def in_effect(
     fail_closed: bool,
     today: date,
 ) -> bool:
-    """True when this note is already a break, not a future announcement."""
+    """True when this note is already a break, not a future announcement.
+
+    A dated note uses the date, even if `fail_closed` is set — a 2027
+    lifecycle row is not a 404 today. Missing date plus fail-closed is
+    treated as already broken (the Vertex leftover case).
+    """
     if change_kind not in BREAKING_KINDS:
         return False
-    if fail_closed or effective_at is None:
-        return True
-    return effective_at <= today
+    if effective_at is not None:
+        return effective_at <= today
+    del fail_closed  # undated breaking notes are already a break
+    return True
 
 
 def classify(
@@ -278,7 +284,11 @@ def classify(
         fail_closed=fail_closed,
         today=today or date.today(),
     )
+    if change_kind == "new_identifier":
+        return "watching", "new_identifier"
     if runtime:
+        if not breaking:
+            return "watching", "runtime_hit"
         if fail_closed or vertex:
             return "needs_you", "fail_closed"
         return "needs_you", "runtime_hit"
@@ -286,8 +296,6 @@ def classify(
         if breaking:
             return "needs_you", "docs_only"
         return "watching", "docs_only"
-    if change_kind == "new_identifier":
-        return "watching", "new_identifier"
     return "watching", "no_usage"
 
 

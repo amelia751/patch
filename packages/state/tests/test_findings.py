@@ -108,6 +108,30 @@ def test_fal_ai_is_dismissed() -> None:
     assert not is_false_positive("imagen-4.0-generate-001")
 
 
+def test_future_retirement_with_runtime_stays_watching() -> None:
+    status, reason = classify(
+        identifiers=["gemini-3.1-flash-image"],
+        hits=[{"usage_kind": "runtime_source", "identifier": "gemini-3.1-flash-image"}],
+        fail_closed=True,
+        false_positive=False,
+        change_kind="deprecation",
+        effective_at=date(2027, 5, 28),
+        today=date(2026, 8, 22),
+    )
+    assert (status, reason) == ("watching", "runtime_hit")
+
+
+def test_new_identifier_with_runtime_stays_watching() -> None:
+    status, reason = classify(
+        identifiers=["gemini-3.5-flash"],
+        hits=[{"usage_kind": "runtime_source", "identifier": "gemini-3.5-flash"}],
+        fail_closed=False,
+        false_positive=False,
+        change_kind="new_identifier",
+    )
+    assert (status, reason) == ("watching", "new_identifier")
+
+
 def test_empty_identifiers_are_not_an_api_id() -> None:
     status, reason = classify(
         identifiers=[],

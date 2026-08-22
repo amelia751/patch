@@ -128,7 +128,7 @@ def catalog_notes_for_usages(
         replacement = (change.recommended_replacement or "").strip() or None
         effective = _as_date(change.effective_at)
         announced = _as_date(change.published_at)
-        in_effect = effective is not None and effective <= day
+        already_broken = effective is not None and effective <= day
         kind = change.kind if change.kind in CHANGE_KINDS else "deprecation"
         replacements = (
             [{"from": overlap[0], "to": replacement, "notes": "catalog"}]
@@ -141,7 +141,7 @@ def catalog_notes_for_usages(
                 "provider": "google",
                 "product": product_for_identifier(overlap[0]),
                 "change_kind": kind,
-                "severity": "high" if in_effect and kind in BREAKING_KINDS else "medium",
+                "severity": "high" if already_broken and kind in BREAKING_KINDS else "medium",
                 "title": change.title,
                 "summary": (
                     f"{overlap[0]} is listed on the official Google model lifecycle. "
@@ -156,7 +156,7 @@ def catalog_notes_for_usages(
                 "replacements": replacements,
                 "announced_at": announced.isoformat() if announced else None,
                 "effective_at": effective.isoformat() if effective else None,
-                "fail_closed": replacement is None and kind in BREAKING_KINDS,
+                "fail_closed": already_broken and replacement is None and kind in BREAKING_KINDS,
                 "false_positive": False,
                 "migration": None,
             }
