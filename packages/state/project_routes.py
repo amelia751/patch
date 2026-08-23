@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -16,6 +18,7 @@ from packages.auth.github_oauth import (
     fetch_repository_file,
     fetch_repository_tree,
 )
+from packages.schemas.run_state import RunState
 from packages.state.codebase import (
     codebase_payload_from_repos,
     imported_repos,
@@ -64,6 +67,23 @@ from packages.state.providers import (
     list_providers,
     subscribe_project,
     unsubscribe_project,
+)
+from packages.state.remediation import (
+    advance,
+    open_run,
+    resolve_target,
+)
+from packages.state.remediation import (
+    list_runs as list_remediation_runs,
+)
+from packages.state.remediation import (
+    read_run as read_remediation_run,
+)
+from packages.state.run_dispatch import (
+    RemediationUnavailableError,
+)
+from packages.state.run_dispatch import (
+    build_dispatcher as build_remediation_dispatcher,
 )
 from packages.state.secret_manager import GoogleSecretVault, SecretStoreError, gcp_project
 from packages.state.secrets import (
@@ -120,6 +140,27 @@ async def _json_body(request: Request) -> dict[str, Any]:
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _jsonable(value: Any) -> Any:
+    """Render database rows as JSON without a model for every projection.
+
+    Run detail is a bundle of eight small reads whose shape is set by the
+    console, not by a contract another service consumes. Declaring Pydantic
+    models for each would add a second place to change every time a column is
+    added, and nothing would be checking that the two agreed.
+    """
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def _github_failure(exc: AuthConfigurationError | AuthUnavailableError) -> JSONResponse:
@@ -829,6 +870,170 @@ async def _set_change_status(
     if updated is None:
         return JSONResponse({"detail": "Change not found"}, status_code=404)
     return JSONResponse(updated)
+
+
+# ------------------------------------------------------------ remediation ---
+
+
+@router.post("/{project_id}/changes/{external_id}/remediate")
+async def start_remediation(request: Request, project_id: UUID, external_id: str) -> JSONResponse:
+    """Begin, or rejoin, the remediation of one change in one repository.
+
+    The run row is written before anything is dispatched, and the row is unique
+    per change and repository. That ordering is what makes the button safe to
+    press twice: the second press finds the run the first one opened and starts
+    no second execution, so one change cannot become two pull requests.
+
+    A repository this project does not use is answered as nothing to remediate
+    rather than as a run against a tree PatchAPI never indexed.
+    """
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    body = await _json_body(request)
+    repository = str(body.get("repository") or "").strip()
+
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        async with _pool(request).acquire() as connection:
+            target = await resolve_target(
+                connection,
+                external_id=external_id,
+                project_id=project_id,
+                repository=repository,
+            )
+            if target is None:
+                return JSONResponse({"detail": "Change not found"}, status_code=404)
+            change_event_id, resolved_repo, base_sha = target
+            if not resolved_repo:
+                return JSONResponse(
+                    {
+                        "detail": "No indexed repository in this project uses that change",
+                        "error": "nothing_to_remediate",
+                    },
+                    status_code=409,
+                )
+            handle = await open_run(
+                connection,
+                change_event_id=change_event_id,
+                project_id=project_id,
+                repository=resolved_repo,
+                base_sha=base_sha,
+                trace_id=f"run-{external_id}",
+            )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+
+    payload: dict[str, Any] = {
+        "run_id": handle.run_id,
+        "state": str(handle.state),
+        "repository": handle.repository,
+        "base_sha": handle.base_sha,
+        "change_id": external_id,
+        "dispatched": False,
+    }
+    if not handle.dispatch:
+        # Already in flight. The console opens the existing run rather than
+        # being told nothing happened.
+        return JSONResponse(payload, status_code=200)
+
+    dispatcher = build_remediation_dispatcher()
+    if dispatcher is None:
+        async with _pool(request).acquire() as connection:
+            await advance(
+                connection,
+                handle.run_id,
+                RunState.FAILED,
+                actor="console",
+                reason="no remediation runner is configured for this deployment",
+            )
+        return JSONResponse(
+            {
+                **payload,
+                "error": "runner_unavailable",
+                "detail": "This deployment has no remediation runner configured",
+            },
+            status_code=503,
+        )
+
+    try:
+        execution = await dispatcher.dispatch(handle.run_id)
+    except RemediationUnavailableError as exc:
+        # The run row stays, marked with why nothing picked it up. A row left at
+        # RECEIVED with no executor would look like a run that is about to start.
+        async with _pool(request).acquire() as connection:
+            await advance(
+                connection,
+                handle.run_id,
+                RunState.FAILED,
+                actor="console",
+                reason=str(exc),
+            )
+        return JSONResponse(
+            {**payload, "error": "dispatch_failed", "detail": str(exc)}, status_code=502
+        )
+
+    return JSONResponse(
+        {**payload, "dispatched": True, "execution": execution, "transport": dispatcher.transport},
+        status_code=202,
+    )
+
+
+@router.get("/{project_id}/runs")
+async def list_project_runs(request: Request, project_id: UUID) -> JSONResponse:
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        async with _pool(request).acquire() as connection:
+            rows = await list_remediation_runs(connection, project_id=project_id)
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    return JSONResponse({"runs": _jsonable(rows)})
+
+
+@router.get("/{project_id}/runs/{run_id}")
+async def read_project_run(request: Request, project_id: UUID, run_id: str) -> JSONResponse:
+    """One run and its evidence. `since` returns only newer worklog lines."""
+    user_id = _require_user(request)
+    if isinstance(user_id, JSONResponse):
+        return user_id
+    try:
+        since = int(request.query_params.get("since") or 0)
+    except ValueError:
+        since = 0
+    try:
+        identifier = UUID(run_id)
+    except ValueError:
+        return JSONResponse({"detail": "Run not found"}, status_code=404)
+
+    try:
+        project = await read_project(_pool(request), project_id, user_id)
+        if project is None:
+            return JSONResponse({"detail": "Project not found"}, status_code=404)
+        async with _pool(request).acquire() as connection:
+            detail = await read_remediation_run(
+                connection, project_id=project_id, run_id=identifier, since=since
+            )
+    except StateUnavailableError as exc:
+        return JSONResponse(
+            {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
+            status_code=503,
+        )
+    if detail is None:
+        return JSONResponse({"detail": "Run not found"}, status_code=404)
+    return JSONResponse(_jsonable(detail))
 
 
 @router.get("/{project_id}/gcp-connections")

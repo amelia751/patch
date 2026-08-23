@@ -94,6 +94,28 @@ def github_tools_base_url() -> str:
     return os.environ.get(GITHUB_TOOLS_URL_ENV, "").strip().rstrip("/")
 
 
+def _service_identity(audience: str) -> str:
+    """Google-signed ID token proving which service account is calling.
+
+    The GitHub tool service is deployed private, so the caller has to be a
+    named service account rather than anyone who learns the URL. This is the
+    only credential the agent side ever handles, and it grants nothing beyond
+    "you may ask the tool service"; the GitHub App key stays on the other side.
+
+    Returns empty off Google infrastructure, where a private service is not
+    reachable anyway and the caller should hear that as a refusal.
+    """
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.id_token import fetch_id_token
+
+        return str(fetch_id_token(Request(), audience))
+    except Exception:
+        # Absent ADC is a deployment fact, not a bug. The caller turns the
+        # resulting 403 into a refusal that names the tool service.
+        return ""
+
+
 def invoke_github_capability(
     capability: str,
     *,
@@ -110,14 +132,18 @@ def invoke_github_capability(
             "GitHub write was attempted.",
             capability=capability,
         )
+    headers = {
+        "Content-Type": "application/json",
+        "X-PatchAPI-Agent": agent,
+        "X-PatchAPI-Run-Id": run_id,
+    }
+    token = _service_identity(base)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         f"{base}/v1/capabilities/{capability}",
         data=json.dumps(arguments).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "X-PatchAPI-Agent": agent,
-            "X-PatchAPI-Run-Id": run_id,
-        },
+        headers=headers,
         method="POST",
     )
     try:
