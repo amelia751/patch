@@ -15,6 +15,10 @@ from uuid import UUID
 
 ENV_PROJECT: Final[str] = "GCP_PROJECT"
 ENV_CREDENTIALS: Final[str] = "GOOGLE_APPLICATION_CREDENTIALS"
+# Service accounts, comma separated, that run the work a stored credential is
+# for. Empty in a local checkout, where the one identity does everything.
+ENV_READERS: Final[str] = "PATCHAPI_SECRET_READER_ACCOUNTS"
+ACCESSOR_ROLE: Final[str] = "roles/secretmanager.secretAccessor"
 DEFAULT_CREDENTIALS_FILE: Final[str] = ".secrets/gcp-service-account.json"
 SECRET_ID_PREFIX: Final[str] = "patchapi-ps-"
 GCP_CONNECTION_PREFIX: Final[str] = "patchapi-gcp-"
@@ -122,7 +126,47 @@ class GoogleSecretVault:
                 f"could not create secret container: {type(exc).__name__}"
             ) from exc
         self.add_version(name, payload)
+        self._grant_readers(name)
         return name
+
+    def _grant_readers(self, resource: str) -> None:
+        """Let the identities that run a remediation read this one secret.
+
+        The control plane creates the container, but the thing that needs the
+        value is the remediation job, running as a different service account.
+        Without a binding here the job is denied, the live provider check cannot
+        run, and every verdict comes back inconclusive — a project whose key is
+        registered and visible in the console still never reaches a pull
+        request, for a reason nothing in the console mentions.
+
+        Granted per secret rather than at the project, so the runner can read
+        exactly the credentials a customer registered and nothing else PatchAPI
+        keeps in Secret Manager — the database URL and the GitHub App key
+        included.
+        """
+        readers = [name.strip() for name in os.environ.get(ENV_READERS, "").split(",")]
+        members = [f"serviceAccount:{name}" for name in readers if name]
+        if not members:
+            return
+        client = _client()
+        try:
+            policy = client.get_iam_policy(request={"resource": resource})
+            binding = next(
+                (b for b in policy.bindings if b.role == ACCESSOR_ROLE),
+                None,
+            )
+            if binding is None:
+                policy.bindings.add(role=ACCESSOR_ROLE, members=members)
+            else:
+                missing = [m for m in members if m not in binding.members]
+                if not missing:
+                    return
+                binding.members.extend(missing)
+            client.set_iam_policy(request={"resource": resource, "policy": policy})
+        except Exception as exc:
+            raise SecretStoreError(
+                f"could not grant the remediation runner access: {type(exc).__name__}"
+            ) from exc
 
     def add_version(self, resource: str, payload: str) -> None:
         client = _client()

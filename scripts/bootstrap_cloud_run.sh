@@ -104,10 +104,16 @@ bind_project_role "$DEPLOY_SA" roles/run.admin
 bind_project_role "$DEPLOY_SA" roles/artifactregistry.writer
 bind_project_role "$DEPLOY_SA" roles/secretmanager.secretAccessor
 bind_project_role "$API_SA" roles/secretmanager.secretAccessor
-# Create / rotate / delete patchapi-ps-* and patchapi-gcp-* payloads.
-# Reveal stays on secretAccessor. This role has no setIamPolicy.
+# Create / rotate / delete patchapi-ps-* and patchapi-gcp-* payloads. Reveal
+# stays on secretAccessor.
+#
+# setIamPolicy is here because the identity that stores a credential is not the
+# one that uses it: the console writes the secret, the remediation job reads it
+# during live verification. Granting the job blanket access to the project's
+# secrets would hand it the database URL and the GitHub App key, so instead the
+# console binds the reader on each secret it creates, which needs this.
 VAULT_ROLE=projects/${PROJECT_ID}/roles/patchapiSecretVault
-VAULT_PERMS=secretmanager.secrets.create,secretmanager.secrets.delete,secretmanager.secrets.get,secretmanager.versions.add
+VAULT_PERMS=secretmanager.secrets.create,secretmanager.secrets.delete,secretmanager.secrets.get,secretmanager.versions.add,secretmanager.secrets.getIamPolicy,secretmanager.secrets.setIamPolicy
 if gcloud iam roles describe patchapiSecretVault --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud iam roles update patchapiSecretVault \
     --project="$PROJECT_ID" \

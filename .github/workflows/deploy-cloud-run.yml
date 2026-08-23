@@ -38,6 +38,9 @@ env:
   # roles/run.developer, which is the only predefined role carrying the
   # `runWithOverrides` permission a run id needs.
   REMEDIATION_INVOKER_ROLE: patchapiRemediationInvoker
+  # The job's own identity. The control plane grants it read access on each
+  # project secret it creates, because the job is what needs the value.
+  REMEDIATION_SA: patchapi-remediate@patch-505223.iam.gserviceaccount.com
   WEB_SA: patchapi-web@patch-505223.iam.gserviceaccount.com
   API_SA: patchapi-api@patch-505223.iam.gserviceaccount.com
   INDEXER_SA: patchapi-indexer@patch-505223.iam.gserviceaccount.com
@@ -151,7 +154,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=2 \
-            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|GCP_REGION=${REGION}|PATCHAPI_REFRESH_JOB=${REFRESH_JOB}|PATCHAPI_REMEDIATION_JOB=${REMEDIATION_JOB}|PATCHAPI_EVIDENCE_BASE_URL=${API_URL}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_DB_POOL_MIN=1|PATCHAPI_DB_POOL_MAX=3|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=${API_URL}/api/auth/github/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action|GITHUB_APP_SLUG=patchapi|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem|PATCHAPI_GITHUB_APP=/var/github-json/app.json" \
+            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|GCP_REGION=${REGION}|PATCHAPI_REFRESH_JOB=${REFRESH_JOB}|PATCHAPI_REMEDIATION_JOB=${REMEDIATION_JOB}|PATCHAPI_SECRET_READER_ACCOUNTS=${REMEDIATION_SA}|PATCHAPI_EVIDENCE_BASE_URL=${API_URL}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_DB_POOL_MIN=1|PATCHAPI_DB_POOL_MAX=3|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=${API_URL}/api/auth/github/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action|GITHUB_APP_SLUG=patchapi|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem|PATCHAPI_GITHUB_APP=/var/github-json/app.json" \
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
             --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest,PATCHAPI_GITHUB_WEBHOOK_SECRET=patchapi-github-webhook-secret:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_ID=patchapi-github-oauth-client-id:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET=patchapi-github-oauth-client-secret:latest,GITHUB_APP_ID=patchapi-github-app-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest,/var/github-json/app.json=patchapi-github-app:latest"
 
