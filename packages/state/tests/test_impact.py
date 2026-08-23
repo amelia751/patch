@@ -12,7 +12,7 @@ import pytest
 from packages.schemas.impact_report import ImpactReport
 from packages.state.corpus import write_manifest
 from packages.state.impact import impacts_for, write_report
-from packages.state.pool import _configure
+from packages.state.pool import configure_connection
 from packages.state.tests.test_corpus import manifest
 
 DSN = os.environ.get("DATABASE_URL", "").strip()
@@ -29,7 +29,7 @@ SHA_B = "b" * 40
 @pytest.fixture
 async def conn() -> Any:
     connection = await asyncpg.connect(DSN)
-    await _configure(connection)
+    await configure_connection(connection)
     transaction = connection.transaction()
     await transaction.start()
     try:

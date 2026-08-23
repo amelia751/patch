@@ -124,8 +124,13 @@ async def _run(provider: str, dsn: str | None) -> int:
     import asyncpg
 
     from packages.state.config import database_url
+    from packages.state.pool import configure_connection
 
     connection = await asyncpg.connect(dsn or database_url())
+    # One connection, not a pool, but the same SQL — so the same codecs. Without
+    # them the job polls every surface, decides what changed, and only then
+    # fails on the first jsonb argument it tries to write.
+    await configure_connection(connection)
     try:
         summary = await refresh_releases(connection, provider=provider)
     finally:

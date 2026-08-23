@@ -33,8 +33,14 @@ class StateUnavailableError(RuntimeError):
     """
 
 
-async def _configure(connection: Any) -> None:
-    """Register the codecs every query in this package assumes."""
+async def configure_connection(connection: Any) -> None:
+    """Register the codecs every query in this package assumes.
+
+    Public because the pool is not the only way in. A batch job that opens a
+    single `asyncpg.connect` runs the same SQL, and a `jsonb` argument passed to
+    an unconfigured connection fails with "expected str, got list" — at the
+    moment the job writes, having already done the work.
+    """
     await connection.set_type_codec(
         "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
     )
@@ -59,7 +65,7 @@ async def create_pool(dsn: str | None = None) -> asyncpg.Pool:
             min_size=MIN_POOL_SIZE,
             max_size=MAX_POOL_SIZE,
             command_timeout=COMMAND_TIMEOUT_SECONDS,
-            init=_configure,
+            init=configure_connection,
         )
     except OSError as exc:
         # The DSN may carry a password, so the message names the failure, never

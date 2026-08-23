@@ -17,7 +17,7 @@ import asyncpg
 import pytest
 
 from packages.state import projects
-from packages.state.pool import _configure
+from packages.state.pool import configure_connection
 
 DSN = os.environ.get("DATABASE_URL", "").strip()
 
@@ -49,7 +49,7 @@ class OnePool:
 @pytest.fixture
 async def conn() -> Any:
     connection = await asyncpg.connect(DSN)
-    await _configure(connection)
+    await configure_connection(connection)
     transaction = connection.transaction()
     await transaction.start()
     try:

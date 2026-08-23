@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse
 from packages.events.config import EventType
 from packages.events.envelope import EventEnvelope
 from packages.state.config import database_url
-from packages.state.pool import _configure
+from packages.state.pool import configure_connection
 from patchapi_agent_runner import runner
 
 log = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ async def create_agent_pool() -> asyncpg.Pool:
         min_size=0,
         max_size=2,
         command_timeout=HANDLER_TIMEOUT_SECONDS,
-        init=_configure,
+        init=configure_connection,
     )
 
 

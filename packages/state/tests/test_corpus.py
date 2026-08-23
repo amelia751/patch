@@ -17,7 +17,7 @@ import pytest
 
 from packages.schemas.change_manifest import ChangeManifest, IdentifierReplacement
 from packages.state.corpus import NORMALIZER_VERSION, write_manifest
-from packages.state.pool import _configure
+from packages.state.pool import configure_connection
 
 DSN = os.environ.get("DATABASE_URL", "").strip()
 
@@ -33,7 +33,7 @@ async def conn() -> Any:
     # The same codecs the pool registers. Without them a jsonb argument would
     # have to be pre-serialized here and nowhere else, which is how the
     # double-encoding bug got in the first time.
-    await _configure(connection)
+    await configure_connection(connection)
     transaction = connection.transaction()
     await transaction.start()
     try:
