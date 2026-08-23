@@ -37,6 +37,7 @@ from agents.specialists.verification import build as build_verification
 from agents.tools import build_tool_index, is_refusal
 from agents.tools.patch.skill import SKILLS_DIRNAME
 from agents.tools.pr import github_tools_base_url, invoke_github_capability
+from agents.tools.results import ReasonCode
 from agents.trace import ToolStatus, ToolTrace
 from packages.providers.google.normalize import manifest_from_feed_file
 from packages.schemas.change_manifest import ChangeManifest
@@ -1038,11 +1039,19 @@ class Orchestrator:
         if source is None:
             keep(self._fail(AgentId.VERIFICATION, f"{slice_.entrypoint} missing after patch"))
             return result
+        # Looking at the running page is evidence when a repository produces
+        # one, and most do not. Requiring it would mean PatchAPI could only
+        # migrate repositories that happen to render a status page — the demo
+        # fixture writes one, an arbitrary customer repository does not. So a
+        # missing page is recorded and the run continues to verification, which
+        # grades the diff and the checks. A page that *is* there and shows a
+        # retired identifier still fails: that is the patch being wrong, not the
+        # repository being ordinary.
         ui = self._run_computer_use(slice_)
-        if is_refusal(ui):
+        if is_refusal(ui) and ui.get("reason_code") != ReasonCode.STAGE_NOT_READY.value:
             keep(self._fail(AgentId.PATCH, str(ui.get("message", "computer_use_step refused"))))
             return result
-        if not ui.get("goal_met"):
+        if not is_refusal(ui) and not ui.get("goal_met"):
             keep(
                 self._fail(
                     AgentId.PATCH,

@@ -16,6 +16,7 @@ import json
 import os
 import re
 import struct
+import tempfile
 import threading
 import zlib
 from collections.abc import Callable
@@ -40,18 +41,67 @@ _BINDING: Final[re.Pattern[str]] = re.compile(
 )
 
 
+# What the viewer is made of. Small and fixed, because the point is to look at
+# what the sandbox's own check wrote, not to copy a repository out of isolation.
+_VIEWER_FILES: Final[tuple[str, ...]] = (
+    "viewer/index.html",
+    "viewer/model.json",
+)
+
+
 def _workspace(context: Any) -> Path | dict[str, Any]:
     sandbox = getattr(context, "sandbox", None)
     working = getattr(sandbox, "working_dir", None) if sandbox is not None else None
     if isinstance(working, Path):
         return working
+    if sandbox is not None:
+        mirrored = _mirror(context, sandbox)
+        if mirrored is not None:
+            return mirrored
     root = getattr(context, "workspace_root", None)
     if isinstance(root, Path):
         return root
     return refusal(
         ReasonCode.STAGE_NOT_READY,
-        "computer_use_step needs a local workspace path; the session has none",
+        "computer_use_step needs a workspace to look at; the session has none",
     )
+
+
+def _mirror(context: Any, sandbox: Any) -> Path | None:
+    """Copy the viewer out of a remote sandbox so it can be screenshotted here.
+
+    A GKE sandbox's workspace is a path inside a pod, and a screenshot needs a
+    page this process can open. Rather than reach into the sandbox — which would
+    mean a route through gVisor and its deny-all network policy, undoing the
+    isolation that makes running generated code acceptable — the two small files
+    the check wrote are read out and served locally. The screenshot is therefore
+    of exactly what the sandbox produced, and nothing reaches in.
+
+    Returns None when the session cannot be read from or wrote no viewer, which
+    the caller reports rather than papering over: a verification step with no
+    page to look at has not verified anything.
+    """
+    read = getattr(sandbox, "read_file", None)
+    if not callable(read):
+        return None
+
+    evidence = getattr(context, "evidence_root", None)
+    root = Path(evidence) / "ui" if isinstance(evidence, Path) else None
+    if root is None:
+        root = Path(tempfile.mkdtemp(prefix="patchapi-viewer-"))
+    mirror = root / "workspace"
+
+    found = False
+    for relative in _VIEWER_FILES:
+        try:
+            body = read(relative)
+        except Exception:
+            continue
+        destination = mirror / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(body, encoding="utf-8")
+        found = True
+    return mirror if found else None
 
 
 def _png(path: Path, *, width: int = 8, height: int = 8) -> None:
@@ -165,7 +215,7 @@ def _ensure_viewer(workspace: Path, retired: tuple[str, ...]) -> None:
         json.dumps({"model": model, "status": status}, indent=2) + "\n", encoding="utf-8"
     )
     page.write_text(
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
         "<title>Storygen model check</title></head><body>"
         f"<h1>Storygen model check</h1><p>status:{status}</p><p>{line}</p>"
         "</body></html>\n",
