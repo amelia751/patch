@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
-from packages.schemas.run_state import RunState, assert_transition, is_terminal
+from packages.schemas.run_state import RunState, assert_transition, is_resumable, is_terminal
 
 if TYPE_CHECKING:  # pragma: no cover
     import asyncpg
@@ -71,6 +71,10 @@ WHERE change_event_id = $1 AND project_id = $2 AND repository = $3
 # A restart is deliberately not a transition. `FAILED` is terminal and the state
 # machine is right to forbid a move out of it; beginning again is a different
 # act, recorded with the state it came from so the history still reads honestly.
+#
+# The attempt budget resets too. A run that paused for a missing key spent no
+# attempt on the merits of its patch, and charging it for the pause would mean
+# the operator supplies the key only to watch the run give up early.
 _RESTART_SQL: Final[str] = """
 UPDATE remediation_runs
 SET state = 'RECEIVED', failure_reason = '', ended_at = NULL, attempts_used = 0,
@@ -89,6 +93,13 @@ RETURNING id, state::text AS state, repository, base_sha
 # `patch_attempts`, `audit_events` and any pull request survive a restart,
 # because those record consequences rather than progress.
 _CLEAR_TRACE_SQL: Final[str] = "DELETE FROM run_trace_events WHERE run_id = $1"
+
+# The evidence bundle goes with it, for the same reason and a sharper one: the
+# console shows *the* diff and *the* build log for a run, so three restarts left
+# three diffs with no way to tell which belongs to the patch the reviewer is
+# being asked to trust. A superseded diff is not history, it is a wrong answer
+# to "what does this run propose".
+_CLEAR_ARTIFACTS_SQL: Final[str] = "DELETE FROM artifacts WHERE run_id = $1"
 
 # Said after the fact, because the sentence and the move are produced by
 # different things. The orchestrator advances the machine as it goes and only
@@ -235,8 +246,8 @@ async def open_run(
 
     Idempotent by design rather than by luck. A run already in flight is returned
     with `dispatch` false so the caller starts no second execution; a run that
-    ended is begun again on the same row, keeping one stable id per card in the
-    console and one history to read.
+    ended, or that is paused waiting on the operator, is begun again on the same
+    row, keeping one stable id per card in the console and one history to read.
     """
     change_uuid = _uuid(change_event_id)
     project_uuid = _uuid(project_id)
@@ -255,13 +266,22 @@ async def open_run(
         raise RuntimeError(f"could not open a run for {repository}")
 
     state = RunState(existing["state"])
-    if not is_terminal(state):
+    # Paused is not the same as running. A run parked on a missing secret has no
+    # execution behind it, so refusing to dispatch would strand it: the operator
+    # supplies the key, presses continue, and nothing ever picks the run up.
+    if not is_terminal(state) and not is_resumable(state):
         return _handle(existing, dispatch=False)
 
     restarted = await connection.fetchrow(_RESTART_SQL, existing["id"], base_sha, trace_id)
     await connection.execute(_CLEAR_TRACE_SQL, existing["id"])
+    await connection.execute(_CLEAR_ARTIFACTS_SQL, existing["id"])
     await _transition(
-        connection, existing["id"], state, RunState.RECEIVED, CONSOLE_ACTOR, "restarted"
+        connection,
+        existing["id"],
+        state,
+        RunState.RECEIVED,
+        CONSOLE_ACTOR,
+        "resumed" if is_resumable(state) else "restarted",
     )
     return _handle(restarted, dispatch=True)
 

@@ -42,6 +42,15 @@ TERMINAL_RUN_STATES: Final[frozenset[RunState]] = frozenset(
     }
 )
 
+# States in which a run has stopped but has not ended: nothing is executing it,
+# and what it is waiting for arrives from outside the run. Distinct from
+# terminal, because the run can still reach a pull request, and distinct from
+# in-flight, because no execution will pick it up on its own. Only the console
+# saying "continue" moves it, which is why the set exists at all — treating
+# these as in-flight is what leaves a run paused for a secret paused forever
+# after the secret is supplied.
+RESUMABLE_RUN_STATES: Final[frozenset[RunState]] = frozenset({RunState.WAITING_ON_OPERATOR})
+
 ALLOWED_RUN_STATE_TRANSITIONS: Final[MappingProxyType[RunState, frozenset[RunState]]] = (
     MappingProxyType(
         {
@@ -91,6 +100,11 @@ ALLOWED_RUN_STATE_TRANSITIONS: Final[MappingProxyType[RunState, frozenset[RunSta
 def is_terminal(state: RunState) -> bool:
     """Return whether `state` ends the run."""
     return state in TERMINAL_RUN_STATES
+
+
+def is_resumable(state: RunState) -> bool:
+    """Return whether `state` is stopped waiting for something outside the run."""
+    return state in RESUMABLE_RUN_STATES
 
 
 def can_transition(source: RunState, target: RunState) -> bool:
