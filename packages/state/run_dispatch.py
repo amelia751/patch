@@ -111,7 +111,8 @@ class CloudRunRemediationDispatcher:
                 raise RemediationUnavailableError(f"Cloud Run did not answer: {exc}") from exc
             if response.status_code >= 400:
                 raise RemediationUnavailableError(
-                    f"Cloud Run returned {response.status_code} starting {self.job}"
+                    f"Cloud Run returned {response.status_code} starting {self.job}: "
+                    f"{_why(response)}"
                 )
             payload = response.json() if response.content else {}
 
@@ -175,6 +176,22 @@ def _local_command() -> list[str] | None:
     if uv:
         return [uv, "run", ENTRY_POINT]
     return [sys.executable, "-m", "patchapi_remediation.entrypoint"]
+
+
+def _why(response: httpx.Response) -> str:
+    """Cloud Run's own explanation, which the status code alone does not give.
+
+    A bare 403 reads as "the job is missing or the deployment is broken" and
+    sends whoever is looking at IAM in general. Cloud Run says which permission
+    was denied, and that sentence is the difference between a guess and a fix,
+    so it is carried through to the console rather than dropped here.
+    """
+    try:
+        error = response.json().get("error", {})
+        message = str(error.get("message", "")).strip()
+    except (ValueError, AttributeError):
+        message = ""
+    return message or response.text.strip()[:300] or "no reason given"
 
 
 async def _token(job: str) -> str:
