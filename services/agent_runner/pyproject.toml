@@ -20,6 +20,9 @@ dependencies = [
 
 [project.scripts]
 patchapi-agent-runner-serve = "patchapi_agent_runner.serve:main"
+# The Cloud Run job. Same image and same fleet as the service above; a
+# remediation simply cannot be served on a request, so it gets its own command.
+patchapi-remediate = "patchapi_agent_runner.remediation.entrypoint:main"
 
 [tool.uv.sources]
 patchapi-events = { workspace = true }

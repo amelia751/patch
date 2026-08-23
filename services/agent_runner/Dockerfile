@@ -1,12 +1,32 @@
 # Build context is the repository root.
 #   docker build -f services/agent_runner/Dockerfile -t patchapi-agents .
 #
-# No zoekt, no ast-grep, no git: this lane reads notices and calls a model. The
-# index it needs has already been written to Cloud SQL by the indexer.
+# One image, two entry points. `patchapi-agent-runner-serve` reads notices and
+# calls a model; `patchapi-remediate` runs one remediation as a Cloud Run job.
+# They share every line of the agent fleet, so a second image would only be a
+# second thing to keep in step.
+#
+# The job adds two tools the serving lane never uses. `git` reads the customer
+# repository at the pinned commit — into a scratch directory on this side, never
+# into the sandbox, so no credential travels with the tree. `kubectl` claims the
+# GKE sandbox. The Google Cloud SDK is deliberately absent: cluster credentials
+# are written from Application Default Credentials by `sandbox.gke.kubeconfig`,
+# which costs one small file instead of several hundred megabytes.
+#
+# No zoekt and no ast-grep: the index this lane reads was written to Cloud SQL
+# by the indexer.
 FROM python:3.12-slim AS runtime
 
+ARG KUBECTL_VERSION=v1.32.1
+
 RUN apt-get update \
- && apt-get install --no-install-recommends -y ca-certificates \
+ && apt-get install --no-install-recommends -y ca-certificates git curl \
+ && curl -fsSLo /usr/local/bin/kubectl \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+ && chmod 0755 /usr/local/bin/kubectl \
+ && kubectl version --client=true --output=yaml >/dev/null \
+ && apt-get purge -y curl \
+ && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /usr/local/bin/uv
@@ -45,6 +65,10 @@ RUN uv sync --frozen --package patchapi-agent-runner --no-dev
 COPY agents agents
 COPY sandbox sandbox
 COPY demo/fixtures demo/fixtures
+# `load_migration_skill` reads these from PATCHAPI_REPO_ROOT. Without them the
+# patch stage has the provider's notice and none of the capability differences
+# that make a migration more than a string replacement.
+COPY skills skills
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONPATH=/app \

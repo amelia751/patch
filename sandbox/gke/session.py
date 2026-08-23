@@ -40,6 +40,7 @@ from ..session import (
     SandboxUnavailableError,
     resolve_within,
 )
+from . import kubeconfig
 
 _GKE_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _GKE_DIR.parents[1]
@@ -495,30 +496,33 @@ class GkeSession:
         return self._pod
 
     def _require_tools(self) -> None:
-        for tool in ("gcloud", "kubectl"):
-            if shutil.which(tool) is None:
-                raise SandboxUnavailableError(f"{tool} is not installed")
+        # gcloud is deliberately not required. Credentials are written directly
+        # from Application Default Credentials, so the job image carries kubectl
+        # and nothing else.
+        if shutil.which("kubectl") is None:
+            raise SandboxUnavailableError("kubectl is not installed")
 
     def _authenticate(self) -> None:
-        completed = self._run(
-            [
-                "gcloud",
-                "container",
-                "clusters",
-                "get-credentials",
-                self._cluster.cluster,
-                "--location",
-                self._cluster.location,
-                "--project",
-                self._cluster.project,
-            ],
-            timeout=_KUBECTL_TIMEOUT_SECONDS * 2,
-        )
-        if completed is _TIMED_OUT or completed.returncode != 0:
-            detail = "timed out" if completed is _TIMED_OUT else completed.stderr.strip()
-            raise SandboxUnavailableError(
-                f"cannot reach cluster {self._cluster.cluster} ({self._cluster.location}): {detail}"
-            )
+        try:
+            kubeconfig.write(self._cluster, self._kubeconfig)
+        except kubeconfig.KubeconfigError as exc:
+            raise SandboxUnavailableError(str(exc)) from exc
+
+    def _refresh_credentials(self) -> None:
+        """Rewrite the kubeconfig before its token ages out mid-run.
+
+        A remediation can outlive an access token. Discovering that as an
+        unauthorized `kubectl exec` halfway through a patch would look like a
+        sandbox fault, so the file is replaced on age instead.
+        """
+        if not self._applied or not kubeconfig.stale(self._kubeconfig):
+            return
+        try:
+            kubeconfig.write(self._cluster, self._kubeconfig)
+        except kubeconfig.KubeconfigError:
+            # The existing token may still have minutes left; failing the call
+            # that noticed is worse than letting it try.
+            pass
 
     def _await_claim_uid(self) -> str:
         deadline = _deadline(self._ready_timeout)
@@ -611,6 +615,7 @@ class GkeSession:
         stdin: str | None = None,
         timeout: float = _KUBECTL_TIMEOUT_SECONDS,
     ) -> subprocess.CompletedProcess[str]:
+        self._refresh_credentials()
         return self._run(
             ["kubectl", "-n", self._cluster.namespace, *argv], stdin=stdin, timeout=timeout
         )

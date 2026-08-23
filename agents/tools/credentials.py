@@ -184,7 +184,7 @@ def build_credentials_tools(context: RunContext, agent: AgentId) -> list[Callabl
         }
         context.operator_requests.append(entry)
         # None, not a pending dict: ADK's LongRunningFunctionTool then
-        # pauses the runner (same as google.adk.tools.get_user_choice).
+        # pauses the runner, the same way its own get_user_choice does.
         # The hold lives on RunContext for the orchestrator.
         return None
 

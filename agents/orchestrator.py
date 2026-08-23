@@ -29,6 +29,7 @@ from typing import Any, Final
 from agents.adk import TurnResult, new_session_service, run_turn
 from agents.config import AgentId
 from agents.context import RunContext
+from agents.journal import RunJournal
 from agents.specialists.change_intelligence import build as build_change_intelligence
 from agents.specialists.impact import build as build_impact
 from agents.specialists.patch import build as build_patch
@@ -182,9 +183,15 @@ class Orchestrator:
     does not require google-adk to be importable.
     """
 
-    def __init__(self, context: RunContext, trace: ToolTrace) -> None:
+    def __init__(
+        self, context: RunContext, trace: ToolTrace, journal: RunJournal | None = None
+    ) -> None:
         self._context = context
         self._trace = trace
+        # Optional so a script or a test stays a two-argument construction. The
+        # journal is how a long-running job publishes progress; nothing in the
+        # state machine depends on one being attached.
+        self._journal = journal
         self._state = RunState.RECEIVED
         self._agents: dict[AgentId, Any] | None = None
         self._session_service: Any | None = None
@@ -256,6 +263,8 @@ class Orchestrator:
 
     def _advance(self, target: RunState) -> None:
         assert_transition(self._state, target)
+        if self._journal is not None:
+            self._journal.record(self._state, target)
         self._state = target
 
     def _fail(self, agent: AgentId, detail: str, turn: TurnResult | None = None) -> StageResult:
