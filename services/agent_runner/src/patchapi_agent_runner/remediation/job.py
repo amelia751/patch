@@ -468,10 +468,7 @@ async def _persist(
                 connection,
                 row.run_id,
                 verdict=str(getattr(report, "verdict", "inconclusive")).lower(),
-                checks=[
-                    {"name": str(getattr(check, "name", check)), "passed": _passed(check)}
-                    for check in getattr(report, "checks", []) or []
-                ],
+                checks=_checks(report),
                 verifier_agent="verification",
                 verifier_model=str(getattr(report, "verifier_model", "") or ""),
                 patch_agent="patch",
@@ -524,9 +521,29 @@ def _failure_summary(result: Any, baseline: Baseline) -> str:
     )
 
 
-def _passed(check: Any) -> bool:
-    outcome = str(getattr(check, "outcome", getattr(check, "status", ""))).lower()
-    return outcome in {"pass", "passed", "true", "ok"}
+def _checks(report: Any) -> list[dict[str, Any]]:
+    """The verifier's per-check outcomes, in the shape the console renders.
+
+    `VerificationReport.checks` is a mapping of check name to outcome, so
+    iterating it yields names. Reading an outcome off a string gives False for
+    everything, which put four failing checks next to a PASS verdict on the run
+    card — the report contradicting itself in the one place a reviewer looks to
+    decide whether to trust it.
+    """
+    checks = getattr(report, "checks", None) or {}
+    if isinstance(checks, dict):
+        return [{"name": str(name), "passed": _passed(outcome)} for name, outcome in checks.items()]
+    return [
+        {
+            "name": str(getattr(check, "name", check)),
+            "passed": _passed(getattr(check, "outcome", check)),
+        }
+        for check in checks
+    ]
+
+
+def _passed(outcome: Any) -> bool:
+    return str(getattr(outcome, "value", outcome)).lower() in {"pass", "passed", "true", "ok"}
 
 
 def _evidence(context: RunContext, name: str) -> str:
