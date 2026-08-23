@@ -24,12 +24,11 @@ _READ_RUN = """
 SELECT
     r.id::text                              AS run_id,
     r.state::text                           AS state,
-    repo.owner || '/' || repo.name          AS repository,
+    r.repository                            AS repository,
     r.base_sha                              AS base_sha,
     r.updated_at                            AS updated_at,
-    COALESCE(r.failure_reason, t.reason)    AS reason
+    NULLIF(COALESCE(NULLIF(r.failure_reason, ''), t.reason), '') AS reason
 FROM remediation_runs r
-JOIN repositories repo ON repo.id = r.repository_id
 LEFT JOIN LATERAL (
     SELECT reason
     FROM run_state_transitions

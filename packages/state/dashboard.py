@@ -54,18 +54,22 @@ _CHANGE_COLUMNS = """
     ce.external_id                          AS change_id,
     ce.provider                             AS provider,
     ce.change_kind::text                    AS change_kind,
-    ce.title                                AS title,
+    COALESCE(NULLIF(ce.title, ''), ce.external_id) AS title,
     ce.source_urls                          AS source_urls,
-    ce.source_sha256                        AS source_sha256,
+    NULLIF(ce.source_sha256, '')            AS source_sha256,
     ce.affected_identifiers                 AS affected_identifiers,
-    ce.recommended_replacement              AS recommended_replacement,
+    (
+        SELECT i.identifier
+        FROM change_event_identifiers i
+        WHERE i.change_event_id = ce.id AND i.role = 'replacement'
+        LIMIT 1
+    )                                       AS recommended_replacement,
     ce.effective_at                         AS effective_at,
     ce.detected_at                          AS detected_at,
     (
-        SELECT count(DISTINCT u.repository_id)
+        SELECT count(DISTINCT u.repository)
         FROM provider_usages u
-        JOIN repositories rp ON rp.id = u.repository_id AND NOT rp.archived
-        WHERE u.removed_at IS NULL
+        WHERE u.retired_at IS NULL
           AND u.identifier = ANY (ce.affected_identifiers)
     )::int                                  AS affected_repositories,
     (
@@ -116,34 +120,51 @@ WHERE ce.id = (SELECT change_event_id FROM remediation_runs WHERE id = $1::uuid)
 
 # A NULL identifier filter means "every identifier in the inventory"; a non-NULL
 # one scopes the counts to a single change.
+# The repository universe is the inventory itself. There is no `repositories`
+# table: a repository is known to PatchAPI because something indexed it, and
+# `provider_usages.repository` is where that fact lives. `owner_team` and
+# `criticality` have no source yet, so they are reported as unknown rather than
+# invented — a dashboard that shows a made-up criticality is worse than one that
+# admits it does not know.
 _LIST_REPOSITORIES = """
+WITH known AS (
+    SELECT DISTINCT repository FROM provider_usages WHERE retired_at IS NULL
+),
+indexed AS (
+    SELECT DISTINCT ON (repository)
+        repository,
+        NULLIF(indexed_sha, '') AS indexed_sha,
+        GREATEST(last_full_index, COALESCE(last_delta_index, last_full_index)) AS indexed_at
+    FROM repo_index_state
+    ORDER BY repository, last_full_index DESC NULLS LAST
+)
 SELECT
-    rp.owner || '/' || rp.name                          AS repository,
-    rp.owner_team                                       AS owner_team,
-    rp.criticality::text                                AS criticality,
-    rp.indexed_sha                                      AS indexed_sha,
-    rp.indexed_at                                       AS indexed_at,
+    k.repository                                        AS repository,
+    NULL::text                                          AS owner_team,
+    'unknown'                                           AS criticality,
+    i.indexed_sha                                       AS indexed_sha,
+    i.indexed_at                                        AS indexed_at,
     COALESCE(u.usage_count, 0)::int                     AS usage_count,
     COALESCE(u.file_count, 0)::int                      AS file_count,
     COALESCE(u.identifiers, ARRAY[]::text[])            AS identifiers
-FROM repositories rp
+FROM known k
+LEFT JOIN indexed i ON i.repository = k.repository
 LEFT JOIN LATERAL (
     SELECT
         count(*)                        AS usage_count,
         count(DISTINCT file_path)       AS file_count,
         array_agg(DISTINCT identifier)  AS identifiers
     FROM provider_usages
-    WHERE repository_id = rp.id
-      AND removed_at IS NULL
+    WHERE repository = k.repository
+      AND retired_at IS NULL
       AND ($1::text[] IS NULL OR identifier = ANY ($1::text[]))
 ) u ON TRUE
-WHERE NOT rp.archived
-ORDER BY COALESCE(u.usage_count, 0) DESC, rp.owner, rp.name
+ORDER BY COALESCE(u.usage_count, 0) DESC, k.repository
 """
 
 _LIST_USAGES = """
 SELECT
-    rp.owner || '/' || rp.name  AS repository,
+    u.repository                AS repository,
     u.identifier                AS identifier,
     u.surface                   AS surface,
     u.file_path                 AS file_path,
@@ -153,22 +174,19 @@ SELECT
     u.confidence                AS confidence,
     u.observed_sha              AS observed_sha
 FROM provider_usages u
-JOIN repositories rp ON rp.id = u.repository_id
-WHERE u.removed_at IS NULL
-  AND NOT rp.archived
+WHERE u.retired_at IS NULL
   AND ($1::text[] IS NULL OR u.identifier = ANY ($1::text[]))
-ORDER BY rp.owner, rp.name, u.file_path, u.line_start
+ORDER BY u.repository, u.file_path, u.line_start
 """
 
 _LATEST_RUN_PER_REPOSITORY = """
-SELECT DISTINCT ON (r.repository_id)
-    rp.owner || '/' || rp.name  AS repository,
+SELECT DISTINCT ON (r.repository)
+    r.repository                AS repository,
     r.id::text                  AS run_id,
     r.state::text               AS state
 FROM remediation_runs r
-JOIN repositories rp ON rp.id = r.repository_id
 WHERE ($1::uuid IS NULL OR r.change_event_id = $1::uuid)
-ORDER BY r.repository_id, r.started_at DESC
+ORDER BY r.repository, r.started_at DESC
 """
 
 # --------------------------------------------------------------------- runs ---
@@ -176,25 +194,24 @@ ORDER BY r.repository_id, r.started_at DESC
 _RUN_COLUMNS = """
     r.id::text                      AS run_id,
     r.state::text                   AS state,
-    rp.owner || '/' || rp.name      AS repository,
+    r.repository                    AS repository,
     ce.external_id                  AS change_id,
     r.base_sha                      AS base_sha,
-    r.trace_id                      AS trace_id,
+    NULLIF(r.trace_id, '')          AS trace_id,
     r.attempts_used                 AS attempts_used,
     r.attempt_budget                AS attempt_budget,
     r.started_at                    AS started_at,
     r.updated_at                    AS updated_at,
     r.ended_at                      AS ended_at,
-    r.failure_reason                AS failure_reason
+    NULLIF(r.failure_reason, '')    AS failure_reason
 """
 
 _LIST_RUNS = f"""
 SELECT {_RUN_COLUMNS}
 FROM remediation_runs r
-JOIN repositories rp ON rp.id = r.repository_id
 JOIN change_events ce ON ce.id = r.change_event_id
 WHERE ($1::text IS NULL OR ce.external_id = $1::text)
-  AND ($2::text IS NULL OR rp.owner || '/' || rp.name = $2::text)
+  AND ($2::text IS NULL OR r.repository = $2::text)
 ORDER BY r.started_at DESC
 LIMIT $3
 """
@@ -202,7 +219,6 @@ LIMIT $3
 _READ_RUN_SUMMARY = f"""
 SELECT {_RUN_COLUMNS}
 FROM remediation_runs r
-JOIN repositories rp ON rp.id = r.repository_id
 JOIN change_events ce ON ce.id = r.change_event_id
 WHERE r.id = $1::uuid
 """
@@ -318,10 +334,10 @@ SELECT
     u.confidence            AS confidence,
     u.observed_sha          AS observed_sha
 FROM provider_usages u
-JOIN remediation_runs r ON r.repository_id = u.repository_id
+JOIN remediation_runs r ON r.repository = u.repository
 JOIN change_events ce ON ce.id = r.change_event_id
 WHERE r.id = $1::uuid
-  AND u.removed_at IS NULL
+  AND u.retired_at IS NULL
   AND u.identifier = ANY (ce.affected_identifiers)
 ORDER BY u.file_path, u.line_start
 """
@@ -351,17 +367,16 @@ SELECT verifier_agent AS actor, verifier_model AS model FROM verification_result
 
 _FLEET_DENIALS = """
 SELECT
-    ae.actor            AS actor,
-    ae.action           AS action,
-    ae.target           AS target,
-    ae.outcome::text    AS outcome,
-    ae.reason           AS reason,
-    ae.trace_id         AS trace_id,
-    CASE WHEN rp.id IS NULL THEN NULL ELSE rp.owner || '/' || rp.name END AS repository,
-    ae.run_id::text     AS run_id,
-    ae.occurred_at      AS occurred_at
+    ae.actor                    AS actor,
+    ae.action                   AS action,
+    NULLIF(ae.target, '')       AS target,
+    ae.outcome::text            AS outcome,
+    NULLIF(ae.reason, '')       AS reason,
+    NULLIF(ae.trace_id, '')     AS trace_id,
+    ae.repository               AS repository,
+    ae.run_id::text             AS run_id,
+    ae.occurred_at              AS occurred_at
 FROM audit_events ae
-LEFT JOIN repositories rp ON rp.id = ae.repository_id
 WHERE ae.outcome = 'DENIED'
 ORDER BY ae.occurred_at DESC
 LIMIT $1
