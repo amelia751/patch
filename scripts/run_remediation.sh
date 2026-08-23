@@ -48,7 +48,9 @@ fi
 
 # The PR leg, if ./scripts/run_github_tools.sh is up. Left unset otherwise, so a
 # run without it refuses to open a pull request rather than failing obscurely.
-if lsof -nP -iTCP:8081 -sTCP:LISTEN >/dev/null 2>&1; then
+# Probed by connecting rather than with lsof, which lives in /usr/sbin and is
+# not on every PATH — a missing probe tool silently cost a run its PR stage.
+if (exec 3<>/dev/tcp/127.0.0.1/8081) 2>/dev/null; then
   export PATCHAPI_GITHUB_TOOLS_URL="${PATCHAPI_GITHUB_TOOLS_URL:-http://127.0.0.1:8081}"
 fi
 
