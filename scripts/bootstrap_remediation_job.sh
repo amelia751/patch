@@ -27,6 +27,7 @@ REGION="${GCP_REGION:-us-central1}"
 JOB="${PATCHAPI_REMEDIATION_JOB:-patchapi-remediate}"
 RUN_SA_ID="${PATCHAPI_REMEDIATION_SA:-patchapi-remediate}"
 API_SA_ID="${PATCHAPI_API_SA:-patchapi-api}"
+INVOKER_ROLE_ID="${PATCHAPI_REMEDIATION_INVOKER_ROLE:-patchapiRemediationInvoker}"
 SQL_INSTANCE="${PATCHAPI_SQL_INSTANCE:-${PROJECT_ID}:${REGION}:patchapi-console}"
 IMAGE_TAG="${PATCHAPI_IMAGE_TAG:-$(git rev-parse HEAD)}"
 IMAGE="${PATCHAPI_AGENTS_IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/patchapi/agents:${IMAGE_TAG}}"
@@ -147,11 +148,27 @@ else
   gcloud run jobs create "$JOB" "${JOB_ARGS[@]}" --quiet
 fi
 
+# One deployed job serves every run because the run id arrives as a container
+# override, and overriding args needs `run.jobs.runWithOverrides` —  which
+# `roles/run.invoker` does not carry, so the invoker role alone produces a 403
+# that looks like the job is missing. The predefined role that does carry it,
+# `roles/run.developer`, would also let the control plane update and delete the
+# job. Starting a remediation is the whole capability, so it gets a role that is
+# only that.
+if ! gcloud iam roles describe "$INVOKER_ROLE_ID" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  gcloud iam roles create "$INVOKER_ROLE_ID" --project="$PROJECT_ID" \
+    --title="PatchAPI remediation invoker" \
+    --description="Start the remediation job with a run id. No update, no delete." \
+    --permissions=run.jobs.run,run.jobs.runWithOverrides \
+    --stage=GA --quiet >/dev/null
+fi
+
 # Scoped to this one job. The control plane starts remediations and must not be
 # able to execute anything else Cloud Run holds.
 gcloud run jobs add-iam-policy-binding "$JOB" \
   --project="$PROJECT_ID" --region="$REGION" \
-  --member="serviceAccount:${API_SA}" --role=roles/run.invoker --quiet >/dev/null
+  --member="serviceAccount:${API_SA}" \
+  --role="projects/${PROJECT_ID}/roles/${INVOKER_ROLE_ID}" --quiet >/dev/null
 
 printf 'job %s -> %s\n' "$JOB" "$IMAGE"
 printf 'the control plane needs PATCHAPI_REMEDIATION_JOB=%s to dispatch it\n' "$JOB"

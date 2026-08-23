@@ -34,6 +34,10 @@ env:
   # One remediation, started by the console's "Start remediation" button. A job
   # rather than a request because it runs for minutes.
   REMEDIATION_JOB: patchapi-remediate
+  # Created by scripts/bootstrap_remediation_job.sh. Narrower than
+  # roles/run.developer, which is the only predefined role carrying the
+  # `runWithOverrides` permission a run id needs.
+  REMEDIATION_INVOKER_ROLE: patchapiRemediationInvoker
   WEB_SA: patchapi-web@patch-505223.iam.gserviceaccount.com
   API_SA: patchapi-api@patch-505223.iam.gserviceaccount.com
   INDEXER_SA: patchapi-indexer@patch-505223.iam.gserviceaccount.com
@@ -323,14 +327,14 @@ jobs:
               --image="${IMAGE}"
             # Reasserted rather than left to the one-time bootstrap. Without it
             # the console's Start remediation answers 403 from Cloud Run, which
-            # reads to an operator as the product being broken; it is scoped to
-            # this single job, so the control plane still cannot execute
-            # anything else Cloud Run holds.
+            # reads to an operator as the product being broken. The role is the
+            # narrow one scripts/bootstrap_remediation_job.sh defines: starting
+            # this job with a run id, and nothing else Cloud Run holds.
             gcloud run jobs add-iam-policy-binding "${REMEDIATION_JOB}" \
               --project="${PROJECT_ID}" \
               --region="${REGION}" \
               --member="serviceAccount:${API_SA}" \
-              --role=roles/run.invoker \
+              --role="projects/${PROJECT_ID}/roles/${REMEDIATION_INVOKER_ROLE}" \
               --quiet >/dev/null
           else
             echo "job ${REMEDIATION_JOB} does not exist yet;" \
