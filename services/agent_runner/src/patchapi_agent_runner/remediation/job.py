@@ -28,14 +28,17 @@ from __future__ import annotations
 
 import difflib
 import logging
+import os
 import shlex
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
+from agents import live_check
 from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.context import RunContext
 from agents.journal import RunJournal
@@ -236,6 +239,7 @@ async def _run(
             sandbox=session,
             project_id=row.project_id,
             credentials_inventory=await _credentials(pool, row.project_id),
+            live_credentials=await _live_credentials(pool, row.project_id),
         )
         orchestrator = Orchestrator(context, trace, journal)
 
@@ -364,7 +368,7 @@ SELECT
 """
 
 
-async def _credentials(pool: asyncpg.Pool, project_id: str) -> RuntimeCredentialsInventory:
+async def _credentials(pool: asyncpg.Pool, project_id: UUID) -> RuntimeCredentialsInventory:
     """What this project has told PatchAPI it holds — names only, never values.
 
     Without this the run has no view at all, and `resolve_inventory` is right to
@@ -374,7 +378,7 @@ async def _credentials(pool: asyncpg.Pool, project_id: str) -> RuntimeCredential
     project. Reading the vault's *names* here is what makes the pause a fact.
     """
     async with pool.acquire() as connection:
-        row = await connection.fetchrow(_CREDENTIALS_SQL, UUID(project_id))
+        row = await connection.fetchrow(_CREDENTIALS_SQL, project_id)
     names = tuple(row["secret_names"] or ())
     return RuntimeCredentialsInventory(
         bound=True,
@@ -387,6 +391,41 @@ async def _credentials(pool: asyncpg.Pool, project_id: str) -> RuntimeCredential
             else "no runtime secrets are configured for this project"
         ),
     )
+
+
+async def _live_credentials(
+    pool: asyncpg.Pool, project_id: UUID
+) -> Callable[[tuple[str, ...]], dict[str, str]]:
+    """A broker for the live-verification step, and only that step.
+
+    Values are read here, before the agents start, so the vault is never called
+    from inside an orchestrator turn and the only thing crossing into agent code
+    is a closure over names the sandbox allowlist already permits. What it
+    returns becomes the environment of one command; it is never recorded, never
+    handed to a model, and never written to evidence.
+
+    Missing names are absent from the mapping rather than empty strings, which
+    is what lets the live check say "not asked" instead of failing a patch for a
+    credential the project never had.
+    """
+    from packages.state.secret_manager import GoogleSecretVault
+    from packages.state.secrets import reveal_secret
+
+    vault = GoogleSecretVault(os.environ.get("GCP_PROJECT", ""))
+    resolved: dict[str, str] = {}
+    for name in live_check.CREDENTIAL_NAMES:
+        try:
+            value = await reveal_secret(pool, project_id, secret_name=name, vault=vault)
+        except Exception as exc:
+            log.warning("could not read %s for project %s: %s", name, project_id, exc)
+            continue
+        if value:
+            resolved[name] = value
+
+    def broker(requested: tuple[str, ...]) -> dict[str, str]:
+        return {name: value for name, value in resolved.items() if name in requested}
+
+    return broker
 
 
 def _recorder(pool: asyncpg.Pool, run_id: str, journal: RunJournal, trace: ToolTrace) -> Any:

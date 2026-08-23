@@ -17,6 +17,7 @@ about the files on disk and an exit code, never a claim in a final message.
 import difflib
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -26,6 +27,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Final
 
+from agents import live_check
 from agents.adk import TurnResult, new_session_service, run_turn
 from agents.config import AgentId
 from agents.context import RunContext
@@ -68,6 +70,8 @@ _BUILDERS: Final[dict[AgentId, Any]] = {
 # derived from the manifest and the scanner. It exists so the isolation and
 # state-machine halves of the slice stay testable and demonstrable when Vertex
 # is unreachable — never as a fallback the live path silently degrades into.
+log = logging.getLogger(__name__)
+
 DETERMINISTIC_ENV_VAR: Final[str] = "PATCHAPI_PATCH_LOOP_DETERMINISTIC"
 
 # A module-level assignment of a quoted string, which is the shape the pinned
@@ -790,6 +794,33 @@ class Orchestrator:
 
     # -- verification and PR ----------------------------------------------
 
+    def _run_live_check(self, slice_: VerticalSlice) -> live_check.LiveCheck | None:
+        """Ask the provider whether the replacement identifier actually exists.
+
+        The offline checks cannot answer this. A build compiles a wrong model id
+        as happily as a right one, and a test suite that never leaves the
+        machine agrees. Since the one thing PatchAPI must not do is write an
+        identifier that does not exist, the replacement is put to the provider
+        before a pull request claims the migration is verified.
+        """
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        replacement = ""
+        if isinstance(manifest, ChangeManifest) and manifest.recommended_replacement:
+            replacement = manifest.recommended_replacement
+        if not replacement:
+            replacement = binding_value(self._read_entrypoint(slice_) or "", slice_.binding) or ""
+        if not replacement:
+            return None
+
+        broker = self._context.live_credentials
+        available: dict[str, str] = {}
+        if callable(broker):
+            try:
+                available = broker(live_check.CREDENTIAL_NAMES)
+            except Exception as exc:  # a vault that will not answer is "not asked"
+                log.warning("run %s could not broker a live credential: %s", self.run_id, exc)
+        return live_check.run(self._context.sandbox, replacement, available)
+
     def _write_evidence(
         self,
         slice_: VerticalSlice,
@@ -797,6 +828,7 @@ class Orchestrator:
         source: str,
         build: dict[str, Any],
         tests: dict[str, Any],
+        live: live_check.LiveCheck | None = None,
     ) -> None:
         """Write orchestrator logs the Verification agent may read. Host path only."""
         root = Path(tempfile.mkdtemp(prefix=f"patchapi-evidence-{self._context.run_id}-"))
@@ -812,6 +844,8 @@ class Orchestrator:
             slice_.entrypoint: source,
             "binding.txt": f"{slice_.binding}={binding_value(source, slice_.binding) or ''}\n",
         }
+        if live is not None:
+            files["live.log"] = live.log
         uris: list[str] = []
         for name, text in files.items():
             path = root / name
@@ -1063,11 +1097,25 @@ class Orchestrator:
                 )
             )
             return result
+        live = self._run_live_check(slice_)
+        if live is not None and live.resolved is False:
+            # The provider says the identifier does not exist. No amount of
+            # green checks makes that a migration worth proposing.
+            keep(
+                self._fail(
+                    AgentId.VERIFICATION,
+                    f"{live.identifier} does not resolve against the provider, so the "
+                    f"patch would replace a retired identifier with one that is not "
+                    f"served. {live.detail}",
+                )
+            )
+            return result
         self._write_evidence(
             slice_,
             source=source,
             build=self._last_build,
             tests=self._last_tests,
+            live=live,
         )
         if not keep(await self.run_verification(slice_, deterministic=deterministic)):
             return result

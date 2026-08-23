@@ -75,6 +75,12 @@ class RunContext:
     sandbox: Any | None = None
     project_id: str | None = None
     credentials_inventory: Any | Callable[[], Any] | None = None
+    # Resolves runtime secret *values* for the live-verification step. Called by
+    # the orchestrator, never exposed as a tool: `credentials_inventory` is what
+    # a model may ask about, and it returns names only. Absent means this run
+    # cannot contact a provider, which the live check reports rather than
+    # treating as a pass.
+    live_credentials: Callable[[tuple[str, ...]], dict[str, str]] | None = None
     index_usages: list[dict[str, Any]] = field(default_factory=list)
     outputs: dict[str, RecordedOutput] = field(default_factory=dict)
     human_required: list[dict[str, str]] = field(default_factory=list)
