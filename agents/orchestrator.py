@@ -909,6 +909,10 @@ class Orchestrator:
             ),
         )
 
+    # Matches the tool service's refusal to move a branch that is not where the
+    # caller expected. Read rather than re-derived so the two cannot drift.
+    _BRANCH_CONFLICT: Final[str] = "branch_exists_at_other_commit"
+
     async def run_pr(self, slice_: VerticalSlice) -> StageResult:
         """Open a PR only after VerificationReport.verdict == PASS."""
         agent = AgentId.PR
@@ -934,7 +938,8 @@ class Orchestrator:
             run_id=self._context.run_id,
             arguments={"repo": slice_.repo, "branch": head, "base_sha": report.base_sha},
         )
-        if is_refusal(branch):
+        head_sha = _existing_patch_branch_head(branch)
+        if is_refusal(branch) and not head_sha:
             return self._fail(agent, str(branch.get("message", "create_patch_branch refused")))
         files = []
         plan = self._context.output(STAGE_CONTRACTS[AgentId.PATCH])
@@ -947,8 +952,7 @@ class Orchestrator:
                     continue
                 content = str(read["content"])
             files.append({"path": relpath, "content": content})
-        head_sha = ""
-        if isinstance(branch, dict):
+        if not head_sha and isinstance(branch, dict):
             payload = branch.get("result") if "result" in branch else branch
             if isinstance(payload, dict):
                 head_sha = str(payload.get("sha") or payload.get("head_sha") or "")
@@ -1069,6 +1073,36 @@ class Orchestrator:
             return result
         keep(await self.run_pr(slice_))
         return result
+
+
+def _existing_patch_branch_head(result: dict[str, Any]) -> str:
+    """The head of a `patchapi/` branch a previous attempt already pushed.
+
+    The tool service refuses to move a branch that is not where the caller
+    expected, and it is right to: silently repointing one discards whatever is
+    on it. But re-running a change is not a rare accident — it is the resume
+    button — and the branch in the way is the one this product created for this
+    change, on its second attempt at it.
+
+    Returning the existing head lets the new commit be *parented* on it rather
+    than replacing it. Nothing is discarded, the history reads as two attempts,
+    and the open pull request updates instead of a second one appearing beside
+    it. Only the conflict the tool service names, and only for a branch in
+    PatchAPI's own namespace — anything else stays a refusal.
+    """
+    if not is_refusal(result):
+        return ""
+    message = str(result.get("message", ""))
+    if Orchestrator._BRANCH_CONFLICT not in message:
+        return ""
+    try:
+        detail = json.loads(message[message.index("{") :])["detail"]
+    except (ValueError, KeyError, TypeError):
+        return ""
+    branch = str(detail.get("branch", ""))
+    if not branch.startswith("patchapi/"):
+        return ""
+    return str(detail.get("actual_sha", ""))
 
 
 __all__ = [
