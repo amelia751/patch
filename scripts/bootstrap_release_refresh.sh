@@ -75,6 +75,15 @@ for role in roles/aiplatform.viewer roles/cloudsql.client roles/logging.logWrite
     --member="serviceAccount:${REFRESH_SA}" --role="$role" --condition=None --quiet >/dev/null
 done
 
+# CI updates this job's image on every deploy, which counts as running Cloud Run
+# as the job's identity. Without this the deploy fails on the job step alone,
+# after the services are already on the new image — exactly the drift the step
+# exists to prevent.
+gcloud iam service-accounts add-iam-policy-binding "$REFRESH_SA" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:$(sa_email "${PATCHAPI_DEPLOY_SA:-patchapi-github-deploy}")" \
+  --role=roles/iam.serviceAccountUser --quiet >/dev/null
+
 for secret in patchapi-database-url patchapi-gemini-api-key; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --project="$PROJECT_ID" --member="serviceAccount:${REFRESH_SA}" \
