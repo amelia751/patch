@@ -31,6 +31,7 @@ from packages.state.auth_routes import router as auth_router
 from packages.state.config import cors_origins, database_url
 from packages.state.console_events import ConsoleHub, listen_console
 from packages.state.dashboard import PostgresDashboardReader
+from packages.state.evidence_routes import router as evidence_router
 from packages.state.github_routes import router as github_router
 from packages.state.notification_routes import router as notification_router
 from packages.state.organization_routes import router as organization_router
@@ -111,6 +112,7 @@ def build_app() -> FastAPI:
     app.include_router(notification_router)
     app.include_router(organization_router)
     app.include_router(provider_router)
+    app.include_router(evidence_router)
     app.state.readiness_probes = (
         *app.state.readiness_probes,
         ReadinessProbe(name=POSTGRES_PROBE, check=_postgres_probe(app)),
