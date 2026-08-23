@@ -76,6 +76,8 @@ interface AddSecretDialogProps {
   repos?: SecretRepoOption[];
   /** Demo / logged-out: no API call; simulate success. */
   secretsPreviewMode?: boolean;
+  /** Prefill the name field on open. Secrets-tab add leaves this empty. */
+  initialSecretName?: string;
   onSaved?: () => void;
 }
 
@@ -110,6 +112,7 @@ export function AddSecretDialog({
   repoDefaultBranch = null,
   repos = [],
   secretsPreviewMode = false,
+  initialSecretName,
   onSaved,
 }: AddSecretDialogProps) {
   const scopeLocked = mode === "configure" || mode === "rotate";
@@ -181,12 +184,12 @@ export function AddSecretDialog({
     !requirementId &&
     detectedEntries.length > 1;
 
-  // Pre-fill secret name when scope/name are locked
+  // Pre-fill secret name when scope/name are locked, or when a caller names one.
   useEffect(() => {
     if (scopeLocked && existingSecret) {
       setSecretName(existingSecret.name);
     } else {
-      setSecretName("");
+      setSecretName(initialSecretName ?? "");
     }
     setSecretKey("");
     setShowSecretKey(false);
@@ -195,7 +198,7 @@ export function AddSecretDialog({
     setIsDragOver(false);
     setLastImportViaFile(false);
     setSelectedIndices(new Set());
-  }, [scopeLocked, existingSecret, open]);
+  }, [scopeLocked, existingSecret, initialSecretName, open]);
 
   /** Scope init: full reset only when the dialog opens — not on every parent `workspaces` refetch (avoids wiping folder path mid-session). */
   const addDialogWasOpenRef = useRef(false);

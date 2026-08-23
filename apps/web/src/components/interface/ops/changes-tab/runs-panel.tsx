@@ -26,6 +26,8 @@ import { AddSecretDialog, type SecretRepoOption, type SecretWorkspaceOption } fr
 import { GCPConnectMethodDialog } from "@/components/interface/ops/configure-tab/gcp-connect-method-dialog";
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
 import {
+  HUMAN_REQUIRED_PAUSE,
+  HUMAN_REQUIRED_SECRET_NAME,
   MACHINE_LABEL,
   treeAvailable,
   treeForMachine,
@@ -376,8 +378,7 @@ function RunDetail({
       {run.machine === "HUMAN_REQUIRED" && (
         <div className="px-5 py-3 border-b border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
-            {run.pauseReason ??
-              "This run is waiting on you. Connect GCP and add the project secret so the agent can continue."}
+            {run.pauseReason ?? HUMAN_REQUIRED_PAUSE}
           </p>
           <div className="flex shrink-0 items-center gap-2">
             <Button
@@ -407,6 +408,7 @@ function RunDetail({
         repoFullName={run.repo ?? repos[0]?.fullName ?? null}
         repos={repos}
         secretsPreviewMode={secretsPreviewMode}
+        initialSecretName={HUMAN_REQUIRED_SECRET_NAME}
         onSaved={() => {
           setSecretOpen(false);
           onContinue();

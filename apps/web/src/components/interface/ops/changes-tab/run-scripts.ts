@@ -39,6 +39,12 @@ export type MachineState =
   | "FAILED"
   | "BLOCKED";
 
+/** Dual-CTA Need-you pause: connect GCP or add the verifier key. */
+export const HUMAN_REQUIRED_PAUSE =
+  "This run is waiting on you. Connect GCP or add GEMINI_API_KEY so the agent can continue.";
+
+export const HUMAN_REQUIRED_SECRET_NAME = "GEMINI_API_KEY";
+
 export type TreeId = "base" | "sandbox" | "proposed";
 
 export type CommandPhase = "patch" | "build" | "test";
@@ -590,13 +596,11 @@ export function seedRuns(): MockRun[] {
 
   add("chg_flash_image_preview", "start", "PR_CREATED", ago(4 * 60 * 1000));
   add("imagen4-retirement-2026-08-17", "start", "HUMAN_REQUIRED", ago(2 * 60 * 60 * 1000), {
-    pauseReason:
-      "This run is waiting on you. Connect GCP and add GEMINI_API_KEY so the agent can continue.",
+    pauseReason: HUMAN_REQUIRED_PAUSE,
   });
   add("ui-issue-long-title", "start", "HUMAN_REQUIRED", ago(50 * 60 * 1000), {
     repo: "amelia751/egaki",
-    pauseReason:
-      "This run is waiting on you. Connect GCP and add GEMINI_API_KEY so the agent can continue.",
+    pauseReason: HUMAN_REQUIRED_PAUSE,
   });
   add("ui-changelog-immutable", "start", "UNAFFECTED", ago(6 * 60 * 60 * 1000));
   add("ui-scheduled-window", "prepare", "HELD", ago(18 * 60 * 60 * 1000));
