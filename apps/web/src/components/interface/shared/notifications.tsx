@@ -37,6 +37,10 @@ import {
   LaptopMinimalCheck,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  isMockNotificationId,
+  mockReleaseNotifications,
+} from "@/components/interface/shared/mock-release-notifications";
 
 type NotificationType = "success" | "pending" | "question" | "info" | "error";
 
@@ -73,27 +77,41 @@ interface Notification {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// Format relative timestamp
-function formatTimestamp(isoString: string): string {
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins} min ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-  return date.toLocaleDateString();
+// Hook to fetch notifications
+function openChangesTab() {
+  window.dispatchEvent(new CustomEvent("switchMainTab", { detail: { tab: "changes" } }));
 }
 
-// Hook to fetch notifications
+function openConfigure(section: "connection" | "secrets", modal: "gcp" | "secret") {
+  window.dispatchEvent(
+    new CustomEvent("switchMainTab", {
+      detail: { tab: "configure", configureSection: section, openCredentialModal: modal },
+    }),
+  );
+}
+
 function useNotifications(projectId: string | null, isAuthenticated: boolean, demoProject?: string, isDemoMode?: boolean, onDevOpsStarted?: (threadId: string) => void) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [dismissedMockIds, setDismissedMockIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const mockedReleases = useCallback((): Notification[] => {
+    return mockReleaseNotifications()
+      .filter((item) => !dismissedMockIds.includes(item.id))
+      .map((item) => item as Notification);
+  }, [dismissedMockIds]);
+
+  const applyList = useCallback(
+    (items: Notification[]) => {
+      if (isAuthenticated && !isDemoMode) {
+        setNotifications(items);
+        return;
+      }
+      setNotifications(items.length > 0 ? items : mockedReleases());
+    },
+    [isAuthenticated, isDemoMode, mockedReleases],
+  );
   
   useEffect(() => {
     const clear = () => setNotifications([]);
@@ -107,11 +125,10 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
   
   const fetchNotifications = useCallback(async () => {
     if (isDemoMode || !isAuthenticated) {
-      setNotifications([]);
+      applyList([]);
       return;
     }
-    
-    // Authenticated but no project selected - show empty
+
     if (!projectId) {
       setNotifications([]);
       return;
@@ -131,19 +148,15 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
       }
 
       const data = await response.json();
-      const fetchedNotifications = data.notifications || [];
-
-      // Show real notifications only (empty if none)
-      setNotifications(fetchedNotifications);
+      applyList(data.notifications || []);
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
       setError(err instanceof Error ? err.message : "Failed to load notifications");
-      // On error for authenticated users, show empty (not mock)
-      setNotifications([]);
+      applyList([]);
     } finally {
       setLoading(false);
     }
-  }, [projectId, isAuthenticated, isDemoMode]);
+  }, [applyList, projectId, isAuthenticated, isDemoMode]);
   
   const consoleEvents = useConsoleEvents();
 
@@ -152,7 +165,7 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
     if (isDemoMode || !isAuthenticated) return;
     if (consoleEvents.projectId !== projectId) return;
     if (consoleEvents.notifications == null) return;
-    setNotifications(consoleEvents.notifications as Notification[]);
+    applyList(consoleEvents.notifications as Notification[]);
     setLoading(false);
     setError(null);
   }, [
@@ -161,16 +174,45 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
     projectId,
     consoleEvents.projectId,
     consoleEvents.notifications,
+    applyList,
   ]);
 
   // Initial fetch for demo / signed-out. Authenticated users wait for the
-  // console snapshot (and poll only if that stream drops).
+  // console snapshot (and poll only if that stream drops). An empty live
+  // list is a real answer — fixtures stay off the signed-in bell.
   useEffect(() => {
     if (isAuthenticated && !isDemoMode) return;
     fetchNotifications();
   }, [fetchNotifications, isAuthenticated, isDemoMode]);
-  
+
+  const navigateFromAction = (actionType: string) => {
+    if (actionType === "view_changes" || actionType === "view_release" || actionType === "view_ops") {
+      openChangesTab();
+    } else if (actionType === "connect_gcp") {
+      openConfigure("connection", "gcp");
+    } else if (actionType === "add_secret") {
+      openConfigure("secrets", "secret");
+    }
+  };
+
   const handleAction = async (notificationId: string, actionType: string, data?: Record<string, unknown>) => {
+    if (isMockNotificationId(notificationId)) {
+      navigateFromAction(actionType);
+      if (actionType === "dismiss") {
+        setDismissedMockIds((prev) =>
+          prev.includes(notificationId) ? prev : [...prev, notificationId],
+        );
+        setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+        return;
+      }
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)),
+      );
+      return;
+    }
+
+    navigateFromAction(actionType);
+
     // Demo mode handling (unauthenticated users OR clause projects)
     const isClauseProject = demoProject === "clause-frontend" || demoProject === "clause-legal-ai" || demoProject === "clause";
     if (!isAuthenticated || isClauseProject) {
@@ -335,11 +377,30 @@ interface NotificationItemProps {
   onDismiss: () => void;
 }
 
+function releaseTags(
+  metadata?: Record<string, unknown>,
+): { label: string; className: string }[] {
+  const raw = metadata?.tags;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as { label?: unknown; className?: unknown };
+    if (typeof row.label !== "string" || row.label.length === 0) return [];
+    return [
+      {
+        label: row.label,
+        className: typeof row.className === "string" ? row.className : "",
+      },
+    ];
+  });
+}
+
 function NotificationItem({ notification, onAction, onDismiss }: NotificationItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const { theme } = useTheme();
   const { setActiveTab } = useArchitecture();
+  const tags = releaseTags(notification.metadata);
 
   const handleActionClick = (action: NotificationAction) => {
     if (action.action_type === "dismiss") {
@@ -363,43 +424,56 @@ function NotificationItem({ notification, onAction, onDismiss }: NotificationIte
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-start gap-2 flex-1 min-w-0">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h4 className="text-xs font-semibold text-[var(--text-primary)] truncate">
+            <div className="mb-1 space-y-1.5">
+              <h4 className="text-xs font-semibold text-[var(--text-primary)] break-words [overflow-wrap:anywhere] leading-snug">
                 {notification.title}
               </h4>
-              {notification.type === "pending" && (
-                <span className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-medium",
-                  theme === "dark" && "bg-transparent text-amber-500 border border-amber-500/30",
-                  theme === "light" && "bg-amber-500 text-white"
-                )}>
-                  Action Required
-                </span>
-              )}
-              {notification.type === "question" && (
-                <span className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-medium",
-                  theme === "dark" && "bg-transparent text-orange-500 border border-orange-500/30",
-                  theme === "light" && "bg-orange-500 text-white"
-                )}>
-                  Question
-                </span>
-              )}
-              {notification.type === "success" && (
-                <span className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-medium",
-                  theme === "dark" && "bg-transparent text-[#10b981] border border-[#10b981]/30",
-                  theme === "light" && "bg-[#10b981] text-white"
-                )}>
-                  Auto-Synced
-                </span>
+              {tags.length > 0 ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {tags.map((tag) => (
+                    <Badge
+                      key={tag.label}
+                      variant="outline"
+                      className={cn("text-[9px]", tag.className)}
+                    >
+                      {tag.label}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {notification.type === "pending" && (
+                    <span className={cn(
+                      "inline-flex shrink-0 whitespace-nowrap text-[10px] px-2 py-0.5 rounded-full font-medium",
+                      theme === "dark" && "bg-transparent text-amber-500 border border-amber-500/30",
+                      theme === "light" && "bg-amber-500 text-white"
+                    )}>
+                      Action Required
+                    </span>
+                  )}
+                  {notification.type === "question" && (
+                    <span className={cn(
+                      "inline-flex shrink-0 whitespace-nowrap text-[10px] px-2 py-0.5 rounded-full font-medium",
+                      theme === "dark" && "bg-transparent text-orange-500 border border-orange-500/30",
+                      theme === "light" && "bg-orange-500 text-white"
+                    )}>
+                      Question
+                    </span>
+                  )}
+                  {notification.type === "success" && (
+                    <span className={cn(
+                      "inline-flex shrink-0 whitespace-nowrap text-[10px] px-2 py-0.5 rounded-full font-medium",
+                      theme === "dark" && "bg-transparent text-[#10b981] border border-[#10b981]/30",
+                      theme === "light" && "bg-[#10b981] text-white"
+                    )}>
+                      Auto-Synced
+                    </span>
+                  )}
+                </>
               )}
             </div>
             <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
               {notification.message}
-            </p>
-            <p className="text-[10px] text-[var(--text-tertiary)] mt-1">
-              {formatTimestamp(notification.timestamp)}
             </p>
           </div>
         </div>
@@ -431,6 +505,8 @@ function NotificationItem({ notification, onAction, onDismiss }: NotificationIte
                       setActiveTab("api");
                     } else if (actionType === "view_databases") {
                       setActiveTab("database");
+                    } else if (actionType === "view_changes") {
+                      onAction("view_changes");
                     }
                   };
 
@@ -642,7 +718,7 @@ export function NotificationCenter() {
             <div className="flex items-center justify-center py-12">
               <Spinner className="h-6 w-6 text-[var(--text-tertiary)]" />
             </div>
-          ) : error ? (
+          ) : error && notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4">
               <p className="text-sm text-red-500 mb-2">Failed to load</p>
               <button
@@ -668,7 +744,17 @@ export function NotificationCenter() {
                 <NotificationItem
                   key={notification.id}
                   notification={notification}
-                  onAction={(actionType, data) => handleAction(notification.id, actionType, data)}
+                  onAction={(actionType, data) => {
+                    void handleAction(notification.id, actionType, data);
+                    if (
+                      actionType === "view_changes" ||
+                      actionType === "view_release" ||
+                      actionType === "connect_gcp" ||
+                      actionType === "add_secret"
+                    ) {
+                      setIsOpen(false);
+                    }
+                  }}
                   onDismiss={() => dismissNotification(notification.id)}
                 />
               ))}
@@ -680,10 +766,13 @@ export function NotificationCenter() {
         {notifications.length > 0 && (
           <div className="px-4 py-2 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]">
             <button
-              onClick={() => console.log("View all activity")}
+              onClick={() => {
+                openChangesTab();
+                setIsOpen(false);
+              }}
               className="w-full text-center text-[10px] text-primary hover:underline font-medium transition-all"
             >
-              View all activity →
+              View releases →
             </button>
           </div>
         )}

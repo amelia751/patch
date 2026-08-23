@@ -643,6 +643,12 @@ async def refresh_project_findings(
             files,
         )
         written += 1
+    try:
+        from packages.state.notifications import sync_project_notifications
+
+        await sync_project_notifications(connection, project_id)
+    except Exception:
+        log.warning("notification sync after findings failed for %s", project_id, exc_info=True)
     return written
 
 
@@ -826,6 +832,12 @@ async def set_finding_status(
         if provider:
             await refresh_project_findings(connection, project_id, str(provider))
         await _wake_changes(connection, project_id)
+        try:
+            from packages.state.notifications import sync_project_notifications
+
+            await sync_project_notifications(connection, project_id)
+        except Exception:
+            log.warning("notification sync after reopen failed for %s", project_id, exc_info=True)
         return {"id": external_id, "status": "watching"}
 
     row = await connection.fetchrow(
@@ -849,6 +861,12 @@ async def set_finding_status(
     if row is None:
         return None
     await _wake_changes(connection, project_id)
+    try:
+        from packages.state.notifications import sync_project_notifications
+
+        await sync_project_notifications(connection, project_id)
+    except Exception:
+        log.warning("notification sync after dismiss failed for %s", project_id, exc_info=True)
     return {"id": external_id, "status": row["status"]}
 
 

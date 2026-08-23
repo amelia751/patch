@@ -77,9 +77,9 @@ const statusConfig: Record<
 > = {
   needs_you: {
     label: "Needs you",
-    color: "text-red-500",
-    bgColor: "bg-red-500/10 border-red-500/30",
-    dot: "bg-red-500",
+    color: "text-white",
+    bgColor: "bg-amber-500 border-amber-500",
+    dot: "bg-amber-500",
   },
   watching: {
     label: "Watching",
@@ -825,7 +825,7 @@ export function ChangesInbox({
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-[10px] flex-wrap">
                           {groupNeedsYou > 0 && (
-                            <span className="text-red-500">● {groupNeedsYou} Need you</span>
+                            <span className="text-amber-500">● {groupNeedsYou} Need you</span>
                           )}
                           {groupWatching > 0 && (
                             <span className="text-[var(--text-secondary)]">● {groupWatching} Watching</span>
