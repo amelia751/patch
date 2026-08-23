@@ -148,6 +148,19 @@ jobs:
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
             --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest,PATCHAPI_GITHUB_WEBHOOK_SECRET=patchapi-github-webhook-secret:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_ID=patchapi-github-oauth-client-id:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET=patchapi-github-oauth-client-secret:latest,GITHUB_APP_ID=patchapi-github-app-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest,/var/github-json/app.json=patchapi-github-app:latest"
 
+      # The job runs the same image as the service — `patchapi-refresh-releases`
+      # is an entry point in the same wheel — so it has to move with it. Left
+      # out, the job stays pinned to whatever image created it and drifts a
+      # schema migration behind the code, which is silent until the first
+      # scheduled run fails against a table the migration renamed.
+      - name: Deploy release refresh job
+        if: steps.db.outputs.ready == 'true'
+        run: |
+          gcloud run jobs update "${REFRESH_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}"
+
   indexer:
     name: patchapi-indexer
     runs-on: ubuntu-latest

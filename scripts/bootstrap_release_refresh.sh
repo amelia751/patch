@@ -24,7 +24,9 @@ JOB="${PATCHAPI_REFRESH_JOB:-patchapi-refresh-releases}"
 REFRESH_SA_ID="${PATCHAPI_REFRESH_SA:-patchapi-refresh}"
 SCHEDULER_SA_ID="${PATCHAPI_SCHEDULER_SA:-patchapi-scheduler}"
 API_SA_ID="${PATCHAPI_API_SA:-patchapi-api}"
-SCHEDULE="${PATCHAPI_REFRESH_SCHEDULE:-0 */6 * * *}"
+# Hourly. A provider retirement is not hourly news, but a poll that only runs
+# four times a day makes a broken lane look like a quiet one for six hours.
+SCHEDULE="${PATCHAPI_REFRESH_SCHEDULE:-0 * * * *}"
 PREFIX="${PATCHAPI_PUBSUB_TOPIC_PREFIX:-patchapi-dev}"
 SQL_INSTANCE="${PATCHAPI_SQL_INSTANCE:-${PROJECT_ID}:${REGION}:patchapi-console}"
 IMAGE_TAG="${PATCHAPI_IMAGE_TAG:-$(git rev-parse HEAD)}"
