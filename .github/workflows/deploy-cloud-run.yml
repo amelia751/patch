@@ -321,6 +321,17 @@ jobs:
               --project="${PROJECT_ID}" \
               --region="${REGION}" \
               --image="${IMAGE}"
+            # Reasserted rather than left to the one-time bootstrap. Without it
+            # the console's Start remediation answers 403 from Cloud Run, which
+            # reads to an operator as the product being broken; it is scoped to
+            # this single job, so the control plane still cannot execute
+            # anything else Cloud Run holds.
+            gcloud run jobs add-iam-policy-binding "${REMEDIATION_JOB}" \
+              --project="${PROJECT_ID}" \
+              --region="${REGION}" \
+              --member="serviceAccount:${API_SA}" \
+              --role=roles/run.invoker \
+              --quiet >/dev/null
           else
             echo "job ${REMEDIATION_JOB} does not exist yet;" \
                  "run scripts/bootstrap_remediation_job.sh once"
