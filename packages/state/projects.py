@@ -315,16 +315,44 @@ async def update_project_name(
 
 
 async def delete_project(pool: asyncpg.Pool, project_id: UUID, owner_id: UUID) -> bool:
-    """Delete a project the user owns. False if it was not theirs."""
+    """Delete a project the user owns. False if it was not theirs.
+
+    The cascade takes every row keyed by `project_id`, but the index is not one
+    of those: `repo_index_state` is keyed by repository and shared with whoever
+    else imported it, so it is released by reference count rather than by
+    deletion. Nothing decrements that count except a `project-repo-removed`
+    event, so a project that vanishes without announcing its repositories
+    leaves the shard held forever and the inventory attributed to nobody.
+
+    Announced after the delete commits, for the same reason `remove_repository`
+    does it: a project the indexer is told to release must actually be gone.
+    """
     try:
-        result = await pool.execute(
-            "DELETE FROM projects WHERE id = $1 AND owner_id = $2",
-            project_id,
-            owner_id,
-        )
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                owned = await connection.fetchval(
+                    "SELECT 1 FROM projects WHERE id = $1 AND owner_id = $2",
+                    project_id,
+                    owner_id,
+                )
+                if owned is None:
+                    return False
+                imported = await connection.fetch(
+                    "SELECT full_name, default_branch FROM project_repositories "
+                    "WHERE project_id = $1",
+                    project_id,
+                )
+                await connection.execute("DELETE FROM projects WHERE id = $1", project_id)
     except Exception as exc:
         raise StateUnavailableError(f"could not delete project: {type(exc).__name__}") from exc
-    return result == "DELETE 1"
+
+    for row in imported:
+        await announce_repository_removed(
+            project_id,
+            str(row["full_name"]),
+            str(row["default_branch"] or DEFAULT_BRANCH) or DEFAULT_BRANCH,
+        )
+    return True
 
 
 async def import_repo_workspace(
