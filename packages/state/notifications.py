@@ -27,7 +27,7 @@ _UNDEFINED_COLUMN: Final[str] = "42703"
 CHANGE_DEDUPE_PREFIX: Final[str] = "change:"
 RUN_WAITING_KEY: Final[str] = "run:human_required:verifier"
 
-# Same copy as the Runs HUMAN_REQUIRED banner.
+# Same copy as the Runs WAITING_ON_OPERATOR banner.
 RUN_WAITING_TITLE: Final[str] = "This run is waiting on you"
 RUN_WAITING_MESSAGE: Final[str] = (
     "Connect GCP or add GEMINI_API_KEY so the agent can continue."

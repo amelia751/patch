@@ -43,6 +43,7 @@ agents/
     verification.py
   tools/
     shared.py            # record_human_required
+    credentials.py       # list_runtime_credentials + request_runtime_credentials
     results.py
     change/              # feed + record
     impact/              # session-first scan + record

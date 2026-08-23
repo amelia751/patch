@@ -1416,6 +1416,7 @@ stateDiagram-v2
     POLICY_EVALUATION --> PATCHING: allowed
 
     PATCHING --> BUILDING
+    PATCHING --> WAITING_ON_OPERATOR: agent requested a runtime secret
     BUILDING --> RETRY_PATCH: build fail and attempts remain
     BUILDING --> TESTING: build pass
 
@@ -1425,7 +1426,10 @@ stateDiagram-v2
     TESTING --> VERIFYING: checks pass
 
     VERIFYING --> FAILED: independent rejection
+    VERIFYING --> WAITING_ON_OPERATOR: agent requested a runtime secret
     VERIFYING --> PR_CREATING: verified
+    WAITING_ON_OPERATOR --> PATCHING: operator added secret or GCP
+    WAITING_ON_OPERATOR --> VERIFYING: operator added secret or GCP
 
     PR_CREATING --> PR_CREATED
 

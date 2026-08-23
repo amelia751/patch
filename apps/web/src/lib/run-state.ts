@@ -19,6 +19,7 @@ const STATE_TONES: Record<RunState, Tone> = {
   UNAFFECTED: "idle",
   POLICY_EVALUATION: "running",
   HUMAN_REQUIRED: "human",
+  WAITING_ON_OPERATOR: "human",
   BLOCKED: "blocked",
   PATCHING: "running",
   BUILDING: "running",

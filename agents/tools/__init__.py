@@ -12,6 +12,7 @@ from typing import Any, Final
 from agents.config import ADK_ATTACHED_TOOLS, AgentId, ToolName, tool_allowlist
 from agents.context import RunContext
 from agents.tools.change import build_live_tools, build_provider_feed_tools
+from agents.tools.credentials import build_credentials_tools
 from agents.tools.impact import build_repo_inventory_tools
 from agents.tools.index_lookup import build_index_lookup_tools
 from agents.tools.patch import (
@@ -53,6 +54,8 @@ def build_tool_index(context: RunContext, agent: AgentId) -> dict[str, Callable[
         for function in builder(context):
             index[function.__name__] = function
     for function in build_shared_tools(context, agent):
+        index[function.__name__] = function
+    for function in build_credentials_tools(context, agent):
         index[function.__name__] = function
     return index
 

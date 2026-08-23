@@ -423,6 +423,69 @@ def test_stopping_for_a_human_is_recorded(run_context):
     assert run_context.human_required[0]["agent"] == "change_intelligence"
 
 
+def test_list_runtime_credentials_returns_names_never_payloads(run_context):
+    from agents.tools.credentials import RuntimeCredentialsInventory, build_credentials_tools
+
+    run_context.credentials_inventory = RuntimeCredentialsInventory(
+        secret_names=("GEMINI_API_KEY",),
+        gcp_connected=True,
+        cloud_run_env_names=("GEMINI_API_KEY",),
+        gcp_project_id="storygen-proj",
+    )
+    tools = {f.__name__: f for f in build_credentials_tools(run_context, AgentId.PATCH)}
+    listed = tools["list_runtime_credentials"]()
+    assert listed["status"] == "ok"
+    assert listed["secret_names"] == ["GEMINI_API_KEY"]
+    assert listed["cloud_run_env_names"] == ["GEMINI_API_KEY"]
+    assert "secret_value" not in listed
+    assert "payload" not in listed
+
+
+def test_request_runtime_credentials_pauses_when_the_key_is_missing(run_context):
+    from agents.tools.credentials import RuntimeCredentialsInventory, build_credentials_tools
+
+    run_context.credentials_inventory = RuntimeCredentialsInventory(bound=True)
+    tools = {f.__name__: f for f in build_credentials_tools(run_context, AgentId.PATCH)}
+    result = tools["request_runtime_credentials"](
+        need="secret",
+        names=["GEMINI_API_KEY"],
+        reason="app/api/story/route.ts reads process.env.GEMINI_API_KEY",
+    )
+    assert result is None
+    assert run_context.waiting_on_operator
+    assert run_context.operator_requests[0]["names"] == ["GEMINI_API_KEY"]
+    assert "GEMINI_API_KEY" in run_context.operator_requests[0]["message"]
+
+
+def test_request_runtime_credentials_is_ready_when_the_vault_already_has_it(run_context):
+    from agents.tools.credentials import RuntimeCredentialsInventory, build_credentials_tools
+
+    run_context.credentials_inventory = RuntimeCredentialsInventory(
+        secret_names=("GEMINI_API_KEY",)
+    )
+    tools = {f.__name__: f for f in build_credentials_tools(run_context, AgentId.PATCH)}
+    result = tools["request_runtime_credentials"](
+        need="secret",
+        names=["GEMINI_API_KEY"],
+        reason="already on the project",
+    )
+    assert result["status"] == "ok"
+    assert result["ready"] is True
+    assert not run_context.waiting_on_operator
+
+
+def test_request_runtime_credentials_refuses_a_secret_value(run_context):
+    from agents.tools.credentials import build_credentials_tools
+
+    tools = {f.__name__: f for f in build_credentials_tools(run_context, AgentId.PATCH)}
+    result = tools["request_runtime_credentials"](
+        need="secret",
+        names=["AIza-not-a-name"],
+        reason="should not look like a key",
+    )
+    assert is_refusal(result)
+
+
 def test_path_containment_rejects_traversal(tmp_path):
     (tmp_path / "inside.txt").write_text("ok", encoding="utf-8")
     assert resolve_within(tmp_path, "inside.txt").is_file()

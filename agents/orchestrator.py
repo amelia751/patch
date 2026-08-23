@@ -262,6 +262,38 @@ class Orchestrator:
         self._advance(RunState.FAILED)
         return self._stage(agent, turn, None, detail)
 
+    def _park_for_operator(
+        self, agent: AgentId, turn: TurnResult | None, detail: str = ""
+    ) -> StageResult:
+        """Hold the run until the operator adds a secret or connects GCP.
+
+        Distinct from HUMAN_REQUIRED: that exit is terminal. This one resumes.
+        """
+        request = self._context.operator_requests[-1] if self._context.operator_requests else {}
+        self._advance(RunState.WAITING_ON_OPERATOR)
+        return self._stage(
+            agent,
+            turn,
+            None,
+            detail or str(request.get("message") or "waiting on the operator"),
+        )
+
+    def resume_after_operator(self) -> RunState:
+        """Leave the hold and return to the specialist that asked.
+
+        Clears the request so a later turn can ask again if the vault is
+        still missing the name. The secret value never enters this method.
+        """
+        request = self._context.operator_requests[-1] if self._context.operator_requests else {}
+        nxt = (
+            RunState.VERIFYING
+            if str(request.get("agent") or "") == str(AgentId.VERIFICATION)
+            else RunState.PATCHING
+        )
+        self._context.operator_requests.clear()
+        self._advance(nxt)
+        return nxt
+
     def _stage(
         self, agent: AgentId, turn: TurnResult | None, output: Any | None, detail: str
     ) -> StageResult:
@@ -579,6 +611,8 @@ class Orchestrator:
             turn = await run_turn(
                 self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
             )
+            if self._context.waiting_on_operator or (turn is not None and turn.paused):
+                return self._park_for_operator(agent, turn)
 
         source = self._read_entrypoint(slice_)
         if source is None:
@@ -651,10 +685,14 @@ class Orchestrator:
             f"{', '.join(manifest.affected_identifiers)}. The Impact agent found these "
             f"usages in the sandbox workspace:\n{findings}\n\n"
             f"This is repository {report.repo!r} at base_sha {report.base_sha!r}; record "
-            f"those verbatim. Load migration skill {slice_.skill_id!r} first. Then iterate "
-            f"with apply_patch and run_command until {slice_.build_command!r} exits 0, and "
-            "record_patch_plan with what you changed. Do not edit any file outside the ones "
-            "listed above."
+            f"those verbatim. Load migration skill {slice_.skill_id!r} first. Inspect "
+            "how this app actually calls the provider (API routes and env vars), not "
+            "only the identifier binding. A green local check is not a live call. If "
+            "a live path needs a secret that list_runtime_credentials does not show, "
+            "call request_runtime_credentials and stop — do not invent a key. Then "
+            f"iterate with apply_patch and run_command until {slice_.build_command!r} "
+            "exits 0, and record_patch_plan with what you changed. Do not edit any "
+            "file outside the ones listed above."
         )
 
     def _patch_deterministically(
@@ -810,12 +848,16 @@ class Orchestrator:
                 "evidence. Do not use a patch plan or an inner-loop transcript. A check "
                 "you did not run is skip, never pass. Record the VerificationReport. If "
                 "generate.py and the unit tests exited 0 and the retired identifiers are "
-                "gone from the entry point, live_api is pass — this fixture's exit code "
-                "is the live check."
+                "gone from the entry point. generate.py is a local identifier check, "
+                "not live_api. If the app's live path needs an API key, "
+                "list_runtime_credentials and request_runtime_credentials rather than "
+                "inventing one or marking live_api pass."
             )
             turn = await run_turn(
                 self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
             )
+            if self._context.waiting_on_operator or (turn is not None and turn.paused):
+                return self._park_for_operator(agent, turn)
 
         report = self._context.output(STAGE_CONTRACTS[agent])
         if not isinstance(report, VerificationReport):
@@ -962,7 +1004,12 @@ class Orchestrator:
             result.stages.append(stage)
             result.state = self._state
             result.detail = stage.detail
-            return not (is_terminal(self._state) or self._context.stopped_for_human)
+            return not (
+                is_terminal(self._state)
+                or self._state is RunState.WAITING_ON_OPERATOR
+                or self._context.stopped_for_human
+                or self._context.waiting_on_operator
+            )
 
         seeded = (
             self.seed_static_manifest(static_manifest)

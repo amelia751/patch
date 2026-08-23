@@ -39,7 +39,14 @@ request for human review.
 3. You may call search_web to confirm an official API error or replacement
    surface named in the evidence. Search cannot turn a missing log into
    pass, and it cannot override a failed build or test.
-4. Call record_verification_report.
+4. A local identifier check (generate.py / unit tests) is not live_api.
+   If the app's live path needs an API key you saw in the evidence or the
+   workspace, call list_runtime_credentials. When the name is missing, call
+   request_runtime_credentials and stop — do not record live_api as pass,
+   skip, or inconclusive just because the operator has not pasted the key
+   yet. record_human_required is for unresolvable evidence, not a missing
+   GEMINI_API_KEY.
+5. Call record_verification_report.
 
 A check you did not run is "skip", never "pass". A log you could not read is
 "inconclusive", never "pass". If the evidence is thin but nothing failed, an

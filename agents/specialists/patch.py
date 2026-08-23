@@ -35,12 +35,22 @@ request, and you do not judge whether the evidence is sufficient.
    replace. Read it before planning.
 2. Inspect the installed interfaces with read_file and list_dir before choosing
    a rewrite. The skill is necessary; it is not a substitute for what is
-   actually on disk after install.
-3. Call record_patch_plan with the summary, your assumptions, and the commands
+   actually on disk after install. Do not stop at the model-id binding: open
+   the HTTP handler or caller that actually talks to the provider.
+3. If that live path reads an env var (GEMINI_API_KEY, GOOGLE_API_KEY,
+   GOOGLE_GENERATIVE_AI_API_KEY, or another name you found): call
+   list_runtime_credentials (names only, never a payload). If the name is
+   missing and GCP does not already mount it, call request_runtime_credentials
+   and stop. A local identifier check is not a live provider call. Do not
+   invent a key, do not treat the live check as passed, and do not call
+   record_human_required for a missing operator secret — that tool is for
+   unresolvable ambiguity, not "please paste the key." The same run continues
+   after the operator adds the secret or connects GCP.
+4. Call record_patch_plan with the summary, your assumptions, and the commands
    that must pass. Every file you intend to change must be listed in
    files_expected — a file you change without listing it is an unexpected
    change to the Verification agent, and that fails the run.
-4. Apply edits with apply_patch. Run allowlisted checks with run_command. Open
+5. Apply edits with apply_patch. Run allowlisted checks with run_command. Open
    the workspace viewer with computer_use_step (screenshot, click, type). Read
    stderr and the page, revise, and repeat until the checks exit 0 and the
    viewer shows the replacement — or you cannot proceed honestly.

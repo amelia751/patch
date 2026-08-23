@@ -18,6 +18,7 @@ class RunState(StrEnum):
     UNAFFECTED = "UNAFFECTED"
     POLICY_EVALUATION = "POLICY_EVALUATION"
     HUMAN_REQUIRED = "HUMAN_REQUIRED"
+    WAITING_ON_OPERATOR = "WAITING_ON_OPERATOR"
     BLOCKED = "BLOCKED"
     PATCHING = "PATCHING"
     BUILDING = "BUILDING"
@@ -53,16 +54,30 @@ ALLOWED_RUN_STATE_TRANSITIONS: Final[MappingProxyType[RunState, frozenset[RunSta
             RunState.POLICY_EVALUATION: frozenset(
                 {RunState.PATCHING, RunState.HUMAN_REQUIRED, RunState.BLOCKED, RunState.FAILED}
             ),
-            RunState.PATCHING: frozenset({RunState.BUILDING, RunState.FAILED}),
+            RunState.PATCHING: frozenset(
+                {RunState.BUILDING, RunState.WAITING_ON_OPERATOR, RunState.FAILED}
+            ),
             RunState.BUILDING: frozenset({RunState.TESTING, RunState.RETRY_PATCH, RunState.FAILED}),
             RunState.RETRY_PATCH: frozenset({RunState.PATCHING, RunState.FAILED}),
             RunState.TESTING: frozenset(
                 {RunState.VERIFYING, RunState.RETRY_PATCH, RunState.FAILED}
             ),
             RunState.VERIFYING: frozenset(
-                {RunState.PR_CREATING, RunState.HUMAN_REQUIRED, RunState.FAILED}
+                {
+                    RunState.PR_CREATING,
+                    RunState.HUMAN_REQUIRED,
+                    RunState.WAITING_ON_OPERATOR,
+                    RunState.FAILED,
+                }
             ),
             RunState.PR_CREATING: frozenset({RunState.PR_CREATED, RunState.FAILED}),
+            RunState.WAITING_ON_OPERATOR: frozenset(
+                {
+                    RunState.PATCHING,
+                    RunState.VERIFYING,
+                    RunState.FAILED,
+                }
+            ),
             RunState.UNAFFECTED: frozenset(),
             RunState.HUMAN_REQUIRED: frozenset(),
             RunState.BLOCKED: frozenset(),

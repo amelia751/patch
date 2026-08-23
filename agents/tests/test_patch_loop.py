@@ -203,3 +203,50 @@ def test_workspace_tools_execute_through_the_session(sandboxed_context, session)
     assert off_allowlist["reason_code"] == "policy_denied"
     # Nothing ran: the workspace is exactly as the fixture left it.
     assert session.execute(["python3", "generate.py"], 60).exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_the_patch_stage_parks_when_the_agent_requests_a_secret(
+    sandboxed_context, repo_root, monkeypatch
+):
+    """The model decides a live check needs a key; the run waits, it does not fail closed."""
+    from agents.adk import TurnResult
+    from agents.tools.credentials import build_credentials_tools
+
+    orchestrator = Orchestrator(sandboxed_context, ToolTrace(run_id="run-patch-loop"))
+    orchestrator.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json"
+    )
+    await orchestrator.run_impact(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+    await orchestrator.run_policy(GEMINI20_SLICE, deterministic=True)
+
+    async def _paused_turn(*_args, **_kwargs):
+        tools = {fn.__name__: fn for fn in build_credentials_tools(sandboxed_context, AgentId.PATCH)}
+        tools["request_runtime_credentials"](
+            need="secret",
+            names=["GEMINI_API_KEY"],
+            reason="lib/gemini.ts live call reads GEMINI_API_KEY",
+        )
+        return TurnResult(
+            agent="patch",
+            final_text="",
+            model_versions=(),
+            event_count=1,
+            trace=orchestrator.trace,
+            paused=True,
+            long_running_tool="request_runtime_credentials",
+        )
+
+    monkeypatch.setattr("agents.orchestrator.run_turn", _paused_turn)
+    result = await orchestrator.run_patch(
+        GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=False
+    )
+
+    assert result.state is RunState.WAITING_ON_OPERATOR
+    assert sandboxed_context.waiting_on_operator
+    assert not sandboxed_context.stopped_for_human
+    assert "GEMINI_API_KEY" in result.detail
+
+    resumed = orchestrator.resume_after_operator()
+    assert resumed is RunState.PATCHING
+    assert not sandboxed_context.waiting_on_operator

@@ -71,6 +71,9 @@ def test_every_agent_can_stop_for_a_human():
         (AgentId.PATCH, ToolName.RECORD_VERIFICATION_REPORT),
         # ...nor scan the repo as Impact; it works from the ImpactReport.
         (AgentId.PATCH, ToolName.SCAN_REPOSITORY),
+        # Only Patch and Verification ask the operator for a runtime secret.
+        (AgentId.CHANGE_INTELLIGENCE, ToolName.REQUEST_RUNTIME_CREDENTIALS),
+        (AgentId.IMPACT, ToolName.LIST_RUNTIME_CREDENTIALS),
         # Roadmap §8.6: the PR agent cannot edit code or re-decide policy.
         (AgentId.PR, ToolName.RECORD_PATCH_PLAN),
         (AgentId.PR, ToolName.APPLY_PATCH),
@@ -150,5 +153,7 @@ def test_the_patch_agent_holds_the_debug_loop():
         ToolName.RUN_COMMAND,
         ToolName.LOAD_MIGRATION_SKILL,
         ToolName.RECORD_PATCH_PLAN,
+        ToolName.LIST_RUNTIME_CREDENTIALS,
+        ToolName.REQUEST_RUNTIME_CREDENTIALS,
     ):
         assert name in granted

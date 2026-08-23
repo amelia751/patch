@@ -70,6 +70,16 @@ def test_retry_returns_to_patching_only():
     )
 
 
+def test_an_operator_hold_is_resumable():
+    """A missing runtime secret is a pause, not the terminal HUMAN_REQUIRED exit."""
+    assert not is_terminal(RunState.WAITING_ON_OPERATOR)
+    assert_transition(RunState.PATCHING, RunState.WAITING_ON_OPERATOR)
+    assert_transition(RunState.VERIFYING, RunState.WAITING_ON_OPERATOR)
+    assert_transition(RunState.WAITING_ON_OPERATOR, RunState.PATCHING)
+    assert_transition(RunState.WAITING_ON_OPERATOR, RunState.VERIFYING)
+    assert not can_transition(RunState.HUMAN_REQUIRED, RunState.PATCHING)
+
+
 def test_an_illegal_transition_raises():
     with pytest.raises(IllegalRunStateTransitionError, match="not a legal run transition"):
         assert_transition(RunState.RECEIVED, RunState.PR_CREATED)

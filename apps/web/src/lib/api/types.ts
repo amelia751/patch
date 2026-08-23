@@ -21,6 +21,7 @@ export type RunState =
   | "UNAFFECTED"
   | "POLICY_EVALUATION"
   | "HUMAN_REQUIRED"
+  | "WAITING_ON_OPERATOR"
   | "BLOCKED"
   | "PATCHING"
   | "BUILDING"

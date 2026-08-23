@@ -22,7 +22,7 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.6.0"
+FLEET_VERSION: Final[str] = "1.7.0"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
@@ -100,6 +100,10 @@ class ToolName(StrEnum):
     # Available to every agent: the fail-closed exit.
     RECORD_HUMAN_REQUIRED = "record_human_required"
 
+    # Patch / Verification — inspect vault names, then pause for the operator.
+    LIST_RUNTIME_CREDENTIALS = "list_runtime_credentials"
+    REQUEST_RUNTIME_CREDENTIALS = "request_runtime_credentials"
+
 
 # Granted to every AgentId, including the two Python stages. Roadmap §8 and
 # CLAUDE.md constraint 10: stopping is always an available structured action.
@@ -145,6 +149,8 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.RUN_COMMAND,
             ToolName.COMPUTER_USE_STEP,
             ToolName.SEARCH_WEB,
+            ToolName.LIST_RUNTIME_CREDENTIALS,
+            ToolName.REQUEST_RUNTIME_CREDENTIALS,
         }
     ),
     AgentId.VERIFICATION: frozenset(
@@ -153,6 +159,8 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
             ToolName.READ_VERIFICATION_EVIDENCE,
             ToolName.RECORD_VERIFICATION_REPORT,
             ToolName.SEARCH_WEB,
+            ToolName.LIST_RUNTIME_CREDENTIALS,
+            ToolName.REQUEST_RUNTIME_CREDENTIALS,
         }
     ),
     AgentId.PR: frozenset(),
@@ -172,7 +180,8 @@ PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
     {
         **dict.fromkeys(AgentId, "1.1.0"),
         AgentId.CHANGE_INTELLIGENCE: "1.4.0",
-        AgentId.PATCH: "1.3.0",
+        AgentId.PATCH: "1.5.0",
+        AgentId.VERIFICATION: "1.3.0",
     }
 )
 

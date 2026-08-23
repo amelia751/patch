@@ -146,7 +146,8 @@ CREATE TYPE usage_kind AS ENUM (
 -- packages/schemas/run_state.py — the only legal vocabulary
 CREATE TYPE run_state AS ENUM (
   'RECEIVED', 'SANITIZED', 'NORMALIZED', 'IMPACT_SCANNING',
-  'UNAFFECTED', 'POLICY_EVALUATION', 'HUMAN_REQUIRED', 'BLOCKED',
+  'UNAFFECTED', 'POLICY_EVALUATION', 'HUMAN_REQUIRED',
+  'WAITING_ON_OPERATOR', 'BLOCKED',
   'PATCHING', 'BUILDING', 'RETRY_PATCH', 'TESTING', 'VERIFYING',
   'FAILED', 'PR_CREATING', 'PR_CREATED'
 );
@@ -371,7 +372,9 @@ The unique key is the fan-out unit: one change × one imported repo. Two
 projects importing the same GitHub repo get two runs (two PRs, two reviews).
 
 Terminal states: `UNAFFECTED`, `HUMAN_REQUIRED`, `BLOCKED`, `FAILED`,
-`PR_CREATED`. There is no state after `PR_CREATED`.
+`PR_CREATED`. `WAITING_ON_OPERATOR` is a resumable hold (missing runtime
+secret or GCP connection) and is not terminal. There is no state after
+`PR_CREATED`.
 
 ### 8.3 `run_state_transitions`
 

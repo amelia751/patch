@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from agents.adk import (  # noqa: E402
 )
 from agents.context import RunContext  # noqa: E402
 from agents.orchestrator import GEMINI20_SLICE, Orchestrator, binding_value  # noqa: E402
+from agents.tools.credentials import RuntimeCredentialsInventory  # noqa: E402
 from agents.trace import ToolTrace  # noqa: E402
 from packages.providers.dotenv import apply_defaults, read_env_files  # noqa: E402
 from packages.providers.google.config import load_config  # noqa: E402
@@ -79,6 +81,18 @@ async def _run(*, scratch: Path, fixture: Path, manifest: Path, run_id: str) -> 
         feed_dir=DEFAULT_FEED_DIR,
         workspace_root=Path(session.working_dir),
         sandbox=session,
+        credentials_inventory=RuntimeCredentialsInventory(
+            bound=True,
+            secret_names=("GEMINI_API_KEY",)
+            if os.environ.get("PATCHAPI_VAULT_HAS_GEMINI") == "1"
+            else (),
+            gcp_connected=False,
+            detail=(
+                "storygen vault has GEMINI_API_KEY"
+                if os.environ.get("PATCHAPI_VAULT_HAS_GEMINI") == "1"
+                else "storygen vault is empty: no GEMINI_API_KEY and no GCP connection"
+            ),
+        ),
     )
     trace = ToolTrace(run_id=run_id, live=_log)
     orchestrator = Orchestrator(context, trace)
@@ -108,13 +122,27 @@ async def _run(*, scratch: Path, fixture: Path, manifest: Path, run_id: str) -> 
         served = stage.turn.served_model if stage.turn else "(no model)"
         _log(f"  {stage.agent:<20} {stage.state:<18} {served:<28} {stage.detail}")
     _log(f"run state: {result.state}")
+    if context.operator_requests:
+        _log("operator hold:")
+        for request in context.operator_requests:
+            _log(
+                f"  need={request.get('need')} names={request.get('names')} "
+                f"agent={request.get('agent')} reason={request.get('reason')}"
+            )
+            _log(f"  message={request.get('message')}")
+    elif result.state is RunState.WAITING_ON_OPERATOR:
+        _log("operator hold: state is WAITING_ON_OPERATOR but no request was recorded")
 
     source = workspace / GEMINI20_SLICE.entrypoint
     if source.is_file():
         bound = binding_value(source.read_text(encoding="utf-8"), GEMINI20_SLICE.binding)
         _log(f"{GEMINI20_SLICE.binding} now binds {bound!r}")
     _log(f"workspace kept at {workspace}")
-    return 0 if result.state in {RunState.HUMAN_REQUIRED, RunState.PR_CREATED} else 1
+    return 0 if result.state in {
+        RunState.HUMAN_REQUIRED,
+        RunState.PR_CREATED,
+        RunState.WAITING_ON_OPERATOR,
+    } else 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:

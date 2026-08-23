@@ -19,7 +19,12 @@ def test_allowed_next_comes_from_the_shared_transition_table(
 
     # VERIFYING may only advance to PR creation, escalate to a human, or fail.
     # No path from VERIFYING skips the independent verification result.
-    assert body["allowed_next"] == ["FAILED", "HUMAN_REQUIRED", "PR_CREATING"]
+    assert body["allowed_next"] == [
+        "FAILED",
+        "HUMAN_REQUIRED",
+        "PR_CREATING",
+        "WAITING_ON_OPERATOR",
+    ]
     assert body["terminal"] is False
 
 

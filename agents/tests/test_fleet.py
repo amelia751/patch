@@ -67,6 +67,24 @@ def test_each_agent_holds_exactly_its_allowlist(fleet):
         assert names == {str(name) for name in tool_allowlist(agent_id)}
 
 
+def test_request_runtime_credentials_is_a_long_running_tool(fleet):
+    """ADK pauses the runner when the model asks the operator for a secret."""
+    from agents.config import ToolName
+
+    for agent_id in (AgentId.PATCH, AgentId.VERIFICATION):
+        tool = next(
+            item
+            for item in fleet[agent_id].tools
+            if (getattr(item, "__name__", None) or item.name)
+            == str(ToolName.REQUEST_RUNTIME_CREDENTIALS)
+        )
+        assert getattr(tool, "is_long_running", False) is True
+    change_names = {
+        getattr(item, "__name__", None) or item.name for item in fleet[AgentId.CHANGE_INTELLIGENCE].tools
+    }
+    assert str(ToolName.REQUEST_RUNTIME_CREDENTIALS) not in change_names
+
+
 def test_tool_policy_is_stated_in_the_instruction_not_in_provider_data(fleet):
     for agent in fleet.values():
         assert agent.instruction.startswith(PREAMBLE)

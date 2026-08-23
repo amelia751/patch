@@ -76,7 +76,12 @@ def test_run_detail_carries_the_evidence_and_the_next_legal_states(
     assert body["terminal"] is False
     # Derived from the shared transition table, so the dashboard and the
     # orchestrator cannot disagree about what may happen next.
-    assert set(body["allowed_next"]) == {"PR_CREATING", "HUMAN_REQUIRED", "FAILED"}
+    assert set(body["allowed_next"]) == {
+        "PR_CREATING",
+        "HUMAN_REQUIRED",
+        "WAITING_ON_OPERATOR",
+        "FAILED",
+    }
     assert body["detail"]["transitions"][0]["to_state"] == "RECEIVED"
 
 

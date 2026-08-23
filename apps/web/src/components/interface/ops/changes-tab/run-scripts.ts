@@ -29,6 +29,7 @@ export type MachineState =
   | "IMPACT_SCANNING"
   | "POLICY_EVALUATION"
   | "HUMAN_REQUIRED"
+  | "WAITING_ON_OPERATOR"
   | "PATCHING"
   | "BUILDING"
   | "TESTING"
@@ -123,6 +124,7 @@ export const MACHINE_LABEL: Record<MachineState, string> = {
   IMPACT_SCANNING: "Scanning inventory",
   POLICY_EVALUATION: "Policy",
   HUMAN_REQUIRED: "Needs you",
+  WAITING_ON_OPERATOR: "Needs you",
   PATCHING: "Patching in sandbox",
   BUILDING: "Clean build",
   TESTING: "Clean tests",
@@ -135,7 +137,7 @@ export const MACHINE_LABEL: Record<MachineState, string> = {
 };
 
 function bucketOf(machine: MachineState): RunBucket {
-  if (machine === "HUMAN_REQUIRED") return "needs_attention";
+  if (machine === "HUMAN_REQUIRED" || machine === "WAITING_ON_OPERATOR") return "needs_attention";
   if (machine === "PR_CREATED") return "ready_for_review";
   if (machine === "UNAFFECTED" || machine === "HELD") return "idle";
   if (machine === "FAILED" || machine === "BLOCKED") return "blocked";
@@ -156,7 +158,7 @@ function pathFor(change: ProjectChange, action: ChangeActionId): MachineState[] 
       "NORMALIZED",
       "IMPACT_SCANNING",
       "POLICY_EVALUATION",
-      "HUMAN_REQUIRED",
+      "WAITING_ON_OPERATOR",
       "PATCHING",
       "BUILDING",
       "TESTING",
@@ -406,12 +408,61 @@ function logsFor(change: ProjectChange, path: MachineState[]): AgentLogLine[] {
   add(
     "POLICY_EVALUATION",
     "result",
-    path.includes("HUMAN_REQUIRED")
-      ? needFor(change) === "gcp"
-        ? "HUMAN_REQUIRED — GCP is not connected. The agent allocates the sandbox after you connect."
-        : "HUMAN_REQUIRED — GEMINI_API_KEY is missing. The agent allocates the sandbox after you add it."
+    path.includes("WAITING_ON_OPERATOR")
+      ? "ALLOW patch. Live checks wait on a runtime secret the agent will request."
       : "ALLOW patch and PR. Merge remains off.",
   );
+
+  if (needFor(change) === "gcp") {
+    add(
+      "WAITING_ON_OPERATOR",
+      "thought",
+      "Live verify needs the customer Cloud Run identity. I will not invent a viewer key.",
+    );
+    add("WAITING_ON_OPERATOR", "action", "list_runtime_credentials()", {
+      verb: "List",
+      toolType: "List",
+    });
+    add(
+      "WAITING_ON_OPERATOR",
+      "result",
+      "Secret Manager has no viewer connection. No Cloud Run env refs.",
+    );
+    add(
+      "WAITING_ON_OPERATOR",
+      "action",
+      "request_runtime_credentials(need=gcp)",
+      { verb: "Request", toolType: "Request" },
+    );
+    add("WAITING_ON_OPERATOR", "narration", HUMAN_REQUIRED_PAUSE);
+  } else {
+    add(
+      "WAITING_ON_OPERATOR",
+      "thought",
+      `The test reads \`process.env.${HUMAN_REQUIRED_SECRET_NAME}\`. I will not invent a key.`,
+    );
+    add("WAITING_ON_OPERATOR", "action", `Read(\`${sample}\`)`, {
+      verb: "Read",
+      toolType: "Read",
+      filePath: sample,
+    });
+    add("WAITING_ON_OPERATOR", "action", "list_runtime_credentials()", {
+      verb: "List",
+      toolType: "List",
+    });
+    add(
+      "WAITING_ON_OPERATOR",
+      "result",
+      `${HUMAN_REQUIRED_SECRET_NAME} is not in Secret Manager and no Cloud Run service mounts it.`,
+    );
+    add(
+      "WAITING_ON_OPERATOR",
+      "action",
+      `request_runtime_credentials(need=secret, names=[${HUMAN_REQUIRED_SECRET_NAME}])`,
+      { verb: "Request", toolType: "Request" },
+    );
+    add("WAITING_ON_OPERATOR", "narration", HUMAN_REQUIRED_PAUSE);
+  }
 
   add("PATCHING", "thought", "Inspect the installed SDK in the worktree before rewriting.");
   add("PATCHING", "action", `Read(\`${sample}\`)`, { verb: "Read", toolType: "Read", filePath: sample });
@@ -543,7 +594,7 @@ export function createRun(
     attempt: opts?.attempt ?? 1,
     attemptBudget: 3,
     pauseReason: opts?.pauseReason ?? pauseFor(change, action),
-    need: opts?.need ?? (path.includes("HUMAN_REQUIRED") ? needFor(change) : undefined),
+    need: opts?.need ?? (path.includes("WAITING_ON_OPERATOR") ? needFor(change) : undefined),
     commands: commandsFor(change),
     diffs: diffsFor(change),
     checks: checksFor(change, machine === "FAILED"),
@@ -595,10 +646,10 @@ export function seedRuns(): MockRun[] {
   };
 
   add("chg_flash_image_preview", "start", "PR_CREATED", ago(4 * 60 * 1000));
-  add("imagen4-retirement-2026-08-17", "start", "HUMAN_REQUIRED", ago(2 * 60 * 60 * 1000), {
+  add("imagen4-retirement-2026-08-17", "start", "WAITING_ON_OPERATOR", ago(2 * 60 * 60 * 1000), {
     pauseReason: HUMAN_REQUIRED_PAUSE,
   });
-  add("ui-issue-long-title", "start", "HUMAN_REQUIRED", ago(50 * 60 * 1000), {
+  add("ui-issue-long-title", "start", "WAITING_ON_OPERATOR", ago(50 * 60 * 1000), {
     repo: "amelia751/egaki",
     pauseReason: HUMAN_REQUIRED_PAUSE,
   });

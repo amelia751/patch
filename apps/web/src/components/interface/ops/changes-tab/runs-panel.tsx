@@ -375,7 +375,7 @@ function RunDetail({
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      {run.machine === "HUMAN_REQUIRED" && (
+      {(run.machine === "WAITING_ON_OPERATOR" || run.machine === "HUMAN_REQUIRED") && (
         <div className="px-5 py-3 border-b border-amber-500/30 bg-amber-500/5 flex items-start justify-between gap-3">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
             {run.pauseReason ?? HUMAN_REQUIRED_PAUSE}

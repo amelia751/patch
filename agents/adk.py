@@ -104,6 +104,21 @@ def generate_content_config() -> Any:
     )
 
 
+def _as_adk_tool(function: Any) -> Any:
+    """Wrap the operator-request tool as ADK's official HITL pause.
+
+    Every other function stays a plain callable; ADK wraps those as
+    `FunctionTool`. `request_runtime_credentials` must be a
+    `LongRunningFunctionTool` so the runner yields `long_running_tool_ids`
+    and stops until the client resumes.
+    """
+    if getattr(function, "__name__", None) != str(ToolName.REQUEST_RUNTIME_CREDENTIALS):
+        return function
+    from google.adk.tools import LongRunningFunctionTool
+
+    return LongRunningFunctionTool(func=function)
+
+
 def _search_web_tool() -> Any:
     """Search-only child. ADK forbids mixing `google_search` with function tools.
 
@@ -148,7 +163,7 @@ def build_agent(
     from google.adk.agents import LlmAgent
 
     before_tool, after_tool = build_tool_guardrails(agent, trace)
-    tools: list[Any] = list(build_tools(context, agent))
+    tools: list[Any] = [_as_adk_tool(function) for function in build_tools(context, agent)]
     if agent in SPECIALISTS:
         tools.append(_search_web_tool())
     return LlmAgent(
@@ -170,6 +185,7 @@ class TurnResult:
     """What one agent turn produced.
 
     `model_versions` is the identity Vertex reported, not the one requested.
+    `paused` is set when ADK yielded a long-running tool (operator hold).
     """
 
     agent: str
@@ -178,6 +194,8 @@ class TurnResult:
     event_count: int
     trace: ToolTrace
     errors: tuple[str, ...] = field(default_factory=tuple)
+    paused: bool = False
+    long_running_tool: str | None = None
 
     @property
     def served_model(self) -> str:
@@ -221,6 +239,8 @@ async def run_turn(
     models: list[str] = []
     errors: list[str] = []
     events = 0
+    paused = False
+    long_running_tool: str | None = None
     try:
         async for event in runner.run_async(
             user_id=user_id,
@@ -228,12 +248,16 @@ async def run_turn(
             new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
         ):
             events += 1
+            stop = False
             if event.model_version and event.model_version not in models:
                 models.append(event.model_version)
                 trace.emit(f"  model {event.model_version}")
             if event.error_message:
                 errors.append(f"{event.error_code}: {event.error_message}")
                 trace.emit(f"  ERROR {event.error_code}: {event.error_message}")
+            pending_ids = getattr(event, "long_running_tool_ids", None) or ()
+            if pending_ids:
+                paused = True
             if event.partial:
                 continue
             content = getattr(event, "content", None)
@@ -241,14 +265,24 @@ async def run_turn(
                 call = getattr(part, "function_call", None)
                 if call is not None and getattr(call, "name", None):
                     trace.emit(f"  model → {call.name}")
+                    if pending_ids and getattr(call, "id", None) in pending_ids:
+                        long_running_tool = str(call.name)
+                        trace.emit(f"  pause {call.name} (long-running)")
                 response = getattr(part, "function_response", None)
                 if response is not None and getattr(response, "name", None):
                     trace.emit(f"  model ← {response.name}")
+                    if paused and str(response.name) == (
+                        long_running_tool or str(ToolName.REQUEST_RUNTIME_CREDENTIALS)
+                    ):
+                        stop = True
                 if getattr(part, "text", None) and not getattr(part, "thought", False):
                     texts.append(part.text)
                     snippet = " ".join(part.text.split())
                     if snippet:
                         trace.emit(f"  model: {snippet[:400]}")
+            if stop:
+                trace.emit("  runner stopped: waiting on operator")
+                break
     finally:
         await runner.close()
 
@@ -259,6 +293,8 @@ async def run_turn(
         event_count=events,
         trace=trace,
         errors=tuple(errors),
+        paused=paused,
+        long_running_tool=long_running_tool,
     )
 
 

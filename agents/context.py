@@ -13,6 +13,7 @@ The final message of a turn is prose and is never parsed into a contract, so a
 model cannot produce a `ChangeManifest` by describing one.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -73,9 +74,11 @@ class RunContext:
     evidence_root: Path | None = None
     sandbox: Any | None = None
     project_id: str | None = None
+    credentials_inventory: Any | Callable[[], Any] | None = None
     index_usages: list[dict[str, Any]] = field(default_factory=list)
     outputs: dict[str, RecordedOutput] = field(default_factory=dict)
     human_required: list[dict[str, str]] = field(default_factory=list)
+    operator_requests: list[dict[str, Any]] = field(default_factory=list)
 
     def record(self, contract: str, agent: AgentId, value: Any) -> None:
         """Commit `value` as this run's `contract`. Last write wins.
@@ -94,3 +97,8 @@ class RunContext:
     def stopped_for_human(self) -> bool:
         """Whether any agent took the fail-closed exit during this run."""
         return bool(self.human_required)
+
+    @property
+    def waiting_on_operator(self) -> bool:
+        """Whether a specialist asked the operator for a runtime secret or GCP."""
+        return bool(self.operator_requests)
