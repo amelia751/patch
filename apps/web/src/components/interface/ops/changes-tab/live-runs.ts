@@ -218,10 +218,28 @@ function logFrom(trace: TraceRow[]): AgentLogLine[] {
   }));
 }
 
-/** The states this run actually passed through, in order, without repeats. */
+/**
+ * The states the current attempt passed through, in order, without repeats.
+ *
+ * Restarting a run does not erase its transitions — Postgres is the audit
+ * record and a run that was tried four times should say so. But the ladder is
+ * not the audit record; it is where the operator reads how far *this* attempt
+ * has come. Drawn from every transition it becomes a loop through the same ten
+ * states, which shows a run in flight as having reached the end several times
+ * already. So the path starts at the last restart, which is the last time the
+ * run returned to `RECEIVED`.
+ */
 function pathFrom(detail: RunDetail): MachineState[] {
+  const transitions = detail.transitions;
+  let start = 0;
+  for (let index = transitions.length - 1; index > 0; index -= 1) {
+    if (transitions[index].to_state === "RECEIVED") {
+      start = index;
+      break;
+    }
+  }
   const seen: MachineState[] = [];
-  for (const transition of detail.transitions) {
+  for (const transition of transitions.slice(start)) {
     const machine = machineOf(transition.to_state);
     if (seen[seen.length - 1] !== machine) seen.push(machine);
   }
