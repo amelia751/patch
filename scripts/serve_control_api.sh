@@ -24,6 +24,10 @@ fi
 
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-$ROOT/.secrets/gcp-service-account.json}"
 export GCP_PROJECT="${GCP_PROJECT:-patch-505223}"
+export GCP_REGION="${GCP_REGION:-us-central1}"
+# Same job Cloud Run starts. Without this the console writes a FAILED row the
+# moment Start remediation is pressed, because nothing is configured to run it.
+export PATCHAPI_REMEDIATION_JOB="${PATCHAPI_REMEDIATION_JOB:-patchapi-remediate}"
 export DATABASE_URL
 DATABASE_URL="$(tr -d '\n' <"$DSN_FILE")"
 export PATCHAPI_CORS_ORIGINS="${PATCHAPI_CORS_ORIGINS:-http://localhost:3000}"

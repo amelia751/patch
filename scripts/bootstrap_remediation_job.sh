@@ -170,6 +170,19 @@ gcloud run jobs add-iam-policy-binding "$JOB" \
   --member="serviceAccount:${API_SA}" \
   --role="projects/${PROJECT_ID}/roles/${INVOKER_ROLE_ID}" --quiet >/dev/null
 
+# The laptop API uses the same job. Its identity is the key file, not the
+# Cloud Run API SA; without this binding, Start remediation on localhost
+# writes a FAILED row the moment the console asks Cloud Run to start work.
+if [[ -f "$KEY_FILE" ]]; then
+  LOCAL_SA="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['client_email'])" "$KEY_FILE")"
+  if [[ -n "$LOCAL_SA" && "$LOCAL_SA" != "$API_SA" ]]; then
+    gcloud run jobs add-iam-policy-binding "$JOB" \
+      --project="$PROJECT_ID" --region="$REGION" \
+      --member="serviceAccount:${LOCAL_SA}" \
+      --role="projects/${PROJECT_ID}/roles/${INVOKER_ROLE_ID}" --quiet >/dev/null
+  fi
+fi
+
 printf 'job %s -> %s\n' "$JOB" "$IMAGE"
 printf 'the control plane needs PATCHAPI_REMEDIATION_JOB=%s to dispatch it\n' "$JOB"
 printf 'run one by hand: gcloud run jobs execute %s --region=%s --args=--run-id,<uuid> --wait\n' \
