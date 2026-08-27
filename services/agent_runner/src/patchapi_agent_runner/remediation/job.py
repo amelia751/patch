@@ -220,7 +220,11 @@ async def _run(
             f"Staged {staged} files from {row.repository} at {row.base_sha[:12]} into an "
             f"isolated {SANDBOX_KIND} sandbox. "
             + (
-                "Build and test commands are pinned for this repository."
+                (
+                    f"Local checks for this change: `{slice_.build_command}`."
+                    if slice_.build_command
+                    else "This change has no local repository check; proof is a live resolve."
+                )
                 if decision.pinned
                 else f"Detected `{slice_.build_command}` and `{slice_.test_command}`."
             ),

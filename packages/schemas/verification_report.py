@@ -3,10 +3,13 @@
 Two constraints are enforced structurally rather than left to a prompt:
 
 * the verifier must not be the agent that wrote the patch, and
-* `PASS` is only expressible when every required check passed, no unexpected
-  file was touched, the retired identifiers are gone, and evidence exists.
+* `PASS` is only expressible when a real proof ran: either the local
+  build and tests passed, or a live provider resolve passed. Skip on the
+  unused side is allowed. No unexpected file, retired identifiers gone,
+  evidence exists.
 
-A live check that could not run yields `INCONCLUSIVE`, never `PASS`.
+A run that skipped every proof (no local gate and no live resolve) is
+`INCONCLUSIVE`, never `PASS`.
 """
 
 from typing import ClassVar, Self
@@ -67,14 +70,25 @@ class VerificationReport(VersionedContract):
         failed = [name for name, outcome in self.checks.items() if outcome is CheckOutcome.FAIL]
 
         if self.verdict is Verdict.PASS:
-            not_passed = [
-                name for name, outcome in self.checks.items() if outcome is not CheckOutcome.PASS
-            ]
-            if not_passed:
+            if failed:
                 raise ValueError(
-                    "verdict PASS requires every check to pass; "
-                    f"not passing: {', '.join(not_passed)}"
+                    f"verdict PASS forbids a failed check; failed: {', '.join(failed)}"
                 )
+            if self.policy is not CheckOutcome.PASS:
+                raise ValueError("verdict PASS requires policy to pass")
+            local_ok = self.build is CheckOutcome.PASS and self.tests is CheckOutcome.PASS
+            live_ok = self.live_api is CheckOutcome.PASS
+            if not local_ok and not live_ok:
+                raise ValueError(
+                    "verdict PASS requires a green local gate or a live provider resolve"
+                )
+            for name, outcome in (
+                ("build", self.build),
+                ("tests", self.tests),
+                ("live_api", self.live_api),
+            ):
+                if outcome not in {CheckOutcome.PASS, CheckOutcome.SKIP}:
+                    raise ValueError(f"verdict PASS cannot record {name} as {outcome}")
             if self.unexpected_files:
                 raise ValueError("verdict PASS requires no unexpected file changes")
             if not self.deprecated_identifiers_absent:

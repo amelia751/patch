@@ -103,9 +103,9 @@ def build_evidence_tools(context: RunContext) -> list[Callable[..., Any]]:
 
         Each check is "pass", "fail", "skip" or "inconclusive"; a check you did
         not run is "skip", never "pass". The verdict is "pass", "fail" or
-        "inconclusive", and "pass" is rejected unless every check passed, no
-        unexpected file changed, the retired identifiers are gone, and at least
-        one artifact backs it.
+        "inconclusive". PASS needs a green local gate or a live provider
+        resolve (skip is allowed on the unused side), no unexpected file,
+        retired identifiers gone, and at least one artifact.
         """
         plan = context.output("patch_plan")
         patch_author = (

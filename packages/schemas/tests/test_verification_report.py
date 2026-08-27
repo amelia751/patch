@@ -15,19 +15,36 @@ def test_the_patch_author_cannot_grade_itself(load_golden):
 
 
 @pytest.mark.parametrize("check", ["build", "tests", "live_api", "policy"])
-def test_pass_requires_every_check_to_pass(check, load_golden):
+def test_pass_rejects_a_failed_check(check, load_golden):
     document = load_golden("verification_report.egaki.json")
     document[check] = CheckOutcome.FAIL.value
 
-    with pytest.raises(ValidationError, match="requires every check to pass"):
+    with pytest.raises(ValidationError, match=r"failed check|policy to pass"):
         VerificationReport.model_validate(document)
 
 
-def test_an_unavailable_live_check_cannot_be_reported_as_pass(load_golden):
+def test_pass_allows_a_skipped_live_check_when_the_local_gate_is_green(load_golden):
     document = load_golden("verification_report.egaki.json")
     document["live_api"] = CheckOutcome.SKIP.value
+    report = VerificationReport.model_validate(document)
+    assert report.permits_pull_request is True
 
-    with pytest.raises(ValidationError, match="requires every check to pass"):
+
+def test_pass_allows_skipped_local_checks_when_live_resolves(load_golden):
+    document = load_golden("verification_report.egaki.json")
+    document["build"] = CheckOutcome.SKIP.value
+    document["tests"] = CheckOutcome.SKIP.value
+    report = VerificationReport.model_validate(document)
+    assert report.permits_pull_request is True
+
+
+def test_pass_rejects_when_neither_gate_ran(load_golden):
+    document = load_golden("verification_report.egaki.json")
+    document["build"] = CheckOutcome.SKIP.value
+    document["tests"] = CheckOutcome.SKIP.value
+    document["live_api"] = CheckOutcome.SKIP.value
+
+    with pytest.raises(ValidationError, match="local gate or a live provider resolve"):
         VerificationReport.model_validate(document)
 
 

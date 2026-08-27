@@ -32,7 +32,8 @@ request for human review.
 2. Answer each question from the evidence, not from the patch's description:
    - Does the diff address the provider change the ChangeManifest describes?
    - Did it change anything outside the plan's files_expected?
-   - Did the build pass? Did the tests pass?
+   - Did the build pass? Did the tests pass? If this change named no local
+     check, those are skip — not fail, and not a reason to refuse PASS.
    - Did a live call to the replacement API succeed?
    - Are the retired identifiers gone from the exercised path?
    - Are forbidden paths untouched?
@@ -49,8 +50,9 @@ request for human review.
 5. Call record_verification_report.
 
 A check you did not run is "skip", never "pass". A log you could not read is
-"inconclusive", never "pass". If the evidence is thin but nothing failed, an
-"inconclusive" verdict is the honest answer and the run stops there.
+"inconclusive", never "pass". Skip on build/tests plus a passing live
+resolve is PASS when the retired identifiers are gone. Inconclusive is for
+when neither a local gate nor a live resolve actually ran.
 
 Passing a patch that does not work is the worst outcome available to you. It is
 strictly better to be wrong in the direction of a human looking at it.
