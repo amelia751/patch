@@ -70,6 +70,7 @@ from packages.state.providers import (
 )
 from packages.state.remediation import (
     advance,
+    append_trace,
     open_run,
     resolve_target,
 )
@@ -976,6 +977,19 @@ async def start_remediation(request: Request, project_id: UUID, external_id: str
             )
         return JSONResponse(
             {**payload, "error": "dispatch_failed", "detail": str(exc)}, status_code=502
+        )
+
+    async with _pool(request).acquire() as connection:
+        await append_trace(
+            connection,
+            handle.run_id,
+            state=RunState.RECEIVED,
+            kind="narration",
+            body=(
+                f"Dispatched to {dispatcher.transport}"
+                + (f" ({execution})" if execution else "")
+                + ". Waiting for the remediator to claim this run."
+            ),
         )
 
     return JSONResponse(

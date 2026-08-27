@@ -18,12 +18,12 @@ type Section = "releases" | "runs";
 
 /** How often the runs list is re-read while something is still moving.
  *
- * Two seconds is fast enough that a state change looks immediate and slow
- * enough that a long patch turn is not thousands of requests. When nothing is
- * active the list still refreshes, just rarely, so a run started from another
- * tab or by a scheduled job appears without a reload.
+ * One second matches the remediator flush tick. Two seconds was enough to
+ * miss a whole tool call between paints, which is how a live run looked idle.
+ * When nothing is active the list still refreshes, just rarely, so a run
+ * started from another tab appears without a reload.
  */
-const LIVE_POLL_MS = 2000;
+const LIVE_POLL_MS = 1000;
 const IDLE_POLL_MS = 15000;
 
 /** One shared empty array, so "no runs" is referentially stable across renders. */

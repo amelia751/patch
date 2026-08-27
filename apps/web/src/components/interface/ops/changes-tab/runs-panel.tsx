@@ -459,12 +459,16 @@ function RunDetail({
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 space-y-4">
         <AgentLog run={run} />
-        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-          {TREE_COPY[tree].hint}
-        </p>
-        {tree === "base" && <BaseTree run={run} />}
-        {tree === "sandbox" && <SandboxTree run={run} />}
-        {tree === "proposed" && <ProposedTree run={run} />}
+        <section>
+          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+            {TREE_COPY[tree].hint}
+          </p>
+          <div className="mt-2">
+            {tree === "base" && <BaseTree run={run} />}
+            {tree === "sandbox" && <SandboxTree run={run} />}
+            {tree === "proposed" && <ProposedTree run={run} />}
+          </div>
+        </section>
       </div>
     </div>
   );

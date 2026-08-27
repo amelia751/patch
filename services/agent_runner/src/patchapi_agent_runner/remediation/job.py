@@ -178,85 +178,110 @@ async def _run(
     scratch: Path,
     hint: Any,
 ) -> int:
-    try:
-        source = checkout.fetch(row.repository, row.base_sha, scratch / "tree")
-    except checkout.CheckoutError as exc:
-        return await _stop(pool, row.run_id, f"Could not read the repository: {exc}")
-
-    decision = slices.decide(
-        repository=row.repository,
-        change_id=row.external_id,
-        identifiers=row.identifiers,
-        tree=source.tree,
-        entrypoint="" if hint is None else str(hint["file_path"]),
-        excerpt="" if hint is None else str(hint["excerpt"] or ""),
-    )
-    if decision.slice_ is None:
-        return await _stop(pool, row.run_id, decision.reason)
-    slice_ = decision.slice_
-
-    manifest_dir = scratch / "manifest"
-    manifest_path = manifest.write(change, manifest_dir)
-
-    try:
-        session = open_session(
-            SANDBOX_KIND, run_id=f"run-{row.run_id[:12]}", scratch_root=scratch / "sandbox"
-        )
-    except (SandboxUnavailableError, ImportError, TypeError) as exc:
-        return await _stop(
-            pool,
-            row.run_id,
-            f"The isolated sandbox is unavailable, so no generated code was run: {exc}",
-        )
-
     journal = RunJournal(run_id=row.run_id)
     trace = ToolTrace(run_id=row.run_id)
     recorder = _recorder(pool, row.run_id, journal, trace)
+    session: Any = None
 
-    try:
-        staged = checkout.stage(session, source)
+    # The pump has to start before the clone. Held until after sandbox +
+    # baseline, the console sits on an empty log for the slowest minute of
+    # the run — the part the operator is watching.
+    async with recorder:
         recorder.narrate(
             RunState.RECEIVED,
-            f"Staged {staged} files from {row.repository} at {row.base_sha[:12]} into an "
-            f"isolated {SANDBOX_KIND} sandbox. "
-            + (
-                (
-                    f"Local checks for this change: `{slice_.build_command}`."
-                    if slice_.build_command
-                    else "This change has no local repository check; proof is a live resolve."
-                )
-                if decision.pinned
-                else f"Detected `{slice_.build_command}` and `{slice_.test_command}`."
-            ),
+            f"Remediator claimed {row.repository} at {row.base_sha[:12]}. "
+            "Fetching the pinned tree.",
         )
+        await recorder.flush()
 
-        baseline = _baseline(session, slice_)
-        recorder.narrate(RunState.RECEIVED, baseline.narration)
+        try:
+            source = checkout.fetch(row.repository, row.base_sha, scratch / "tree")
+        except checkout.CheckoutError as exc:
+            return await _stop(pool, row.run_id, f"Could not read the repository: {exc}")
 
-        context = RunContext(
-            run_id=row.run_id,
-            repo_root=repo_root(),
-            feed_dir=feed_dir(),
-            workspace_root=(
-                Path(session.working_dir) if isinstance(session.working_dir, Path) else None
-            ),
-            sandbox=session,
-            project_id=row.project_id,
-            credentials_inventory=await _credentials(pool, row.project_id),
-            live_credentials=await _live_credentials(pool, row.project_id),
+        recorder.narrate(
+            RunState.RECEIVED,
+            f"Fetched {row.repository} at {row.base_sha[:12]}.",
         )
-        orchestrator = Orchestrator(context, trace, journal)
+        await recorder.flush()
 
-        async with pool.acquire() as connection:
-            attempt_id, _number = await remediation.begin_attempt(
-                connection,
+        decision = slices.decide(
+            repository=row.repository,
+            change_id=row.external_id,
+            identifiers=row.identifiers,
+            tree=source.tree,
+            entrypoint="" if hint is None else str(hint["file_path"]),
+            excerpt="" if hint is None else str(hint["excerpt"] or ""),
+        )
+        if decision.slice_ is None:
+            return await _stop(pool, row.run_id, decision.reason)
+        slice_ = decision.slice_
+
+        manifest_dir = scratch / "manifest"
+        manifest_path = manifest.write(change, manifest_dir)
+
+        recorder.narrate(
+            RunState.RECEIVED,
+            f"Allocating an isolated {SANDBOX_KIND} sandbox.",
+        )
+        await recorder.flush()
+
+        try:
+            session = open_session(
+                SANDBOX_KIND, run_id=f"run-{row.run_id[:12]}", scratch_root=scratch / "sandbox"
+            )
+        except (SandboxUnavailableError, ImportError, TypeError) as exc:
+            return await _stop(
+                pool,
                 row.run_id,
-                patch_agent="patch",
-                prompt_version=slice_.skill_id,
-                sandbox_ref=f"{SANDBOX_KIND}:{getattr(session, 'name', row.run_id)}",
+                f"The isolated sandbox is unavailable, so no generated code was run: {exc}",
             )
 
-        async with recorder:
+        try:
+            staged = checkout.stage(session, source)
+            recorder.narrate(
+                RunState.RECEIVED,
+                f"Staged {staged} files from {row.repository} at {row.base_sha[:12]} into an "
+                f"isolated {SANDBOX_KIND} sandbox. "
+                + (
+                    (
+                        f"Local checks for this change: `{slice_.build_command}`."
+                        if slice_.build_command
+                        else "This change has no local repository check; proof is a live resolve."
+                    )
+                    if decision.pinned
+                    else f"Detected `{slice_.build_command}` and `{slice_.test_command}`."
+                ),
+            )
+            await recorder.flush()
+
+            baseline = _baseline(session, slice_)
+            recorder.narrate(RunState.RECEIVED, baseline.narration)
+            await recorder.flush()
+
+            context = RunContext(
+                run_id=row.run_id,
+                repo_root=repo_root(),
+                feed_dir=feed_dir(),
+                workspace_root=(
+                    Path(session.working_dir) if isinstance(session.working_dir, Path) else None
+                ),
+                sandbox=session,
+                project_id=row.project_id,
+                credentials_inventory=await _credentials(pool, row.project_id),
+                live_credentials=await _live_credentials(pool, row.project_id),
+            )
+            orchestrator = Orchestrator(context, trace, journal)
+
+            async with pool.acquire() as connection:
+                attempt_id, _number = await remediation.begin_attempt(
+                    connection,
+                    row.run_id,
+                    patch_agent="patch",
+                    prompt_version=slice_.skill_id,
+                    sandbox_ref=f"{SANDBOX_KIND}:{getattr(session, 'name', row.run_id)}",
+                )
+
             # Impact and policy stay deterministic: whether a repository is
             # affected, and which files, is the scanner's answer, and a status
             # a model can talk itself out of is not a status. The model's work
@@ -268,16 +293,15 @@ async def _run(
                 deterministic=False,
                 setup_deterministic=True,
             )
-
-        await _persist(
-            pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline
-        )
-        log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
-        if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
-            return EXIT_OK
-        return EXIT_FAILED
-    finally:
-        session.close()
+            await _persist(
+                pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline
+            )
+            log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
+            if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
+                return EXIT_OK
+            return EXIT_FAILED
+        finally:
+            session.close()
 
 
 @dataclass(frozen=True, slots=True)

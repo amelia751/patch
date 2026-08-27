@@ -373,6 +373,14 @@ function composeWorklog(
     lines.push(line(`${at}-${n}`, at, kind, text, extras));
   };
 
+  if (detail.trace.length === 0 && bucketOf(machineOf(detail.state)) === "active") {
+    add(
+      "NORMALIZED",
+      "narration",
+      "Waiting for the remediator to claim this run. Lines appear as the job writes them.",
+    );
+  }
+
   const repo = detail.repository;
   const sha = detail.base_sha.slice(0, 12) || "unpinned";
   const identifier = change?.identifiers[0] ?? "";
@@ -603,13 +611,14 @@ function composeWorklog(
         }
       }
       const tail = captured?.tail || parsed?.output || "";
-      if (!tail) continue;
       shownCommands.add(key);
       if (!sawApply) beginPatching();
       add(
         sawApply ? "TESTING" : "PATCHING",
-        "block",
-        terminalFence("/tmp/patchapi-sandbox", [{ cmd: argv, out: tail }]),
+        tail ? "block" : "action",
+        tail
+          ? terminalFence("/tmp/patchapi-sandbox", [{ cmd: argv, out: tail }])
+          : `$ ${argv}`,
       );
       continue;
     }
@@ -634,6 +643,12 @@ function composeWorklog(
       sawPr = true;
       continue;
     }
+
+    flushReads();
+    add(at, row.kind === "result" ? "result" : "action", body.split("\n")[0], {
+      verb: name,
+      toolType: name,
+    });
   }
 
   flushReads();
@@ -690,11 +705,7 @@ function isNoiseRead(path: string): boolean {
 }
 
 function isNoiseNarration(text: string): boolean {
-  return (
-    /^Deterministic slice:/i.test(text) ||
-    /^Baseline checks already fail/i.test(text) ||
-    /^Baseline checks pass/i.test(text)
-  );
+  return /^Deterministic slice:/i.test(text);
 }
 
 function policyLine(policy: Record<string, unknown> | null): string {
