@@ -235,9 +235,7 @@ def build_pull_request_tools(context: RunContext) -> list[Callable[..., Any]]:
             if isinstance(impact, ImpactReport)
             else []
         )
-        migration = (
-            [plan.migration_summary] if isinstance(plan, PatchPlan) else []
-        )
+        migration = [plan.migration_summary] if isinstance(plan, PatchPlan) else []
         manifest = context.output("change_manifest")
         why = (
             plan.migration_summary
@@ -253,7 +251,11 @@ def build_pull_request_tools(context: RunContext) -> list[Callable[..., Any]]:
             "affected_usage": usage,
             "migration": migration,
             "verification": [
-                {"name": name, "passed": str(outcome) == "pass"}
+                {
+                    "name": name,
+                    "passed": str(outcome) in {"pass", "skip"},
+                    "detail": None if str(outcome) == "pass" else str(outcome),
+                }
                 for name, outcome in report.checks.items()
             ],
             "risk_level": risk if risk in {"low", "medium", "high"} else "medium",
