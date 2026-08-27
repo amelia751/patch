@@ -25,7 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 from agents.config import AgentId, ToolName, tool_allowlist  # noqa: E402
 from agents.context import RunContext  # noqa: E402
 from agents.guardrails import build_tool_guardrails  # noqa: E402
-from agents.orchestrator import GEMINI20_SLICE, Orchestrator, binding_value  # noqa: E402
+from agents.orchestrator import Orchestrator, VerticalSlice, binding_value  # noqa: E402
 from agents.tools.patch.workspace import build_workspace_tools  # noqa: E402
 from agents.tools.pr import GITHUB_TOOLS_URL_ENV  # noqa: E402
 from agents.tools.results import is_refusal  # noqa: E402
@@ -39,6 +39,28 @@ BASE_SHA = "87e77dc54ac81ac573916db0ec6ceb97474902b0"
 
 RETIRED = "gemini-2.0-flash"
 REPLACEMENT = "gemini-3.5-flash"
+
+# Demo trees, not product constants. The remediator builds a VerticalSlice
+# from the ChangeManifest and the checkout; these fixtures only pin the
+# deterministic tests to one known layout.
+GEMINI20_SLICE = VerticalSlice(
+    change_id="gemini20-flash-shutdown-2026-06-01",
+    repo="amelia751/storygen",
+    skill_id="google_gemini20_migration",
+    entrypoint="lib/gemini.ts",
+    binding="MODEL",
+    build_command="python3 generate.py",
+    test_command="python3 -m unittest test_generate.py",
+)
+LIVE_PROOF_SLICE = VerticalSlice(
+    change_id="imagen4-retirement-2026-08-17",
+    repo="amelia751/storygen",
+    skill_id="google_imagen_migration",
+    entrypoint="lib/gemini.ts",
+    binding="IMAGE_MODEL",
+    build_command="",
+    test_command="",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -89,7 +111,10 @@ def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, sessio
 
     result = asyncio.run(
         orchestrator.run_vertical_slice(
-            base_sha=BASE_SHA, deterministic=True, static_manifest=manifest
+            GEMINI20_SLICE,
+            base_sha=BASE_SHA,
+            deterministic=True,
+            static_manifest=manifest,
         )
     )
 
@@ -108,7 +133,9 @@ def test_the_deterministic_loop_migrates_the_workspace(sandboxed_context, sessio
 
 def test_the_deterministic_loop_records_every_contract(sandboxed_context):
     orchestrator = Orchestrator(sandboxed_context, ToolTrace(run_id="run-patch-loop"))
-    asyncio.run(orchestrator.run_vertical_slice(base_sha=BASE_SHA, deterministic=True))
+    asyncio.run(
+        orchestrator.run_vertical_slice(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+    )
 
     manifest = sandboxed_context.output("change_manifest")
     report = sandboxed_context.output("impact_report")
@@ -141,7 +168,9 @@ def test_an_unaffected_workspace_stops_before_policy(tmp_path, repo_root, feed_d
             sandbox=clean,
         )
         orchestrator = Orchestrator(context, ToolTrace(run_id="run-clean"))
-        result = asyncio.run(orchestrator.run_vertical_slice(base_sha=BASE_SHA, deterministic=True))
+        result = asyncio.run(
+            orchestrator.run_vertical_slice(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+        )
 
     assert result.state is RunState.UNAFFECTED
     assert context.output("policy_decision") is None
@@ -151,7 +180,9 @@ def test_an_unaffected_workspace_stops_before_policy(tmp_path, repo_root, feed_d
 def test_the_trace_shows_the_whole_chain(sandboxed_context):
     trace = ToolTrace(run_id="run-patch-loop")
     orchestrator = Orchestrator(sandboxed_context, trace)
-    asyncio.run(orchestrator.run_vertical_slice(base_sha=BASE_SHA, deterministic=True))
+    asyncio.run(
+        orchestrator.run_vertical_slice(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+    )
 
     called = [event.tool for event in trace]
     assert called.index("scan_repository") < called.index("evaluate_policy")
@@ -221,7 +252,9 @@ async def test_the_patch_stage_parks_when_the_agent_requests_a_secret(
     await orchestrator.run_policy(GEMINI20_SLICE, deterministic=True)
 
     async def _paused_turn(*_args, **_kwargs):
-        tools = {fn.__name__: fn for fn in build_credentials_tools(sandboxed_context, AgentId.PATCH)}
+        tools = {
+            fn.__name__: fn for fn in build_credentials_tools(sandboxed_context, AgentId.PATCH)
+        }
         tools["request_runtime_credentials"](
             need="secret",
             names=["GEMINI_API_KEY"],
@@ -238,9 +271,7 @@ async def test_the_patch_stage_parks_when_the_agent_requests_a_secret(
         )
 
     monkeypatch.setattr("agents.orchestrator.run_turn", _paused_turn)
-    result = await orchestrator.run_patch(
-        GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=False
-    )
+    result = await orchestrator.run_patch(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=False)
 
     assert result.state is RunState.WAITING_ON_OPERATOR
     assert sandboxed_context.waiting_on_operator
@@ -250,3 +281,66 @@ async def test_the_patch_stage_parks_when_the_agent_requests_a_secret(
     resumed = orchestrator.resume_after_operator()
     assert resumed is RunState.PATCHING
     assert not sandboxed_context.waiting_on_operator
+
+
+IMAGE_RETIRED = "imagen-4.0-generate-001"
+IMAGE_REPLACEMENT = "gemini-3.1-flash-image"
+
+
+@pytest.mark.asyncio
+async def test_imagen_parks_before_a_model_turn_when_the_key_is_missing(
+    sandboxed_context, repo_root, monkeypatch
+):
+    """Imagen has no local gate. Missing credentials pause the run; they do not fail it."""
+    called = {"turn": False}
+
+    async def _must_not_run(*_args, **_kwargs):
+        called["turn"] = True
+        raise AssertionError("the patch model must not run before the operator hold")
+
+    monkeypatch.setattr("agents.orchestrator.run_turn", _must_not_run)
+    orchestrator = Orchestrator(sandboxed_context, ToolTrace(run_id="run-patch-loop"))
+    orchestrator.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json"
+    )
+    await orchestrator.run_impact(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True)
+    await orchestrator.run_policy(LIVE_PROOF_SLICE, deterministic=True)
+    result = await orchestrator.run_patch(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=False)
+
+    assert not called["turn"]
+    assert result.state is RunState.WAITING_ON_OPERATOR
+    assert sandboxed_context.waiting_on_operator
+    assert not sandboxed_context.stopped_for_human
+    assert "GEMINI_API_KEY" in result.detail
+    assert binding_value(sandboxed_context.sandbox.read_file("lib/gemini.ts"), "MODEL") == RETIRED
+    assert (
+        binding_value(sandboxed_context.sandbox.read_file("lib/gemini.ts"), "IMAGE_MODEL")
+        == IMAGE_RETIRED
+    )
+
+
+def test_imagen_rewrites_image_model_without_running_generate_py(
+    sandboxed_context, session, repo_root
+):
+    from agents.tools.credentials import RuntimeCredentialsInventory
+
+    sandboxed_context.credentials_inventory = RuntimeCredentialsInventory(
+        secret_names=("GEMINI_API_KEY",),
+        gcp_connected=True,
+    )
+    orchestrator = Orchestrator(sandboxed_context, ToolTrace(run_id="run-imagen"))
+    orchestrator.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json"
+    )
+    asyncio.run(orchestrator.run_impact(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True))
+    asyncio.run(orchestrator.run_policy(LIVE_PROOF_SLICE, deterministic=True))
+    result = asyncio.run(
+        orchestrator.run_patch(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True)
+    )
+
+    assert result.state is RunState.TESTING, result.detail
+    source = session.read_file("lib/gemini.ts")
+    assert binding_value(source, "IMAGE_MODEL") == IMAGE_REPLACEMENT
+    assert binding_value(source, "MODEL") == RETIRED
+    # generate.py still fails: it is the Gemini 2.0 gate, not this change.
+    assert session.execute(["python3", "generate.py"], 60).exit_code == 1

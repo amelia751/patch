@@ -441,6 +441,17 @@ def test_list_runtime_credentials_returns_names_never_payloads(run_context):
     assert "payload" not in listed
 
 
+def test_live_check_ready_needs_a_named_secret_or_gcp(run_context):
+    from agents.tools.credentials import RuntimeCredentialsInventory, live_check_ready
+
+    assert not live_check_ready(RuntimeCredentialsInventory(bound=False))
+    assert not live_check_ready(RuntimeCredentialsInventory(bound=True))
+    assert live_check_ready(
+        RuntimeCredentialsInventory(bound=True, secret_names=("GEMINI_API_KEY",))
+    )
+    assert live_check_ready(RuntimeCredentialsInventory(bound=True, gcp_connected=True))
+
+
 def test_request_runtime_credentials_pauses_when_the_key_is_missing(run_context):
     from agents.tools.credentials import RuntimeCredentialsInventory, build_credentials_tools
 

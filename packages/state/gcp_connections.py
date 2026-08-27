@@ -1,8 +1,8 @@
 """GCP viewer-connection metadata in Postgres; the JSON key stays in Secret Manager.
 
 `gcp_connections` has no credentials column. HTTP handlers never return the
-payload. `reveal_connection` is the only reader, for the runtime inspector
-and the live-verification broker.
+payload. `reveal_connection` is the owner-scoped reader for the inspector.
+`reveal_latest_connection` is the remediator's reader for live verification.
 """
 
 from __future__ import annotations
@@ -420,6 +420,49 @@ async def reveal_connection(
     if not resource:
         return None
     return vault.reveal(resource)
+
+
+async def reveal_latest_connection(
+    pool: asyncpg.Pool,
+    project_id: UUID,
+    vault: SecretVault,
+) -> tuple[dict[str, Any], str] | None:
+    """Return `(metadata, credentials_json)` for the project's newest connection.
+
+    The remediator is a trusted backend and has no operator session, so this
+    path does not re-check project ownership. Callers must not log the JSON.
+    """
+    try:
+        async with pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT gcp_project_id, default_region, secret_arn
+                FROM gcp_connections
+                WHERE project_id = $1
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                project_id,
+            )
+    except Exception as exc:
+        raise StateUnavailableError(
+            f"could not read latest gcp connection: {type(exc).__name__}"
+        ) from exc
+    if row is None or not row["secret_arn"]:
+        return None
+    try:
+        payload = vault.reveal(row["secret_arn"])
+    except SecretStoreError:
+        return None
+    if not payload:
+        return None
+    return (
+        {
+            "gcp_project_id": row["gcp_project_id"],
+            "default_region": row["default_region"] or "us-central1",
+        },
+        payload,
+    )
 
 
 async def connection_record(

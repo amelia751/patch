@@ -269,7 +269,9 @@ async def _run(
             pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline
         )
         log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
-        return EXIT_OK if result.state is RunState.PR_CREATED else EXIT_FAILED
+        if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
+            return EXIT_OK
+        return EXIT_FAILED
     finally:
         session.close()
 
@@ -289,6 +291,11 @@ class Baseline:
 
     @property
     def narration(self) -> str:
+        if not self.command:
+            return (
+                "This change has no local repository check; proof is the binding "
+                "rewrite and a live provider resolve."
+            )
         if self.green:
             return f"Baseline checks pass at this commit: `{self.command}`."
         return (
@@ -306,7 +313,12 @@ def _baseline(session: Any, slice_: VerticalSlice) -> Baseline:
     most in the case this product exists for: a retirement gate that fails
     precisely because the retired identifier is still in the tree, which is the
     failure the patch is supposed to clear.
+
+    An empty command is not a green check. It means this change has no local
+    gate (Imagen on storygen: generate.py reads MODEL, not IMAGE_MODEL).
     """
+    if not (slice_.build_command or "").strip():
+        return Baseline(0, 0, "no local repository check is pinned for this change\n", "")
     build = _check(session, slice_.build_command)
     test = (
         _check(session, slice_.test_command)
@@ -380,10 +392,15 @@ async def _credentials(pool: asyncpg.Pool, project_id: UUID) -> RuntimeCredentia
     async with pool.acquire() as connection:
         row = await connection.fetchrow(_CREDENTIALS_SQL, project_id)
     names = tuple(row["secret_names"] or ())
+    gcp_connected = bool(row["gcp_connected"])
+    cloud_run_env_names: tuple[str, ...] = ()
+    if gcp_connected:
+        cloud_run_env_names = await _cloud_run_env_names(pool, project_id)
     return RuntimeCredentialsInventory(
         bound=True,
         secret_names=names,
-        gcp_connected=bool(row["gcp_connected"]),
+        gcp_connected=gcp_connected,
+        cloud_run_env_names=cloud_run_env_names,
         gcp_project_id=row["gcp_project_id"],
         detail=(
             f"{len(names)} runtime secret name(s) configured for this project"
@@ -408,6 +425,8 @@ async def _live_credentials(
     is what lets the live check say "not asked" instead of failing a patch for a
     credential the project never had.
     """
+    from packages.state.gcp_connections import reveal_latest_connection
+    from packages.state.gcp_viewer import broker_live_env
     from packages.state.secret_manager import GoogleSecretVault
     from packages.state.secrets import reveal_secret
 
@@ -422,10 +441,65 @@ async def _live_credentials(
         if value:
             resolved[name] = value
 
+    if not any(name in resolved for name in live_check.CREDENTIAL_NAMES):
+        try:
+            loaded = await reveal_latest_connection(pool, project_id, vault)
+        except Exception as exc:
+            log.warning("could not reveal viewer connection for %s: %s", project_id, exc)
+            loaded = None
+        if loaded is not None:
+            meta, payload = loaded
+            try:
+                env = broker_live_env(
+                    payload,
+                    gcp_project_id=str(meta["gcp_project_id"]),
+                    region=str(meta["default_region"]),
+                )
+            except Exception as exc:
+                log.warning("could not broker Cloud Run live env for %s: %s", project_id, exc)
+                env = {}
+            for name in live_check.CREDENTIAL_NAMES:
+                value = env.get(name)
+                if value and name not in resolved:
+                    resolved[name] = value
+
     def broker(requested: tuple[str, ...]) -> dict[str, str]:
         return {name: value for name, value in resolved.items() if name in requested}
 
     return broker
+
+
+async def _cloud_run_env_names(pool: asyncpg.Pool, project_id: UUID) -> tuple[str, ...]:
+    """Secret *names* Cloud Run already mounts. Never payloads."""
+    from packages.state.gcp_connections import reveal_latest_connection
+    from packages.state.gcp_viewer import GcpViewerError, list_cloud_run_services
+    from packages.state.secret_manager import GoogleSecretVault
+
+    vault = GoogleSecretVault(os.environ.get("GCP_PROJECT", ""))
+    try:
+        loaded = await reveal_latest_connection(pool, project_id, vault)
+    except Exception as exc:
+        log.warning("could not reveal viewer connection for names: %s", exc)
+        return ()
+    if loaded is None:
+        return ()
+    meta, payload = loaded
+    try:
+        services = list_cloud_run_services(
+            payload,
+            gcp_project_id=str(meta["gcp_project_id"]),
+            region=str(meta["default_region"]),
+        )
+    except GcpViewerError as exc:
+        log.warning("could not list Cloud Run secret refs: %s", exc)
+        return ()
+    names: list[str] = []
+    for service in services:
+        for ref in service.get("secret_refs") or []:
+            env_name = str(ref.get("env_name") or "")
+            if env_name in live_check.CREDENTIAL_NAMES and env_name not in names:
+                names.append(env_name)
+    return tuple(names)
 
 
 def _recorder(pool: asyncpg.Pool, run_id: str, journal: RunJournal, trace: ToolTrace) -> Any:
@@ -494,13 +568,18 @@ async def _persist(
                     connection, row.run_id, kind=kind, body=body, patch_attempt_id=attempt_id
                 )
 
-        await remediation.finish_attempt(
-            connection,
-            attempt_id,
-            status="succeeded" if result.reached_testing else "failed",
-            files_changed=touched,
-            failure_summary=_failure_summary(result, baseline),
-        )
+        if result.state is RunState.WAITING_ON_OPERATOR:
+            # The attempt is paused, not finished. A failed status here is what
+            # made a Connect-GCP hold look like a broken remediator job.
+            pass
+        else:
+            await remediation.finish_attempt(
+                connection,
+                attempt_id,
+                status="succeeded" if result.reached_testing else "failed",
+                files_changed=touched,
+                failure_summary=_failure_summary(result, baseline),
+            )
 
         if report is not None:
             await remediation.record_verification(

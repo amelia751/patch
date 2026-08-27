@@ -83,6 +83,50 @@ def _request_ready(inventory: RuntimeCredentialsInventory, need: str, names: lis
     return inventory.gcp_connected or _names_ready(inventory, names)
 
 
+def live_check_ready(inventory: RuntimeCredentialsInventory) -> bool:
+    """Whether a live provider resolve can be asked without inventing a key.
+
+    Ready means the project already named a verifier secret or connected GCP.
+    The broker still has to fetch a value; this only answers the pause.
+    """
+    return _request_ready(inventory, "either", list(VERIFIER_SECRET_NAMES))
+
+
+def queue_operator_hold(
+    context: RunContext,
+    agent: AgentId,
+    *,
+    need: str,
+    names: list[str],
+    reason: str,
+) -> dict[str, Any]:
+    """Record the same hold `request_runtime_credentials` would, without a tool call.
+
+    Used when the orchestrator parks before a model turn: Imagen has no local
+    gate, so waiting for the model to notice a missing key is how the last run
+    failed closed on generate.py instead of asking the operator.
+    """
+    label = names[0] if names else "a runtime secret"
+    if need == "gcp":
+        message = "This run is waiting on you. Connect GCP so the agent can continue."
+    elif need == "secret":
+        message = f"This run is waiting on you. Add {label} so the agent can continue."
+    else:
+        message = (
+            f"This run is waiting on you. Connect GCP or add {label} so the agent can continue."
+        )
+    entry = {
+        "hold_id": str(uuid4()),
+        "agent": str(agent),
+        "need": need,
+        "names": names,
+        "reason": reason.strip()[:MAX_UNTRUSTED_EXCERPT_CHARS],
+        "message": message,
+    }
+    context.operator_requests.append(entry)
+    return entry
+
+
 def build_credentials_tools(context: RunContext, agent: AgentId) -> list[Callable[..., Any]]:
     """Build the Secret Manager inspect + operator-request tools for `agent`."""
 
@@ -160,29 +204,13 @@ def build_credentials_tools(context: RunContext, agent: AgentId) -> list[Callabl
                 message="the vault already has what this live check needs; continue",
             )
 
-        label = cleaned_names[0] if cleaned_names else "a runtime secret"
-        if cleaned_need == "gcp":
-            message = (
-                "This run is waiting on you. Connect GCP so the agent can continue."
-            )
-        elif cleaned_need == "secret":
-            message = (
-                f"This run is waiting on you. Add {label} so the agent can continue."
-            )
-        else:
-            message = (
-                f"This run is waiting on you. Connect GCP or add {label} "
-                "so the agent can continue."
-            )
-        entry = {
-            "hold_id": str(uuid4()),
-            "agent": str(agent),
-            "need": cleaned_need,
-            "names": cleaned_names,
-            "reason": why,
-            "message": message,
-        }
-        context.operator_requests.append(entry)
+        queue_operator_hold(
+            context,
+            agent,
+            need=cleaned_need,
+            names=cleaned_names,
+            reason=why,
+        )
         # None, not a pending dict: ADK's LongRunningFunctionTool then
         # pauses the runner, the same way its own get_user_choice does.
         # The hold lives on RunContext for the orchestrator.
@@ -195,5 +223,7 @@ __all__ = [
     "VERIFIER_SECRET_NAMES",
     "RuntimeCredentialsInventory",
     "build_credentials_tools",
+    "live_check_ready",
+    "queue_operator_hold",
     "resolve_inventory",
 ]

@@ -35,7 +35,7 @@ from agents.adk import (  # noqa: E402
     vertex_unavailable_reason,
 )
 from agents.context import RunContext  # noqa: E402
-from agents.orchestrator import GEMINI20_SLICE, Orchestrator, binding_value  # noqa: E402
+from agents.orchestrator import Orchestrator, VerticalSlice, binding_value  # noqa: E402
 from agents.tools.credentials import RuntimeCredentialsInventory  # noqa: E402
 from agents.trace import ToolTrace  # noqa: E402
 from packages.providers.dotenv import apply_defaults, read_env_files  # noqa: E402
@@ -48,6 +48,16 @@ DEFAULT_FIXTURE: Final[Path] = REPO_ROOT / "demo" / "storygen"
 DEFAULT_FEED_DIR: Final[Path] = REPO_ROOT / "demo" / "fixtures"
 DEFAULT_MANIFEST: Final[Path] = REPO_ROOT / "agents" / "fixtures" / "change_manifest.gemini20.json"
 DEFAULT_RUN_ID: Final[str] = "live-patch"
+
+DEMO_SLICE: Final[VerticalSlice] = VerticalSlice(
+    change_id="gemini20-flash-shutdown-2026-06-01",
+    repo="amelia751/storygen",
+    skill_id="google_gemini20_migration",
+    entrypoint="lib/gemini.ts",
+    binding="MODEL",
+    build_command="python3 generate.py",
+    test_command="python3 -m unittest test_generate.py",
+)
 
 
 def _log(line: str) -> None:
@@ -70,7 +80,7 @@ async def _run(*, scratch: Path, fixture: Path, manifest: Path, run_id: str) -> 
     session = open_session("local", root=scratch, run_id=run_id, retain=True)
     _stage_fixture(session, fixture)
     _log(f"workspace: {session.working_dir}")
-    _log(f"task:      migrate {GEMINI20_SLICE.entrypoint} off retired Gemini 2.0 Flash")
+    _log(f"task:      migrate {DEMO_SLICE.entrypoint} off retired Gemini 2.0 Flash")
     _log(f"manifest:  {manifest}")
     _log(f"model:     {REASONING_MODEL}")
     _log("")
@@ -106,7 +116,7 @@ async def _run(*, scratch: Path, fixture: Path, manifest: Path, run_id: str) -> 
         )
         base_sha = base.stdout.strip() if len(base.stdout.strip()) == 40 else "0" * 40
         result = await orchestrator.run_vertical_slice(
-            GEMINI20_SLICE,
+            DEMO_SLICE,
             base_sha=base_sha,
             deterministic=False,
             setup_deterministic=True,
@@ -133,16 +143,21 @@ async def _run(*, scratch: Path, fixture: Path, manifest: Path, run_id: str) -> 
     elif result.state is RunState.WAITING_ON_OPERATOR:
         _log("operator hold: state is WAITING_ON_OPERATOR but no request was recorded")
 
-    source = workspace / GEMINI20_SLICE.entrypoint
+    source = workspace / DEMO_SLICE.entrypoint
     if source.is_file():
-        bound = binding_value(source.read_text(encoding="utf-8"), GEMINI20_SLICE.binding)
-        _log(f"{GEMINI20_SLICE.binding} now binds {bound!r}")
+        bound = binding_value(source.read_text(encoding="utf-8"), DEMO_SLICE.binding)
+        _log(f"{DEMO_SLICE.binding} now binds {bound!r}")
     _log(f"workspace kept at {workspace}")
-    return 0 if result.state in {
-        RunState.HUMAN_REQUIRED,
-        RunState.PR_CREATED,
-        RunState.WAITING_ON_OPERATOR,
-    } else 1
+    return (
+        0
+        if result.state
+        in {
+            RunState.HUMAN_REQUIRED,
+            RunState.PR_CREATED,
+            RunState.WAITING_ON_OPERATOR,
+        }
+        else 1
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

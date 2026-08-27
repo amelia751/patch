@@ -46,7 +46,6 @@ from agents.adk import (  # noqa: E402
 from agents.context import RunContext  # noqa: E402
 from agents.orchestrator import (  # noqa: E402
     DETERMINISTIC_ENV_VAR,
-    GEMINI20_SLICE,
     Orchestrator,
     VerticalSlice,
     binding_value,
@@ -64,10 +63,20 @@ EXIT_SKIP: Final[int] = 3
 
 DEFAULT_FIXTURE: Final[Path] = REPO_ROOT / "demo" / "storygen"
 DEFAULT_FEED_DIR: Final[Path] = REPO_ROOT / "demo" / "fixtures"
-DEFAULT_MANIFEST: Final[Path] = (
-    REPO_ROOT / "agents" / "fixtures" / "change_manifest.gemini20.json"
-)
+DEFAULT_MANIFEST: Final[Path] = REPO_ROOT / "agents" / "fixtures" / "change_manifest.gemini20.json"
 DEFAULT_RUN_ID: Final[str] = "smoke-patch-loop"
+
+# This script exercises the demo fixture. Production remediations build the
+# slice from the change record and the checkout, via slices.decide().
+DEMO_SLICE: Final[VerticalSlice] = VerticalSlice(
+    change_id="gemini20-flash-shutdown-2026-06-01",
+    repo="amelia751/storygen",
+    skill_id="google_gemini20_migration",
+    entrypoint="lib/gemini.ts",
+    binding="MODEL",
+    build_command="python3 generate.py",
+    test_command="python3 -m unittest test_generate.py",
+)
 
 # Compiled artefacts of a previous local run are not part of the fixture and
 # would let a stale module answer the check the loop is supposed to prove.
@@ -341,7 +350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             code, message = asyncio.run(
                 _run(
                     session,
-                    GEMINI20_SLICE,
+                    DEMO_SLICE,
                     run_id=args.run_id,
                     feed_dir=args.feed_dir,
                     static_manifest=args.manifest if args.manifest.is_file() else None,

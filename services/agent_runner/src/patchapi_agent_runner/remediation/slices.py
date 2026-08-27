@@ -7,10 +7,9 @@ it never tested, and the verifier then grades a patch nobody checked.
 
 So this refuses more readily than it guesses. Pinned repositories carry a
 profile that was verified by hand. Everything else is detected only where the
-repository states the answer itself, in a manifest it maintains, and a detection
-that comes up short returns why rather than a plausible default. `HUMAN_REQUIRED`
-with "I could not tell how to test this" is a useful thing to tell somebody;
-`npm test` guessed at a repository with no test script is not.
+repository states the answer itself. A missing local test is not "I cannot
+test this": if the binding is known, the slice is still runnable and the
+orchestrator parks for a runtime secret when a live resolve is the proof.
 """
 
 from __future__ import annotations
@@ -30,7 +29,9 @@ SKILL_BY_PREFIX: Final[tuple[tuple[str, str], ...]] = (
     ("imagen-", "google_imagen_migration"),
     ("gemini-2.0", "google_gemini20_migration"),
 )
-DEFAULT_SKILL: Final[str] = "google_gemini20_migration"
+# Empty when no registered skill names this identifier family. The run still
+# patches the binding; it does not pretend a Gemini skill applies to Stripe.
+DEFAULT_SKILL: Final[str] = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,10 +44,9 @@ class RepoProfile:
     test_command: str
 
 
-# The flagship demo target, pinned by `roadmap.md` and verified end to end. The
-# commands are the fixture's own: `generate.py` exits non-zero when the bound
-# model identifier no longer resolves, which is what makes a green run evidence
-# that the patch landed rather than evidence a provider was reachable.
+# How this repository is built, verified by hand. Commands apply only when they
+# actually name the binding this change retires; otherwise the slice keeps the
+# entrypoint and looks for a gate that does, or proves via a live resolve.
 PINNED_PROFILES: Final[dict[str, RepoProfile]] = {
     "amelia751/storygen": RepoProfile(
         entrypoint="lib/gemini.ts",
@@ -55,6 +55,8 @@ PINNED_PROFILES: Final[dict[str, RepoProfile]] = {
         test_command="python3 -m unittest test_generate.py",
     ),
 }
+
+_SCRIPT_IN_COMMAND: Final[re.Pattern[str]] = re.compile(r"(?:^|\s)([A-Za-z0-9_./-]+\.py)\b")
 
 # An identifier is usually bound to a screaming-snake constant, in any of the
 # four syntaxes the indexed languages use. Anchored on the assignment so a
@@ -171,6 +173,65 @@ def detect_profile(tree: Path, *, entrypoint: str, binding: str) -> RepoProfile 
     return None
 
 
+def _scripts_in(command: str) -> list[str]:
+    return _SCRIPT_IN_COMMAND.findall(command)
+
+
+def command_grades_change(tree: Path, command: str, identifiers: list[str], binding: str) -> bool:
+    """Whether `command` reads this change's binding or a retired identifier."""
+    if not command.strip():
+        return False
+    for script in _scripts_in(command):
+        path = tree / script
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if binding and binding in text:
+            return True
+        if any(identifier and identifier in text for identifier in identifiers):
+            return True
+    return False
+
+
+def local_gate_for(tree: Path, identifiers: list[str], binding: str) -> tuple[str, str]:
+    """A workspace script that names this binding, if one exists."""
+    for path in sorted(tree.glob("*.py")):
+        if path.name.startswith("test_") or path.name.startswith("_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        mentions = (binding and binding in text) or any(
+            identifier and identifier in text for identifier in identifiers
+        )
+        if not mentions:
+            continue
+        test = tree / f"test_{path.stem}.py"
+        return (
+            f"python3 {path.name}",
+            f"python3 -m unittest test_{path.stem}.py" if test.is_file() else "",
+        )
+    return "", ""
+
+
+def commands_for_change(
+    profile: RepoProfile, tree: Path, identifiers: list[str], binding: str
+) -> tuple[str, str]:
+    """Build and test argv for this *change*, not this repository's default.
+
+    A pinned profile is how one tree is built. One tree can bind several
+    retired families. Using the default commands for every change on that tree
+    grades the wrong identifier.
+    """
+    if command_grades_change(tree, profile.build_command, identifiers, binding):
+        return profile.build_command, profile.test_command
+    return local_gate_for(tree, identifiers, binding)
+
+
 def decide(
     *,
     repository: str,
@@ -195,6 +256,7 @@ def decide(
         # identifiers — a text model and an image model beside it — and patching
         # the pinned name would rewrite the wrong line for every change but one.
         bound = bound_constant(tree / profile.entrypoint, identifiers) or profile.binding
+        build, test = commands_for_change(profile, tree, identifiers, bound)
         return SliceDecision(
             slice_=VerticalSlice(
                 change_id=change_id,
@@ -202,8 +264,8 @@ def decide(
                 skill_id=skill,
                 entrypoint=profile.entrypoint,
                 binding=bound,
-                build_command=profile.build_command,
-                test_command=profile.test_command,
+                build_command=build,
+                test_command=test,
             ),
             pinned=True,
         )
@@ -232,22 +294,21 @@ def decide(
         )
 
     detected = detect_profile(tree, entrypoint=entrypoint, binding=binding)
-    if detected is None:
-        return SliceDecision(
-            None,
-            f"{repository} declares no build and test commands PatchAPI can run "
-            "unattended. Add them, or pin a profile for this repository.",
-        )
+    build, test = ("", "")
+    if detected is not None:
+        build, test = commands_for_change(detected, tree, identifiers, binding)
+    else:
+        build, test = local_gate_for(tree, identifiers, binding)
 
     return SliceDecision(
         slice_=VerticalSlice(
             change_id=change_id,
             repo=repository,
             skill_id=skill,
-            entrypoint=detected.entrypoint,
-            binding=detected.binding,
-            build_command=detected.build_command,
-            test_command=detected.test_command,
+            entrypoint=entrypoint,
+            binding=binding,
+            build_command=build,
+            test_command=test,
         )
     )
 
@@ -259,7 +320,10 @@ __all__ = [
     "SliceDecision",
     "binding_name",
     "bound_constant",
+    "command_grades_change",
+    "commands_for_change",
     "decide",
     "detect_profile",
+    "local_gate_for",
     "skill_for",
 ]

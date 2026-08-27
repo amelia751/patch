@@ -11,6 +11,7 @@ import pytest
 from packages.state.gcp_connections import (
     GcpConnectionError,
     parse_service_account_json,
+    reveal_latest_connection,
     upsert_connection,
 )
 from packages.state.secret_manager import is_managed_resource, secret_id_for_connection
@@ -170,3 +171,18 @@ async def test_upsert_refuses_a_project_the_user_does_not_own() -> None:
         vault=MemoryVault(),
     )
     assert row is None
+
+
+@pytest.mark.asyncio
+async def test_reveal_latest_returns_the_stored_json() -> None:
+    vault = MemoryVault()
+    resource = vault.create("patchapi-gcp-latest", _SA_JSON, purpose="gcp-connection")
+    connection = RecordingConnection(
+        owner=True, existing={"id": uuid4(), "secret_arn": resource}
+    )
+    loaded = await reveal_latest_connection(RecordingPool(connection), uuid4(), vault)  # type: ignore[arg-type]
+    assert loaded is not None
+    meta, payload = loaded
+    assert payload == _SA_JSON
+    assert meta["gcp_project_id"] == "artful-journey-486915-a8"
+    assert meta["default_region"] == "us-central1"

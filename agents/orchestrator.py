@@ -37,6 +37,7 @@ from agents.specialists.impact import build as build_impact
 from agents.specialists.patch import build as build_patch
 from agents.specialists.verification import build as build_verification
 from agents.tools import build_tool_index, is_refusal
+from agents.tools.credentials import live_check_ready, resolve_inventory
 from agents.tools.patch.skill import SKILLS_DIRNAME
 from agents.tools.pr import github_tools_base_url, invoke_github_capability
 from agents.tools.results import ReasonCode
@@ -102,10 +103,13 @@ def binding_value(source: str, name: str) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class VerticalSlice:
-    """The pinned Phase 1 target: one fixture, one workspace, two checks.
+    """What one remediation will patch and how it will prove the rewrite.
 
-    Everything provider- or repository-specific about the slice is here rather
-    than inlined in a stage, so a second slice is a second constant.
+    Built per run from the ChangeManifest and the tree at `base_sha`, not from a
+    named provider constant. `binding` is the constant that holds a retired
+    identifier. `build_command` / `test_command` are only set when those
+    commands actually grade that binding; empty means proof is the rebound
+    identifier plus a live provider resolve.
     """
 
     change_id: str
@@ -117,17 +121,24 @@ class VerticalSlice:
     test_command: str
 
 
-# Roadmap Phase 1: the smallest target whose exit code is decided entirely by
-# the model identifier in its source, so a green run proves the patch landed
-# rather than proving a provider was reachable. Fixture: demo/storygen.
-GEMINI20_SLICE: Final[VerticalSlice] = VerticalSlice(
-    change_id="gemini20-flash-shutdown-2026-06-01",
-    repo="amelia751/storygen",
-    skill_id="google_gemini20_migration",
-    entrypoint="lib/gemini.ts",
-    binding="MODEL",
-    build_command="python3 generate.py",
-    test_command="python3 -m unittest test_generate.py",
+LIVE_RESOLVE_CHECK: Final[str] = "live_provider_resolve"
+
+
+def _repo_commands(slice_: VerticalSlice) -> list[str]:
+    return [command for command in (slice_.build_command, slice_.test_command) if command.strip()]
+
+
+def _required_checks(slice_: VerticalSlice) -> list[str]:
+    """What the ImpactReport records as proof. A live resolve is a check."""
+    return _repo_commands(slice_) or [LIVE_RESOLVE_CHECK]
+
+
+def _check_names(slice_: VerticalSlice) -> list[str]:
+    return _repo_commands(slice_)
+
+
+_SECRET_NAME: Final[re.Pattern[str]] = re.compile(
+    r"\b([A-Z][A-Z0-9_]*(?:API_KEY|ACCESS_TOKEN|SECRET|TOKEN))\b"
 )
 
 
@@ -518,7 +529,7 @@ class Orchestrator:
             f"Provider change {manifest.change_id!r} retires these identifiers: {identifiers}. "
             f"Scan the workspace for them, then record the ImpactReport for repository "
             f"{slice_.repo!r} at base_sha {base_sha!r}. The checks a patch must pass are "
-            f"{slice_.build_command!r} and {slice_.test_command!r}."
+            f"{_check_names(slice_) or 'a live provider resolve of the replacement'}."
         )
 
     def _impact_deterministically(
@@ -541,7 +552,7 @@ class Orchestrator:
             # A literal identifier match is exact, and no model weighed it.
             confidence=1.0 if affected else 0.0,
             migration_character=character if affected else "",
-            required_checks=[slice_.build_command, slice_.test_command] if affected else [],
+            required_checks=_required_checks(slice_) if affected else [],
             notes=(
                 "Deterministic slice: findings are the scanner's and the migration "
                 "character is the manifest's. No model judged this repository."
@@ -617,6 +628,10 @@ class Orchestrator:
             return self._fail(agent, "the Patch stage needs a manifest and an impact report")
 
         turn: TurnResult | None = None
+        if not deterministic and self._must_park_for_live_credentials(slice_):
+            self._hold_for_live_credentials(agent, slice_)
+            return self._park_for_operator(agent, None)
+
         if deterministic:
             self._patch_deterministically(manifest, slice_, base_sha=base_sha)
         else:
@@ -627,6 +642,12 @@ class Orchestrator:
             )
             if self._context.waiting_on_operator or (turn is not None and turn.paused):
                 return self._park_for_operator(agent, turn)
+            # The model had its turn. A one-line identifier rebind is mechanical
+            # and named by the manifest; land it if the turn did not.
+            source = self._read_entrypoint(slice_)
+            current = binding_value(source or "", slice_.binding)
+            if current in manifest.affected_identifiers:
+                self._patch_deterministically(manifest, slice_, base_sha=base_sha)
 
         source = self._read_entrypoint(slice_)
         if source is None:
@@ -644,15 +665,27 @@ class Orchestrator:
                 turn,
             )
 
-        build = self._call("run_command", on_behalf_of=agent, command=slice_.build_command)
-        if is_refusal(build) or build["exit_code"] != 0:
-            return self._fail(agent, f"{slice_.build_command} did not exit 0", turn)
+        build = self._run_repo_check(agent, slice_.build_command)
+        if is_refusal(build) or int(build.get("exit_code", 1)) != 0:
+            return self._fail(
+                agent,
+                f"{slice_.build_command} did not exit 0"
+                if slice_.build_command
+                else "the repository check did not exit 0",
+                turn,
+            )
         self._last_build = build
         self._advance(RunState.BUILDING)
 
-        tests = self._call("run_command", on_behalf_of=agent, command=slice_.test_command)
-        if is_refusal(tests) or tests["exit_code"] != 0:
-            return self._fail(agent, f"{slice_.test_command} did not exit 0", turn)
+        tests = self._run_repo_check(agent, slice_.test_command)
+        if is_refusal(tests) or int(tests.get("exit_code", 1)) != 0:
+            return self._fail(
+                agent,
+                f"{slice_.test_command} did not exit 0"
+                if slice_.test_command
+                else "the repository tests did not exit 0",
+                turn,
+            )
         self._last_tests = tests
         self._advance(RunState.TESTING)
 
@@ -694,6 +727,16 @@ class Orchestrator:
             f"  - {finding.file}:{finding.line} uses {finding.identifier}"
             for finding in report.findings
         )
+        checks = _check_names(slice_)
+        if checks:
+            proof = f"iterate with apply_patch and run_command until {checks[0]!r} exits 0"
+        else:
+            proof = (
+                f"iterate with apply_patch until {slice_.binding} in "
+                f"{slice_.entrypoint} no longer holds a retired identifier. "
+                "A repository script that does not name this binding is not the "
+                "success condition"
+            )
         return (
             f"Provider change {manifest.change_id!r} retires "
             f"{', '.join(manifest.affected_identifiers)}. The Impact agent found these "
@@ -703,10 +746,10 @@ class Orchestrator:
             "how this app actually calls the provider (API routes and env vars), not "
             "only the identifier binding. A green local check is not a live call. If "
             "a live path needs a secret that list_runtime_credentials does not show, "
-            "call request_runtime_credentials and stop — do not invent a key. Then "
-            f"iterate with apply_patch and run_command until {slice_.build_command!r} "
-            "exits 0, and record_patch_plan with what you changed. Do not edit any "
-            "file outside the ones listed above."
+            "call request_runtime_credentials and stop — do not invent a key and do "
+            "not record that you cannot test. Then "
+            f"{proof}, and record_patch_plan with what you changed. Do "
+            "not edit any file outside the ones listed above."
         )
 
     def _patch_deterministically(
@@ -736,7 +779,7 @@ class Orchestrator:
                 "Deterministic slice: the rewrite is the manifest's recommended "
                 "replacement applied to the pinned binding, with no model in the loop."
             ],
-            verification_commands=[slice_.build_command, slice_.test_command],
+            verification_commands=_required_checks(slice_),
             # PatchPlan records a skill and its version together or not at all,
             # so an unreadable skill package yields neither rather than a plan
             # that names a provenance it cannot support.
@@ -821,6 +864,53 @@ class Orchestrator:
                 log.warning("run %s could not broker a live credential: %s", self.run_id, exc)
         return live_check.run(self._context.sandbox, replacement, available)
 
+    def _needs_live_proof(self, slice_: VerticalSlice) -> bool:
+        """Whether a local exit code is not enough to claim the replacement exists.
+
+        Empty commands mean this change has no gate that reads its binding.
+        A semantic migration means the local gate, if any, cannot prove the
+        replacement identifier is served. Neither case is Gemini- or
+        Imagen-specific.
+        """
+        if not _check_names(slice_):
+            return True
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        return isinstance(manifest, ChangeManifest) and bool(manifest.semantic_migration_required)
+
+    def _must_park_for_live_credentials(self, slice_: VerticalSlice) -> bool:
+        return self._needs_live_proof(slice_) and not live_check_ready(
+            resolve_inventory(self._context)
+        )
+
+    def _secret_names_for_live(self, slice_: VerticalSlice) -> list[str]:
+        source = self._read_entrypoint(slice_) or ""
+        found = list(dict.fromkeys(_SECRET_NAME.findall(source)))
+        return found[:8] or list(live_check.CREDENTIAL_NAMES)
+
+    def _hold_for_live_credentials(self, agent: AgentId, slice_: VerticalSlice) -> None:
+        names = self._secret_names_for_live(slice_)
+        self._call(
+            "request_runtime_credentials",
+            on_behalf_of=agent,
+            need="either",
+            names=names,
+            reason=(
+                f"{slice_.entrypoint} binds {slice_.binding}; a live resolve of the "
+                "replacement needs a runtime secret or a Connect GCP viewer"
+            ),
+        )
+
+    def _run_repo_check(self, agent: AgentId, command: str) -> dict[str, Any]:
+        """Run one pinned check, or skip when this change has no local gate."""
+        if not command.strip():
+            return {
+                "exit_code": 0,
+                "stdout": "(no local repository check for this change)",
+                "stderr": "",
+                "status": "ok",
+            }
+        return self._call("run_command", on_behalf_of=agent, command=command)
+
     def _write_evidence(
         self,
         slice_: VerticalSlice,
@@ -890,12 +980,11 @@ class Orchestrator:
                 f"{slice_.repo!r} at base_sha {base_sha}. The orchestrator hashed the "
                 f"patched entry point as {self._entrypoint_digest}. List and read the "
                 "evidence. Do not use a patch plan or an inner-loop transcript. A check "
-                "you did not run is skip, never pass. Record the VerificationReport. If "
-                "generate.py and the unit tests exited 0 and the retired identifiers are "
-                "gone from the entry point. generate.py is a local identifier check, "
-                "not live_api. If the app's live path needs an API key, "
-                "list_runtime_credentials and request_runtime_credentials rather than "
-                "inventing one or marking live_api pass."
+                "you did not run is skip, never pass. Record the VerificationReport. "
+                "A local identifier check is not live_api. If this change has no local "
+                "check, grade the rebound binding and live.log. If the live path needs "
+                "an API key, list_runtime_credentials and request_runtime_credentials "
+                "rather than inventing one or marking live_api pass."
             )
             turn = await run_turn(
                 self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
@@ -1027,7 +1116,7 @@ class Orchestrator:
 
     async def run_vertical_slice(
         self,
-        slice_: VerticalSlice = GEMINI20_SLICE,
+        slice_: VerticalSlice,
         *,
         base_sha: str,
         deterministic: bool | None = None,
@@ -1110,6 +1199,16 @@ class Orchestrator:
                 )
             )
             return result
+        if (
+            live is not None
+            and live.resolved is None
+            and self._needs_live_proof(slice_)
+            and not deterministic
+        ):
+            self._advance(RunState.VERIFYING)
+            self._hold_for_live_credentials(AgentId.VERIFICATION, slice_)
+            keep(self._park_for_operator(AgentId.VERIFICATION, None, live.detail))
+            return result
         self._write_evidence(
             slice_,
             source=source,
@@ -1155,7 +1254,6 @@ def _existing_patch_branch_head(result: dict[str, Any]) -> str:
 
 __all__ = [
     "DETERMINISTIC_ENV_VAR",
-    "GEMINI20_SLICE",
     "STAGE_CONTRACTS",
     "Orchestrator",
     "SliceResult",

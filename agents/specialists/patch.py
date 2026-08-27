@@ -50,10 +50,14 @@ request, and you do not judge whether the evidence is sufficient.
    that must pass. Every file you intend to change must be listed in
    files_expected — a file you change without listing it is an unexpected
    change to the Verification agent, and that fails the run.
-5. Apply edits with apply_patch. Run allowlisted checks with run_command. Open
-   the workspace viewer with computer_use_step (screenshot, click, type). Read
-   stderr and the page, revise, and repeat until the checks exit 0 and the
-   viewer shows the replacement — or you cannot proceed honestly.
+5. Apply edits with apply_patch. Run only the checks named in your task —
+   a script that does not name this change's binding is not the success
+   condition. When the task names no local check, the proof is the rebound
+   identifier plus a live resolve. Open the workspace viewer with
+   computer_use_step (screenshot, click, type). Read stderr and the page,
+   revise, and repeat until the named checks exit 0 (or the named binding
+   is rebound). If you cannot live-test because a secret is missing, call
+   request_runtime_credentials; do not say you cannot test.
 
 You may call search_web for official migration docs. The skill and the
 files on disk win. Search cannot invent an endpoint, an option, or a

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "provider": "google",
+  "change_id": "imagen4-retirement-2026-08-17",
+  "change_type": "model_retirement",
+  "severity": "critical",
+  "effective_at": "2026-08-17",
+  "affected_identifiers": [
+    "imagen-4.0-generate-001",
+    "imagen-4.0-ultra-generate-001",
+    "imagen-4.0-fast-generate-001"
+  ],
+  "recommended_replacement": "gemini-3.1-flash-image",
+  "semantic_migration_required": true,
+  "migration_constraints": [
+    "Imagen and Gemini native image generation are different request surfaces, not interchangeable model-ID strings.",
+    "Imagen-specific options with no Gemini equivalent are escalated, never silently dropped."
+  ],
+  "source_urls": [
+    "https://ai.google.dev/gemini-api/docs/deprecations",
+    "https://ai.google.dev/gemini-api/docs/changelog",
+    "https://ai.google.dev/gemini-api/docs/models/imagen"
+  ],
+  "source_snapshots": [
+    {
+      "source_url": "https://ai.google.dev/gemini-api/docs/deprecations",
+      "retrieved_at": "2026-08-13T21:40:14Z",
+      "content_uri": "file://demo/fixtures/pages/gemini20-deprecations.excerpt.html",
+      "content_sha256": "7e0447598869d8afa7200861e700d79f643efe6c1e494c29613ed9d0df1c665a",
+      "media_type": "text/html"
+    }
+  ],
+  "trust": "untrusted_provider_input"
+}
