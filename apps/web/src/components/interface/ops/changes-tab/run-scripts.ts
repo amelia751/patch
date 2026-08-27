@@ -67,6 +67,8 @@ export interface SandboxCommand {
   argv: string;
   exit: number | null;
   tail: string;
+  /** Baseline is the repository before any patch; omitted means after. */
+  source?: "baseline" | "patched";
 }
 
 export interface VerifyCheck {

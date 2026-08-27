@@ -60,6 +60,7 @@ class RunRecorder:
 
     _states_flushed: int = 0
     _events_flushed: int = 0
+    _notes_flushed: int = 0
     _narration: list[tuple[RunState, str]] = field(default_factory=list)
     _task: asyncio.Task[None] | None = None
     _stop: asyncio.Event = field(default_factory=asyncio.Event)
@@ -106,19 +107,37 @@ class RunRecorder:
 
     async def _flush_trace(self, connection: asyncpg.Connection) -> None:
         events = self.trace.events[self._events_flushed :]
-        for event in events:
+        notes = self.trace.notes[self._notes_flushed :]
+        pending: list[tuple[str, object]] = [
+            *(("event", event) for event in events),
+            *(("note", note) for note in notes),
+        ]
+        pending.sort(key=lambda item: getattr(item[1], "started_at", ""))
+        for kind, item in pending:
+            if kind == "note":
+                await remediation.append_trace(
+                    connection,
+                    self.run_id,
+                    state=self._state_when(getattr(item, "started_at", "")),
+                    kind=str(getattr(item, "kind", "thought") or "thought"),
+                    verb="Thought",
+                    body=str(getattr(item, "text", "")),
+                    tool_type=str(getattr(item, "agent", "")),
+                )
+                continue
             await remediation.append_trace(
                 connection,
                 self.run_id,
-                state=self._state_when(event.started_at),
-                kind=_KIND_BY_STATUS.get(event.status, "narration"),
-                verb=event.tool,
-                body=_body(event),
-                tool_type=str(event.agent),
-                tool_use_id=f"{self.run_id}-{event.sequence}",
-                file_path=str(event.arguments.get("path") or ""),
+                state=self._state_when(item.started_at),
+                kind=_KIND_BY_STATUS.get(item.status, "narration"),
+                verb=item.tool,
+                body=_body(item),
+                tool_type=str(item.agent),
+                tool_use_id=f"{self.run_id}-{item.sequence}",
+                file_path=str(item.arguments.get("path") or ""),
             )
         self._events_flushed += len(events)
+        self._notes_flushed += len(notes)
 
     def _state_when(self, started_at: str) -> RunState:
         """The run state in effect when a tool call began."""
@@ -174,6 +193,8 @@ def _body(event: object) -> str:
     line = f"{tool}({shown})"
     if summary:
         line += f" → {summary}"
+    if detail and getattr(event, "tool", "") == "run_command":
+        line += f"\n{detail}"
     if getattr(event, "status", None) is ToolStatus.DENIED:
         line = f"DENIED {line}"
         if detail:

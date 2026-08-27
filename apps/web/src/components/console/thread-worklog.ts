@@ -6,7 +6,7 @@ export const wNarration = (text: string): WorklogEntry => ({ kind: "narration", 
 export const wBlock = (text: string): WorklogEntry => ({ kind: "block", text });
 
 const READ_TOOLS = new Set(["Read", "FileRead", "FileReadTool"]);
-const SEARCH_TOOLS = new Set(["Grep", "GrepTool", "Glob", "GlobTool", "Search"]);
+const SEARCH_TOOLS = new Set(["Grep", "GrepTool", "Glob", "GlobTool", "Search", "Find"]);
 const COLLAPSIBLE_TOOLS = new Set([...READ_TOOLS, ...SEARCH_TOOLS]);
 
 function isCollapsibleAction(entry: WorklogEntry): boolean {

@@ -275,6 +275,9 @@ async def run_turn(
                         long_running_tool or str(ToolName.REQUEST_RUNTIME_CREDENTIALS)
                     ):
                         stop = True
+                if getattr(part, "text", None) and getattr(part, "thought", False):
+                    trace.thought(part.text, agent=agent.name)
+                    continue
                 if getattr(part, "text", None) and not getattr(part, "thought", False):
                     texts.append(part.text)
                     snippet = " ".join(part.text.split())

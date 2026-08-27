@@ -22,7 +22,7 @@ from typing import Any, Final
 
 from agents.config import MAX_TOOL_CALLS_PER_TURN, AgentId, tool_allowlist
 from agents.tools.results import ReasonCode, is_refusal, refusal
-from agents.trace import ToolStatus, ToolTrace, summarise
+from agents.trace import ToolStatus, ToolTrace, command_detail, summarise
 
 # ADK types are imported lazily by the caller; the callbacks below only need the
 # `name` attribute of the tool object, so this module stays importable — and
@@ -110,7 +110,11 @@ def build_tool_guardrails(
         begun = started.pop(id(args), None)
         duration_ms = 0.0 if begun is None else (perf_counter() - begun) * 1000.0
         status = ToolStatus.REFUSED if is_refusal(tool_response) else ToolStatus.OK
-        detail = tool_response.get("message") if status is ToolStatus.REFUSED else None
+        detail = None
+        if status is ToolStatus.REFUSED and isinstance(tool_response, dict):
+            detail = tool_response.get("message")
+        elif isinstance(tool_response, dict) and "exit_code" in tool_response:
+            detail = command_detail(tool_response)
         _record(tool, args, status, tool_response, duration_ms, detail=detail)
         if isinstance(tool_response, dict):
             if "exit_code" in tool_response:

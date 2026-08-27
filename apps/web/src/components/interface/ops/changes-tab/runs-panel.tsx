@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ActivitySpinner, WorklogView } from "@/components/console/worklog-view";
 import { collapseWorklogEntries, pairActionResults } from "@/components/console/thread-worklog";
+import { DiffBlock } from "@/components/chat/code-block/diff-block";
+import { TerminalBlock } from "@/components/chat/code-block/terminal-block";
 import type { WorklogEntry } from "@/components/console/thread-types";
 import {
   ArrowRight,
@@ -32,10 +34,8 @@ import {
   treeAvailable,
   treeForMachine,
   visibleLog,
-  cursorStdout,
   type AgentLogLine,
   type DiffFile,
-  type DiffLine,
   type MockRun,
   type RunBucket,
   type TreeId,
@@ -523,11 +523,43 @@ function BaseTree({ run }: { run: MockRun }) {
   );
 }
 
+function commandFence(commands: { argv: string; tail: string }[]): string {
+  return commands
+    .map((command) => [`$ ${command.argv}`, command.tail].filter(Boolean).join("\n"))
+    .join("\n");
+}
+
 function SandboxTree({ run }: { run: MockRun }) {
+  const baseline = run.commands.filter((command) => command.source === "baseline");
+  const patched = run.commands.filter((command) => command.source !== "baseline");
+
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <Meta label="Reset" value={`every attempt → ${shortSha(run.baseSha)}`} />
-      <Meta label="Merge" value="never" />
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Meta label="Reset" value={`every attempt → ${shortSha(run.baseSha)}`} />
+        <Meta label="Merge" value="never" />
+      </div>
+      {baseline.length > 0 && (
+        <section>
+          <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Before the patch
+          </h3>
+          <TerminalBlock className="!mt-1.5 !mb-0" code={commandFence(baseline)} />
+        </section>
+      )}
+      {patched.length > 0 && (
+        <section>
+          <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            After the patch
+          </h3>
+          <TerminalBlock className="!mt-1.5 !mb-0" code={commandFence(patched)} />
+        </section>
+      )}
+      {run.commands.length === 0 && (
+        <p className="text-[12px] text-[var(--text-secondary)]">
+          No build or test log recorded for this attempt yet.
+        </p>
+      )}
     </div>
   );
 }
@@ -572,9 +604,9 @@ function ProposedTree({ run }: { run: MockRun }) {
           <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
             Unified diff against {shortSha(run.baseSha)}
           </h3>
-          <div className="mt-1.5 space-y-2">
+          <div className="mt-1.5 space-y-1">
             {run.diffs.map((file) => (
-              <DiffCard key={file.path} file={file} />
+              <DiffBlock key={file.path} code={unifiedFrom(file)} />
             ))}
           </div>
         </section>
@@ -585,41 +617,18 @@ function ProposedTree({ run }: { run: MockRun }) {
   );
 }
 
-function DiffCard({ file }: { file: DiffFile }) {
-  return (
-    <div className="border border-[var(--border-color)] rounded-md overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-[var(--bg-secondary)]">
-        <span className="text-[11px] font-mono text-[var(--text-primary)] truncate">{file.path}</span>
-        <span className="text-[10px] font-mono shrink-0">
-          <span className="text-emerald-500">+{file.additions}</span>
-          <span className="mx-1 text-[var(--text-secondary)]">/</span>
-          <span className="text-red-400">−{file.deletions}</span>
-        </span>
-      </div>
-      <pre className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-x-auto">
-        {file.lines.map((line, index) => (
-          <DiffLineRow key={`${file.path}-${index}`} line={line} />
-        ))}
-      </pre>
-    </div>
-  );
-}
-
-function DiffLineRow({ line }: { line: DiffLine }) {
-  const mark = line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ";
-  return (
-    <div
-      className={cn(
-        "px-1 -mx-1 rounded-sm",
-        line.kind === "add" && "bg-emerald-500/10 text-emerald-400",
-        line.kind === "del" && "bg-red-500/10 text-red-400",
-        line.kind === "ctx" && "text-[var(--text-secondary)]",
-      )}
-    >
-      <span className="inline-block w-3 select-none">{mark}</span>
-      {line.text}
-    </div>
-  );
+function unifiedFrom(file: DiffFile): string {
+  const lines = [`--- a/${file.path}`, `+++ b/${file.path}`];
+  for (const line of file.lines) {
+    if (line.text.startsWith("@@")) {
+      lines.push(line.text);
+      continue;
+    }
+    if (line.kind === "add") lines.push(`+${line.text}`);
+    else if (line.kind === "del") lines.push(`-${line.text}`);
+    else lines.push(line.text.startsWith(" ") ? line.text : ` ${line.text}`);
+  }
+  return lines.join("\n");
 }
 
 const VERB_TOOL: Record<string, string> = {
@@ -661,35 +670,9 @@ function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
   });
 }
 
-function rewriteTerminalFence(text: string, file?: string): string {
-  const fence = text.trim().match(/^```(?:terminal|bash|sh)\n([\s\S]*?)\n```$/);
-  if (!fence) return text;
-  const body = fence[1];
-  const command = body.split("\n").find((line) => line.startsWith("$ "))?.slice(2);
-  if (!command) return text;
-  const out = cursorStdout(command, file);
-  if (!out) return text;
-  const dir = body.split("\n").find((line) => line.startsWith("# ")) ?? "# /tmp/patchapi-sandbox";
-  return ["```terminal", dir, `$ ${command}`, ...out.split("\n"), "```"].join("\n");
-}
-
-function withCursorStdout(entries: WorklogEntry[], file?: string): WorklogEntry[] {
-  return entries.map((entry) => {
-    if (entry.kind === "block") {
-      return { ...entry, text: rewriteTerminalFence(entry.text, file) };
-    }
-    if (entry.kind !== "action") return entry;
-    const out = cursorStdout(entry.text, file);
-    return out ? { ...entry, result: out } : entry;
-  });
-}
-
 function AgentLog({ run }: { run: MockRun }) {
   const lines = visibleLog(run);
-  const sample = run.files.find((file) => file.kind === "runtime")?.path ?? run.files[0]?.path;
-  const entries = collapseWorklogEntries(
-    withCursorStdout(pairActionResults(toWorklog(lines)), sample),
-  );
+  const entries = collapseWorklogEntries(pairActionResults(toWorklog(lines)));
   const endRef = useRef<HTMLDivElement>(null);
   const live = run.bucket === "active";
   const last = lines[lines.length - 1];

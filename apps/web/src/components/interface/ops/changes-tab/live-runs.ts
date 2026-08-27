@@ -64,7 +64,6 @@ const KNOWN_MACHINES = new Set<MachineState>([
   "BLOCKED",
 ]);
 
-const LOG_KINDS = new Set<LogKind>(["thought", "action", "result", "narration", "block"]);
 
 export interface RunSummary {
   run_id: string;
@@ -170,27 +169,68 @@ export function parseDiff(text: string): DiffFile[] {
   return files.filter((file) => file.path && file.lines.length > 0);
 }
 
+function exitFrom(text: string): number | null {
+  const marked = /\(exit (-?\d+)\)/.exec(text);
+  if (marked) return Number(marked[1]);
+  const plain = /\bexit(?:ed)? (\d+)\b/i.exec(text) ?? /exit code (\d+)/i.exec(text);
+  return plain ? Number(plain[1]) : null;
+}
+
+function parseCommandBlocks(
+  body: string,
+  phase: SandboxCommand["phase"],
+  source: NonNullable<SandboxCommand["source"]>,
+): SandboxCommand[] {
+  const commands: SandboxCommand[] = [];
+  const blocks = body.split(/^\$ /m).slice(1);
+  if (blocks.length === 0 && body.trim()) {
+    commands.push({
+      phase,
+      argv: phase === "build" ? "build" : "tests",
+      exit: exitFrom(body),
+      tail: body.trim().slice(-4000),
+      source,
+    });
+    return commands;
+  }
+  for (const block of blocks) {
+    const [argv, ...rest] = block.split("\n");
+    const tail = rest.join("\n").trim();
+    commands.push({
+      phase,
+      argv: argv.trim(),
+      exit: exitFrom(tail),
+      tail: tail.slice(-4000),
+      source,
+    });
+  }
+  return commands;
+}
+
 /** The commands a log artifact records, with the exit code it reported. */
 function commandsFrom(artifacts: ArtifactRow[]): SandboxCommand[] {
   const commands: SandboxCommand[] = [];
   for (const artifact of artifacts) {
     if (artifact.kind !== "build_log" && artifact.kind !== "test_log") continue;
     const phase = artifact.kind === "build_log" ? "build" : "test";
-    // Each `$ command` line starts a block; the exit code follows it.
-    const blocks = artifact.body.split(/^\$ /m).slice(1);
-    for (const block of blocks) {
-      const [argv, ...rest] = block.split("\n");
-      const tail = rest.join("\n").trim();
-      const exit = /\(exit (-?\d+)\)/.exec(tail);
-      commands.push({
-        phase,
-        argv: argv.trim(),
-        exit: exit ? Number(exit[1]) : null,
-        tail: tail.slice(-1200),
-      });
-    }
+    const source = artifact.body.startsWith("# baseline") ? "baseline" : "patched";
+    commands.push(...parseCommandBlocks(artifact.body, phase, source));
   }
   return commands;
+}
+
+function terminalFence(dir: string, commands: { cmd: string; out: string }[]): string {
+  const lines = ["```terminal", `# ${dir}`];
+  for (const item of commands) {
+    lines.push(`$ ${item.cmd}`);
+    if (item.out) {
+      for (const line of item.out.replace(/\r\n/g, "\n").split("\n")) {
+        lines.push(line);
+      }
+    }
+  }
+  lines.push("```");
+  return lines.join("\n");
 }
 
 function checksFrom(verification: Record<string, unknown> | null): VerifyCheck[] {
@@ -205,17 +245,323 @@ function checksFrom(verification: Record<string, unknown> | null): VerifyCheck[]
     .filter((check) => check.name);
 }
 
-function logFrom(trace: TraceRow[]): AgentLogLine[] {
-  return trace.map((row) => ({
-    id: `${row.sequence}`,
-    at: machineOf(row.state),
-    kind: LOG_KINDS.has(row.kind as LogKind) ? (row.kind as LogKind) : "narration",
-    verb: row.verb || undefined,
-    text: row.body,
-    toolType: row.tool_type || undefined,
-    toolUseId: row.tool_use_id || undefined,
-    filePath: row.file_path || undefined,
-  }));
+function namedArgs(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of raw.split(/,\s*(?=[A-Za-z_][A-Za-z0-9_]*=)/)) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    out[part.slice(0, eq)] = part.slice(eq + 1);
+  }
+  return out;
+}
+
+function workspacePath(path: string): string {
+  return path
+    .replace(/^\/tmp\/patchapi-run-[^/]+\//, "")
+    .replace(/^\/tmp\/patchapi-sandbox\/?/, "");
+}
+
+function parseToolCall(body: string): { name: string; args: Record<string, string>; output: string } | null {
+  const raw = body.trim();
+  const arrow = raw.indexOf(" → ");
+  const newline = raw.indexOf("\n");
+  const head = arrow >= 0 ? raw.slice(0, arrow) : newline >= 0 ? raw.split("\n")[0] : raw;
+  const output = newline >= 0 ? raw.slice(newline + 1).trim() : "";
+  const match = head.replace(/\s*→\s*[\s\S]*$/, "").match(/^([A-Za-z_][A-Za-z0-9_]*)\((.*)\)\s*$/);
+  if (!match) return null;
+  return { name: match[1], args: namedArgs(match[2]), output };
+}
+
+const HIDDEN_TOOLS = new Set([
+  "computer_use_step",
+  "list_verification_evidence",
+  "list_dir",
+  "list_runtime_credentials",
+  "record_patch_plan",
+]);
+
+const NOISE_COMMANDS = /^(git status|npm run build|pnpm (?:install|run build))\b/;
+
+function line(
+  id: string,
+  at: MachineState,
+  kind: LogKind,
+  text: string,
+  extras?: Pick<AgentLogLine, "verb" | "toolType" | "toolUseId" | "filePath">,
+): AgentLogLine {
+  return {
+    id,
+    at,
+    kind,
+    text,
+    verb: extras?.verb,
+    toolType: extras?.toolType,
+    toolUseId: extras?.toolUseId,
+    filePath: extras?.filePath,
+  };
+}
+
+/**
+ * Rebuild the mock's worklog shape from what the job actually recorded.
+ *
+ * The fixture was a story: a thought, a named tool, a one-line result, a
+ * terminal with captured stdout. The job writes ADK tool names and, until
+ * this change, summarised results as `{keys}`. Thoughts from Gemini were
+ * dropped. This composer does not invent a thought the model did not say
+ * and does not invent stdout — it uses the product's recorded stage facts
+ * (policy reason, verification notes, pinned SHA, artifact logs) and the
+ * same sentences the fixture used when those facts are present.
+ */
+function composeWorklog(
+  detail: RunDetail,
+  change: ProjectChange | undefined,
+  commands: SandboxCommand[],
+): AgentLogLine[] {
+  const lines: AgentLogLine[] = [];
+  let n = 0;
+  const add = (
+    at: MachineState,
+    kind: LogKind,
+    text: string,
+    extras?: Pick<AgentLogLine, "verb" | "toolType" | "toolUseId" | "filePath">,
+  ) => {
+    n += 1;
+    lines.push(line(`${at}-${n}`, at, kind, text, extras));
+  };
+
+  const repo = detail.repository;
+  const sha = detail.base_sha.slice(0, 12) || "unpinned";
+  const identifier = change?.identifiers[0] ?? "";
+  const policy = detail.policy;
+  const verification = detail.verification;
+  const baseline = commands.filter((command) => command.source === "baseline" && command.argv !== "build" && command.argv !== "tests");
+  const patched = commands.filter((command) => command.source !== "baseline" && command.argv !== "build" && command.argv !== "tests");
+  const leftoverLogs = commands.filter((command) => command.argv === "build" || command.argv === "tests");
+  const used = new Set<SandboxCommand>();
+
+  const takeCommand = (argv: string, prefer: "baseline" | "patched"): SandboxCommand | undefined => {
+    const pool = prefer === "baseline" ? baseline : patched;
+    const match = pool.find((command) => !used.has(command) && command.argv === argv);
+    if (match) {
+      used.add(match);
+      return match;
+    }
+    const any = [...baseline, ...patched].find((command) => !used.has(command) && command.argv === argv);
+    if (any) {
+      used.add(any);
+      return any;
+    }
+    return undefined;
+  };
+
+  let sawNormalize = false;
+  let sawImpact = false;
+  let sawPolicy = false;
+  let sawPatch = false;
+  let sawVerify = false;
+  let sawVerifyReport = false;
+  let sawApply = false;
+  const shownCommands = new Set<string>();
+  const pendingReads: { path: string; at: MachineState }[] = [];
+
+  const flushReads = (at: MachineState) => {
+    for (const read of pendingReads) {
+      add(read.at, "action", `Read(\`${read.path}\`)`, {
+        verb: "Read",
+        toolType: "Read",
+        filePath: read.path,
+      });
+    }
+    pendingReads.length = 0;
+    if (at === "IMPACT_SCANNING" && !sawImpact) {
+      const hits = change?.fileHits;
+      const files = change?.files.filter((file) => file.kind === "runtime").length ?? change?.fileCount;
+      if (hits != null && files != null) {
+        add(at, "result", `${hits} hits · ${files} runtime paths.`);
+      }
+      sawImpact = true;
+    }
+  };
+
+  for (const row of detail.trace) {
+    const at = machineOf(row.state);
+    if (row.kind === "thought" && row.body.trim()) {
+      flushReads(at);
+      add(at, "thought", row.body.trim());
+      continue;
+    }
+    if (row.kind === "narration" && row.body.trim()) {
+      flushReads(at);
+      add(at, "narration", row.body.trim());
+      continue;
+    }
+
+    const parsed = parseToolCall(row.body);
+    const name = parsed?.name || row.verb;
+    if (!name || HIDDEN_TOOLS.has(name)) continue;
+
+    if (name === "seed_static_manifest") {
+      if (!sawNormalize) {
+        add("NORMALIZED", "thought", "Provider text is untrusted. Screen it before anything joins inventory.");
+        add("NORMALIZED", "action", "Normalize(`ChangeManifest`)", {
+          verb: "Normalize",
+          toolType: "Normalize",
+        });
+        add("NORMALIZED", "result", "Identifiers kept as claims.");
+        sawNormalize = true;
+      }
+      continue;
+    }
+
+    if (name === "scan_repository") {
+      if (identifier) {
+        add("IMPACT_SCANNING", "thought", `Join \`${identifier}\` against ${repo} @ ${sha}, not HEAD.`);
+      }
+      add("IMPACT_SCANNING", "action", "Search(`inventory`)", { verb: "Search", toolType: "Grep" });
+      continue;
+    }
+
+    if (name === "read_file" || name === "read_verification_evidence" || name === "load_migration_skill") {
+      const path = workspacePath(
+        row.file_path || parsed?.args.path || parsed?.args.name || parsed?.args.skill_id || "",
+      );
+      if (!path || path.startsWith("/")) continue;
+      if (name === "read_verification_evidence" && !sawVerify) {
+        add("VERIFYING", "thought", "Grade the diff and the clean logs. Do not read the patch author’s plan.");
+        sawVerify = true;
+      }
+      const stage =
+        name === "read_verification_evidence"
+          ? "VERIFYING"
+          : sawApply
+            ? at
+            : !sawPatch
+              ? "PATCHING"
+              : at;
+      if (stage === "PATCHING" && !sawPatch) {
+        add("PATCHING", "thought", "Read the binding at the pinned SHA before rewriting.");
+        sawPatch = true;
+      }
+      pendingReads.push({ path, at: machineOf(stage) });
+      continue;
+    }
+
+    if (name === "record_impact_report") {
+      flushReads("IMPACT_SCANNING");
+      continue;
+    }
+
+    if (name === "evaluate_policy" || name === "record_policy_decision") {
+      flushReads("IMPACT_SCANNING");
+      if (sawPolicy) continue;
+      add("POLICY_EVALUATION", "narration", "Auto-merge stays false. Forbidden paths stay forbidden.");
+      add("POLICY_EVALUATION", "action", "Evaluate(`impact report`)", {
+        verb: "Evaluate",
+        toolType: "Evaluate",
+      });
+      const reason = typeof policy?.reason === "string" ? policy.reason : "";
+      const decision = String(policy?.decision ?? "");
+      add(
+        "POLICY_EVALUATION",
+        "result",
+        reason ||
+          (decision && decision !== "human_required"
+            ? "ALLOW patch and PR. Merge remains off."
+            : "Policy recorded."),
+      );
+      sawPolicy = true;
+      continue;
+    }
+
+    if (name === "apply_patch") {
+      flushReads("PATCHING");
+      const files = parsed?.args.files || parsed?.args.path || "apply_patch";
+      add("PATCHING", "action", `Edit(\`${workspacePath(files)}\`)`, {
+        verb: "Apply",
+        toolType: "Edit",
+      });
+      sawApply = true;
+      continue;
+    }
+
+    if (name === "run_command") {
+      flushReads(at);
+      const argv = parsed?.args.command || "";
+      if (!argv || NOISE_COMMANDS.test(argv)) continue;
+      const prefer = sawApply ? "patched" : "baseline";
+      const key = `${prefer}:${argv}`;
+      if (shownCommands.has(key)) continue;
+      let captured = takeCommand(argv, prefer);
+      if (!captured && prefer === "patched") {
+        const leftover = leftoverLogs.find((command) => !used.has(command));
+        if (leftover) {
+          used.add(leftover);
+          captured = { ...leftover, argv };
+        }
+      }
+      const tail = captured?.tail || parsed?.output || "";
+      if (!tail) continue;
+      shownCommands.add(key);
+      add(
+        sawApply ? "TESTING" : "PATCHING",
+        "block",
+        terminalFence("/tmp/patchapi-sandbox", [{ cmd: argv, out: tail }]),
+      );
+      continue;
+    }
+
+    if (name === "record_verification_report") {
+      flushReads("VERIFYING");
+      if (sawVerifyReport) continue;
+      if (!sawVerify) {
+        add("VERIFYING", "thought", "Grade the diff and the clean logs. Do not read the patch author’s plan.");
+        sawVerify = true;
+      }
+      add("VERIFYING", "action", "Verify(`proposed tree`)", { verb: "Verify", toolType: "Verify" });
+      const independent =
+        verification &&
+        verification.verifier_agent &&
+        verification.patch_agent &&
+        verification.verifier_agent !== verification.patch_agent;
+      const notes = typeof verification?.evidence_summary === "string" ? verification.evidence_summary : "";
+      add(
+        "VERIFYING",
+        "result",
+        notes || (independent ? "Verifier ≠ patch author. Proposed tree may be opened." : "Verification recorded."),
+      );
+      sawVerifyReport = true;
+      continue;
+    }
+
+    if (name === "open_pull_request") {
+      flushReads(at);
+      add("PR_CREATED", "narration", "Pull request opened. PatchAPI stopped.");
+      continue;
+    }
+  }
+
+  flushReads(machineOf(detail.state));
+
+  const unused = [...patched, ...leftoverLogs].filter((command) => !used.has(command) && command.tail);
+  if (unused.length > 0 && shownCommands.size === 0) {
+    add(
+      "TESTING",
+      "block",
+      terminalFence(
+        "/tmp/patchapi-sandbox",
+        unused.map((command) => ({
+          cmd: command.argv === "build" || command.argv === "tests" ? command.phase : command.argv,
+          out: command.tail,
+        })),
+      ),
+    );
+  }
+
+  if (detail.state === "PR_CREATED" && !lines.some((item) => item.at === "PR_CREATED")) {
+    add("PR_CREATED", "narration", "Pull request opened. PatchAPI stopped.");
+  }
+
+  return lines;
 }
 
 /**
@@ -274,6 +620,7 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
   const diffs = parseDiff(diffText);
   const pullRequest = detail.pull_request ?? null;
   const files = change?.files.length ? change.files : filesFrom(diffs);
+  const commands = commandsFrom(detail.artifacts);
 
   return {
     id: detail.run_id,
@@ -296,10 +643,10 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
     attemptBudget: detail.attempt_budget,
     pauseReason: detail.failure_reason ?? undefined,
     need: needFrom(detail),
-    commands: commandsFrom(detail.artifacts),
+    commands,
     diffs,
     checks: checksFrom(detail.verification),
-    log: logFrom(detail.trace),
+    log: composeWorklog(detail, change, commands),
     // The worklog is already history by the time it is read, so all of it is
     // visible. The fixture revealed lines on a timer to imitate a run in
     // progress; a real run supplies its own pacing by growing.

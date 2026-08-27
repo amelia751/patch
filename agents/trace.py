@@ -24,6 +24,10 @@ from agents.config import FLEET_VERSION, TRACE_DIGEST_CHARS, AgentId
 # Longest human-readable summary kept alongside a digest.
 _MAX_SUMMARY_CHARS: Final[int] = 200
 
+# Command output stored on the trace so the console can draw a terminal. Bounded
+# so one runaway check cannot become the largest row in the worklog.
+_MAX_COMMAND_DETAIL_CHARS: Final[int] = 4_000
+
 # Argument names whose values are never summarised, only counted. These carry
 # untrusted or bulky text; the digest still pins exactly what was passed.
 _OPAQUE_ARGUMENT_NAMES: Final[frozenset[str]] = frozenset(
@@ -52,11 +56,41 @@ def digest(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:TRACE_DIGEST_CHARS]
 
 
+def command_detail(value: Mapping[str, Any]) -> str:
+    """Stdout/stderr a `run_command` produced, for the console terminal."""
+    bits: list[str] = [f"exit {value.get('exit_code')}"]
+    for stream in ("stdout", "stderr"):
+        text = str(value.get(stream) or "").strip()
+        if text:
+            bits.append(text)
+    collapsed = "\n".join(bits)
+    if len(collapsed) <= _MAX_COMMAND_DETAIL_CHARS:
+        return collapsed
+    return collapsed[: _MAX_COMMAND_DETAIL_CHARS - 1] + "…"
+
+
 def summarise(value: Any) -> str:
     """One bounded line describing `value`, safe to show in a UI cell."""
-    if isinstance(value, Mapping):
-        keys = ", ".join(sorted(str(key) for key in value))
-        text = f"{{{keys}}}"
+    if isinstance(value, Mapping) and "exit_code" in value:
+        text = f"exit {value.get('exit_code')}"
+        stdout = str(value.get("stdout") or value.get("stderr") or "").strip()
+        if stdout:
+            first = stdout.splitlines()[0]
+            text = f"{text} · {first}"
+    elif isinstance(value, Mapping):
+        if "total_hits" in value or "hits" in value:
+            hits = value.get("total_hits", value.get("hits"))
+            files = value.get("files_scanned", value.get("returned_hits"))
+            text = f"{hits} hits" + (f" · {files} files" if files is not None else "")
+        elif "outcome" in value:
+            text = str(value.get("outcome"))
+        elif "verdict" in value:
+            text = str(value.get("verdict"))
+        elif "applied" in value:
+            text = "applied" if value.get("applied") else str(value.get("detail") or "not applied")
+        else:
+            keys = ", ".join(sorted(str(key) for key in value))
+            text = f"{{{keys}}}"
     elif isinstance(value, (list, tuple)):
         text = f"[{len(value)} items]"
     else:
@@ -122,6 +156,21 @@ class ToolTraceEvent:
         return line
 
 
+@dataclass(frozen=True, slots=True)
+class TraceNote:
+    """A thought or sentence that is not a tool call.
+
+    ADK yields Gemini thought parts separately from function calls. Those are
+    what the console draws as 'Thought' — they are the model's own words, not
+    a caption we write after the fact.
+    """
+
+    kind: str
+    text: str
+    started_at: str
+    agent: str = ""
+
+
 @dataclass(slots=True)
 class ToolTrace:
     """The ordered tool calls of one run.
@@ -133,7 +182,22 @@ class ToolTrace:
 
     run_id: str
     events: list[ToolTraceEvent] = field(default_factory=list)
+    notes: list[TraceNote] = field(default_factory=list)
     live: Callable[[str], None] | None = None
+
+    def thought(self, text: str, *, agent: AgentId | str = "") -> None:
+        """Keep one ADK thought part for the console worklog."""
+        collapsed = " ".join((text or "").split())
+        if not collapsed:
+            return
+        note = TraceNote(
+            kind="thought",
+            text=collapsed[:2_000],
+            started_at=datetime.now(UTC).isoformat(timespec="milliseconds"),
+            agent=str(agent),
+        )
+        self.notes.append(note)
+        self.emit(f"  thought: {note.text[:200]}")
 
     def emit(self, line: str) -> None:
         """Print one live line when a sink is attached. Tests leave this unset."""

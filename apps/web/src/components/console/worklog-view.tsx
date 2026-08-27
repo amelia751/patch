@@ -11,6 +11,7 @@ import {
   FileEdit as FileEditIcon,
   FileText,
   FolderSearch,
+  GitPullRequest,
   Globe,
   Loader2,
   ScanSearch,
@@ -51,32 +52,65 @@ const TOOL_CHROME: Record<
   Normalize: { icon: FileCode, color: "text-sky-400", label: "Normalize" },
   Evaluate: { icon: Compass, color: "text-amber-400", label: "Evaluate" },
   Verify: { icon: BadgeCheck, color: "text-emerald-400", label: "Verify" },
+  PullRequest: { icon: GitPullRequest, color: "text-emerald-400", label: "Pull request" },
 };
 
 const DEFAULT_CHROME = { icon: Wrench, color: "text-[var(--text-secondary)]", label: "" };
 
 const CALL_RE =
-  /^(Read|Write|Edit|Bash|Normalize|Evaluate|Verify|Search|Find|Grep|Glob|Web Search|Fetch)\(([\s\S]+)\)$/;
+  /^(Read|Write|Edit|Bash|Normalize|Evaluate|Verify|Search|Find|Grep|Glob|Web Search|Fetch|Pull request)\(([\s\S]+)\)$/;
+
+const ADK_CALL_RE =
+  /^(read_file|run_command|apply_patch|list_dir|load_migration_skill|evaluate_policy|record_impact_report|record_policy_decision|record_patch_plan|record_verification_report|read_verification_evidence|list_verification_evidence|list_runtime_credentials|scan_repository|seed_static_manifest|open_pull_request|computer_use_step)\(([\s\S]*)\)$/;
+
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith("`") && trimmed.endsWith("`")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
 
 function parseCall(text: string): { name?: string; detail: string } {
-  const trimmed = text.trim();
+  const trimmed = text.trim().replace(/\s*→\s*\{[\s\S]*\}$/, "");
   const match = trimmed.match(CALL_RE);
   if (match) {
-    let detail = match[2].trim();
-    if (
-      (detail.startsWith("`") && detail.endsWith("`")) ||
-      (detail.startsWith('"') && detail.endsWith('"'))
-    ) {
-      detail = detail.slice(1, -1);
-    }
-    return { name: match[1], detail };
+    return { name: match[1], detail: unquote(match[2]) };
+  }
+  const adk = trimmed.match(ADK_CALL_RE);
+  if (adk) {
+    const mapped =
+      adk[1] === "read_file" || adk[1] === "read_verification_evidence" || adk[1] === "load_migration_skill"
+        ? "Read"
+        : adk[1] === "run_command"
+          ? "Bash"
+          : adk[1] === "apply_patch" || adk[1] === "record_patch_plan"
+            ? "Edit"
+            : adk[1] === "list_dir"
+              ? "Find"
+              : adk[1] === "scan_repository" || adk[1] === "list_runtime_credentials"
+                ? "Search"
+                : adk[1] === "seed_static_manifest"
+                  ? "Normalize"
+                  : adk[1] === "open_pull_request"
+                    ? "Pull request"
+                    : adk[1].includes("verif")
+                      ? "Verify"
+                      : adk[1].includes("policy") || adk[1].includes("impact")
+                        ? "Evaluate"
+                        : undefined;
+    const path = /(?:^|,\s*)(?:path|name|command|skill_id|head_branch|goal)=([^,]+)/.exec(adk[2]);
+    return { name: mapped ?? "Tool", detail: unquote(path?.[1] ?? adk[2]) };
   }
   const readFile = trimmed.match(/^read_file\s+(.+)$/);
   if (readFile) return { name: "Read", detail: readFile[1] };
   if (trimmed === "apply_patch" || trimmed.startsWith("apply_patch ")) {
-    return { name: "Bash", detail: trimmed };
+    return { name: "Edit", detail: trimmed };
   }
-  if (/^(pnpm|npm|npx|yarn|uv|pytest|cargo|go)\b/.test(trimmed)) {
+  if (/^(pnpm|npm|npx|yarn|uv|pytest|cargo|go|python3?|node)\b/.test(trimmed)) {
     return { name: "Bash", detail: trimmed };
   }
   const last = trimmed.split(/\s+/).pop() ?? "";
@@ -92,6 +126,7 @@ function namedToolType(name?: string): string | undefined {
   if (name === "Find") return "Glob";
   if (name === "Web Search") return "WebSearch";
   if (name === "Fetch") return "WebFetch";
+  if (name === "Pull request") return "PullRequest";
   return name;
 }
 
