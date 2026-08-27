@@ -303,13 +303,17 @@ function SystemPageContent() {
   const configureProject = isAuthenticated ? currentProject : guestConfigureProject;
 
   // Cloud provider from project: only "aws" / "gcp" count as chosen; anything else → null
-  const cloudProvider = isAuthenticated
+  const projectCloudProvider = isAuthenticated
     ? currentProject?.cloud_provider === "aws" || currentProject?.cloud_provider === "gcp"
       ? currentProject.cloud_provider
       : null
     : configureProject?.cloud_provider === "aws" || configureProject?.cloud_provider === "gcp"
       ? configureProject.cloud_provider
       : null;
+  // Connecting from a run writes gcp_connections without setting this column.
+  // Treat a stored key as the choice so Configure is not stuck on "Choose provider".
+  const cloudProvider =
+    projectCloudProvider ?? (isAuthenticated && gcpConnections.length > 0 ? "gcp" : null);
 
   const hasChosenCloudProvider = cloudProvider === "aws" || cloudProvider === "gcp";
 
@@ -326,7 +330,8 @@ function SystemPageContent() {
         if (cloudProvider === "aws") {
           const response = await fetch(`${API_URL}/api/aws/status?user_id=${userId}`, { credentials: "include" });
           if (response.ok) setAwsStatus(await response.json());
-        } else if (cloudProvider === "gcp") {
+        }
+        if (currentProject?.id || cloudProvider === "gcp") {
           const path = currentProject?.id
             ? `${API_URL}/api/projects/${currentProject.id}/gcp-connections`
             : `${API_URL}/api/gcp/connections?user_id=${userId}`;
@@ -888,7 +893,14 @@ function SystemPageContent() {
             workspaces={workspacesForSecrets}
             repos={isAuthenticated ? secretsRepos : []}
             secretsPreviewMode={!isAuthenticated}
-            onGcpConnected={() => setGcpRefreshTick((tick) => tick + 1)}
+            onGcpConnected={() => {
+              setGcpRefreshTick((tick) => tick + 1);
+              setCurrentProject((prev) =>
+                prev && prev.cloud_provider !== "aws" && prev.cloud_provider !== "gcp"
+                  ? { ...prev, cloud_provider: "gcp" }
+                  : prev,
+              );
+            }}
           />
         </TabsContent>
 

@@ -189,7 +189,7 @@ async def upsert_connection(
 
     if existing is not None and existing["secret_arn"]:
         vault.add_version(existing["secret_arn"], credentials_json)
-        return await _touch(
+        row = await _touch(
             pool,
             project_id,
             existing["id"],
@@ -197,6 +197,8 @@ async def upsert_connection(
             service_account_email=email,
             default_region=default_region,
         )
+        await _adopt_gcp_provider(pool, project_id)
+        return row
 
     row_id = existing["id"] if existing is not None else uuid4()
     create = getattr(vault, "create")
@@ -250,7 +252,25 @@ async def upsert_connection(
     listed = await list_connections(pool, project_id, owner_id)
     if listed is None:
         return None
+    await _adopt_gcp_provider(pool, project_id)
     return next((row for row in listed if row["id"] == str(row_id)), None)
+
+
+async def _adopt_gcp_provider(pool: asyncpg.Pool, project_id: UUID) -> None:
+    """A stored key is a GCP choice. Do not overwrite AWS."""
+    try:
+        async with pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE projects
+                SET cloud_provider = 'gcp'::cloud_provider, updated_at = now()
+                WHERE id = $1 AND cloud_provider IS NULL
+                """,
+                project_id,
+            )
+    except Exception:
+        # The connection row is the record that matters; the column is display.
+        return
 
 
 async def _touch(
