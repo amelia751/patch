@@ -46,6 +46,13 @@ export const HUMAN_REQUIRED_PAUSE =
 
 export const HUMAN_REQUIRED_SECRET_NAME = "GEMINI_API_KEY";
 
+/** What a FAILED run actually said. Verification-disagreed is only the default
+ * when the job never recorded a reason — dispatch never starting is not that. */
+export function failureCopy(reason: string | null | undefined): string {
+  const trimmed = (reason ?? "").trim();
+  return trimmed || "Verification disagreed. Fail closed. No pull request.";
+}
+
 export type TreeId = "base" | "sandbox" | "proposed";
 
 export type CommandPhase = "patch" | "build" | "test";

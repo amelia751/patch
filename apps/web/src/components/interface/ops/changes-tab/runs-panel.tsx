@@ -31,6 +31,7 @@ import {
   HUMAN_REQUIRED_PAUSE,
   HUMAN_REQUIRED_SECRET_NAME,
   MACHINE_LABEL,
+  failureCopy,
   treeAvailable,
   treeForMachine,
   visibleLog,
@@ -433,10 +434,9 @@ function RunDetail({
       {(run.machine === "FAILED" || run.machine === "BLOCKED") && (
         <div className="px-5 py-3 border-b border-red-500/30 bg-red-500/5">
           <p className="text-[12px] text-[var(--text-primary)] leading-relaxed">
-            {run.pauseReason ??
-              (run.machine === "FAILED"
-                ? "Verification disagreed. Fail closed. No pull request."
-                : "Policy blocked this path. No sandbox and no pull request.")}
+            {run.machine === "FAILED"
+              ? failureCopy(run.pauseReason)
+              : (run.pauseReason ?? "Policy blocked this path. No sandbox and no pull request.")}
           </p>
         </div>
       )}
@@ -576,7 +576,9 @@ function ProposedTree({ run }: { run: MockRun }) {
         <div className="mt-1.5 border border-[var(--border-color)] rounded-md px-3 py-2.5">
           <p className="text-[12px] text-[var(--text-primary)]">
             {failed
-              ? "Verifier disagreed with the sandbox. Fail closed. No pull request."
+              ? run.pauseReason
+                ? failureCopy(run.pauseReason)
+                : "Nothing has graded this run. Fail closed. No pull request."
               : verified
                 ? "Verifier is not the patch author and was not given the patch plan."
                 : "Nothing has graded this run."}

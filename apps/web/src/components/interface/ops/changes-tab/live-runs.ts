@@ -21,6 +21,7 @@ import type { ChangeActionId } from "./actions";
 import type { FileHit, ProjectChange } from "./data";
 import {
   HUMAN_REQUIRED_PAUSE,
+  failureCopy,
   type AgentLogLine,
   type DiffFile,
   type DiffLine,
@@ -656,7 +657,7 @@ function composeWorklog(
     add("PR_CREATED", "narration", "Pull request opened. PatchAPI stopped.");
   }
   if (detail.state === "FAILED" && !lines.some((item) => item.at === "FAILED")) {
-    add("FAILED", "narration", "Verification disagreed. Fail closed. No pull request.");
+    add("FAILED", "narration", failureCopy(detail.failure_reason));
   }
   if (detail.state === "BLOCKED" && !lines.some((item) => item.at === "BLOCKED")) {
     add("BLOCKED", "narration", "Policy blocked this path. No sandbox and no pull request.");
@@ -872,11 +873,15 @@ export async function startRemediation(
     },
   );
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) {
+  const runId = String(payload.run_id ?? "");
+  // A 503 after the row exists is still a run the console should open: the
+  // job never started, but the failure reason is on that row, not in a toast
+  // the operator never sees.
+  if (!response.ok && !runId) {
     throw new Error(String(payload.detail ?? `remediate ${response.status}`));
   }
   return {
-    run_id: String(payload.run_id ?? ""),
+    run_id: runId,
     state: String(payload.state ?? "RECEIVED"),
     repository: String(payload.repository ?? repository ?? ""),
     dispatched: Boolean(payload.dispatched),
