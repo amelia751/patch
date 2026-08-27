@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, Protocol, runtime_checkable
 
@@ -53,6 +54,13 @@ JOB_VAR: Final[str] = "PATCHAPI_REMEDIATION_JOB"
 LOCAL_VAR: Final[str] = "PATCHAPI_REMEDIATION_LOCAL"
 
 ENTRY_POINT: Final[str] = "patchapi-remediate"
+
+# How long the console sits on the dispatch line before we say Cloud Run is
+# still starting the container. Shorter than this and a fast claim looks like
+# we invented a stall. Longer and the operator stares at one sentence for a
+# minute, which is the complaint this exists to answer.
+PROVISION_AFTER_SECONDS: Final[float] = 8.0
+PROVISION_EVERY_SECONDS: Final[float] = 15.0
 
 
 class RemediationUnavailableError(RuntimeError):
@@ -230,6 +238,44 @@ def build_dispatcher(
     return None
 
 
+def provisioning_note(
+    *,
+    state: str,
+    traces: list[dict[str, Any]],
+    started_at: datetime | None,
+    now: datetime | None = None,
+) -> str | None:
+    """A worklog line for the Cloud Run wait, or None if one should not be written.
+
+    ADK is not running during this stretch. `run_live` is bidirectional audio
+    and is the wrong surface. The gap the console sees after dispatch is job
+    scheduling (often a minute-plus on a cold image). Saying that on the poll
+    is the honest stream, not a model token.
+    """
+    if state != "RECEIVED":
+        return None
+    if any("Remediator claimed" in str(row.get("body") or "") for row in traces):
+        return None
+    if started_at is None:
+        return None
+    clock = now or datetime.now(UTC)
+    start = started_at if started_at.tzinfo else started_at.replace(tzinfo=UTC)
+    elapsed = (clock - start).total_seconds()
+    if elapsed < PROVISION_AFTER_SECONDS:
+        return None
+    last = traces[-1] if traces else None
+    if last and "Cloud Run is still starting the remediator" in str(last.get("body") or ""):
+        occurred = last.get("occurred_at")
+        if isinstance(occurred, datetime):
+            when = occurred if occurred.tzinfo else occurred.replace(tzinfo=UTC)
+            if (clock - when).total_seconds() < PROVISION_EVERY_SECONDS:
+                return None
+    return (
+        f"Cloud Run is still starting the remediator ({int(elapsed)}s). "
+        "The agent has not started. This wait is job scheduling, not ADK."
+    )
+
+
 __all__ = [
     "ENTRY_POINT",
     "JOB_VAR",
@@ -239,4 +285,5 @@ __all__ = [
     "RemediationDispatcher",
     "RemediationUnavailableError",
     "build_dispatcher",
+    "provisioning_note",
 ]

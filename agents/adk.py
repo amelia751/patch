@@ -223,6 +223,7 @@ async def run_turn(
     Session id is `{run_id}:{agent}` so specialists do not share chat history.
     Verification must not see the Patch turn. The service itself is per run.
     """
+    from google.adk.agents.run_config import RunConfig, StreamingMode
     from google.adk.runners import Runner
     from google.genai import types
 
@@ -241,11 +242,18 @@ async def run_turn(
     events = 0
     paused = False
     long_running_tool: str | None = None
+    seen_calls: set[str] = set()
     try:
+        # `run_live` is bidirectional audio/video. The worklog surface is
+        # `run_async` with SSE: the runner yields `partial=True` events as the
+        # model decides, and we forward tool names immediately instead of
+        # waiting for the turn to finish.
+        # https://github.com/google/adk-docs/blob/main/docs/runtime/event-loop.md
         async for event in runner.run_async(
             user_id=user_id,
             session_id=session.id,
             new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
             events += 1
             stop = False
@@ -258,16 +266,19 @@ async def run_turn(
             pending_ids = getattr(event, "long_running_tool_ids", None) or ()
             if pending_ids:
                 paused = True
-            if event.partial:
-                continue
             content = getattr(event, "content", None)
             for part in getattr(content, "parts", None) or ():
                 call = getattr(part, "function_call", None)
                 if call is not None and getattr(call, "name", None):
-                    trace.emit(f"  model → {call.name}")
-                    if pending_ids and getattr(call, "id", None) in pending_ids:
-                        long_running_tool = str(call.name)
-                        trace.emit(f"  pause {call.name} (long-running)")
+                    call_id = str(getattr(call, "id", None) or call.name)
+                    if call_id not in seen_calls:
+                        seen_calls.add(call_id)
+                        trace.emit(f"  model → {call.name}")
+                        if pending_ids and getattr(call, "id", None) in pending_ids:
+                            long_running_tool = str(call.name)
+                            trace.emit(f"  pause {call.name} (long-running)")
+                if event.partial:
+                    continue
                 response = getattr(part, "function_response", None)
                 if response is not None and getattr(response, "name", None):
                     trace.emit(f"  model ← {response.name}")

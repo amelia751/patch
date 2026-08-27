@@ -82,6 +82,7 @@ from packages.state.remediation import (
 )
 from packages.state.run_dispatch import (
     RemediationUnavailableError,
+    provisioning_note,
 )
 from packages.state.run_dispatch import (
     build_dispatcher as build_remediation_dispatcher,
@@ -1040,6 +1041,23 @@ async def read_project_run(request: Request, project_id: UUID, run_id: str) -> J
             detail = await read_remediation_run(
                 connection, project_id=project_id, run_id=identifier, since=since
             )
+            if detail is not None:
+                note = provisioning_note(
+                    state=str(detail.get("state") or ""),
+                    traces=list(detail.get("trace") or []),
+                    started_at=detail.get("started_at"),
+                )
+                if note:
+                    await append_trace(
+                        connection,
+                        identifier,
+                        state=RunState.RECEIVED,
+                        kind="narration",
+                        body=note,
+                    )
+                    detail = await read_remediation_run(
+                        connection, project_id=project_id, run_id=identifier, since=since
+                    )
     except StateUnavailableError as exc:
         return JSONResponse(
             {"error": "dependency_unavailable", "dependency": "postgres", "reason": str(exc)},
