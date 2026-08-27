@@ -632,7 +632,7 @@ function unifiedFrom(file: DiffFile): string {
 
 const VERB_TOOL: Record<string, string> = {
   Read: "Read",
-  Apply: "Bash",
+  Apply: "Edit",
   Run: "Bash",
   Normalize: "Normalize",
   Evaluate: "Evaluate",

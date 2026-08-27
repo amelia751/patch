@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { uiTheme } from "@/lib/ui-theme";
 import type { ActiveToolInfo } from "@/hooks/useThreadStream";
+import { DiffBlock } from "@/components/chat/code-block/diff-block";
 import { TerminalBlock } from "@/components/chat/code-block/terminal-block";
 import { FormattedMessage } from "./formatted-message";
 import type { WorklogEntry } from "./thread-types";
@@ -368,6 +369,19 @@ export function WorklogView({
       continue;
     }
     if (entry.kind === "action") {
+      const next = entries[index + 1];
+      const diff =
+        next?.kind === "block" ? next.text.trim().match(/^```diff\n([\s\S]*?)\n```$/) : null;
+      if (diff) {
+        nodes.push(
+          <div key={key} className="flex flex-col gap-1.5">
+            <ToolCallRow entry={entry} />
+            <DiffBlock className="!my-0" code={diff[1]} />
+          </div>,
+        );
+        index += 1;
+        continue;
+      }
       nodes.push(<ToolCallRow key={key} entry={entry} />);
       continue;
     }
@@ -385,16 +399,20 @@ export function WorklogView({
       continue;
     }
     if (entry.kind === "block") {
-      const fence = entry.text.trim().match(/^```(?:terminal|bash|sh)\n([\s\S]*?)\n```$/);
+      const fence = entry.text.trim().match(/^```(terminal|bash|sh|diff)\n([\s\S]*?)\n```$/);
       if (fence) {
-        nodes.push(
-          <TerminalBlock
-            key={key}
-            className="!my-0"
-            code={fence[1]}
-            onCopy={(code) => navigator.clipboard.writeText(code)}
-          />,
-        );
+        if (fence[1] === "diff") {
+          nodes.push(<DiffBlock key={key} className="!my-0" code={fence[2]} />);
+        } else {
+          nodes.push(
+            <TerminalBlock
+              key={key}
+              className="!my-0"
+              code={fence[2]}
+              onCopy={(code) => navigator.clipboard.writeText(code)}
+            />,
+          );
+        }
         continue;
       }
     }

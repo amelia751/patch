@@ -4,11 +4,13 @@ import { useState, useCallback } from "react";
 import { FileIcon } from "@/components/ui/file-icon";
 import { ChevronDown } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { cn } from "@/lib/utils";
 import { useSyntaxTheme, MONO_FONT } from "./syntax-theme";
 
 interface DiffBlockProps {
   code: string;
   onCopy?: (code: string) => void;
+  className?: string;
 }
 
 /** Workspace-relative path and first edited line in the new file (Cursor-style jump). */
@@ -80,7 +82,7 @@ function getLangFromFilename(filename: string): string {
   return EXT_LANG[ext] || "text";
 }
 
-export function DiffBlock({ code }: DiffBlockProps) {
+export function DiffBlock({ code, className }: DiffBlockProps) {
   const [isHeaderHovered, setIsHeaderHovered] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const { prismTheme, isDark } = useSyntaxTheme();
@@ -152,7 +154,7 @@ export function DiffBlock({ code }: DiffBlockProps) {
   const delBg = isDark ? "rgba(248, 81, 73, 0.18)" : "rgba(248, 81, 73, 0.20)";
 
   return (
-    <div className="my-3 rounded-lg overflow-hidden border border-[var(--border-color)] max-w-full relative group not-prose">
+    <div className={cn("my-3 rounded-lg overflow-hidden border border-[var(--border-color)] max-w-full relative group not-prose", className)}>
       {/* Header — click filename / +N (Cursor: open file at edit location) */}
       <button
         type="button"

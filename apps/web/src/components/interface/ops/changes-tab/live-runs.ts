@@ -233,6 +233,21 @@ function terminalFence(dir: string, commands: { cmd: string; out: string }[]): s
   return lines.join("\n");
 }
 
+/** One file's unified diff, in the fence DiffBlock already knows how to draw. */
+function diffFence(file: DiffFile): string {
+  const lines = [`--- a/${file.path}`, `+++ b/${file.path}`];
+  for (const line of file.lines) {
+    if (line.text.startsWith("@@")) {
+      lines.push(line.text);
+      continue;
+    }
+    if (line.kind === "add") lines.push(`+${line.text}`);
+    else if (line.kind === "del") lines.push(`-${line.text}`);
+    else lines.push(line.text.startsWith(" ") ? line.text : ` ${line.text}`);
+  }
+  return ["```diff", ...lines, "```"].join("\n");
+}
+
 function checksFrom(verification: Record<string, unknown> | null): VerifyCheck[] {
   const raw = verification?.checks;
   if (!Array.isArray(raw)) return [];
@@ -480,24 +495,30 @@ function composeWorklog(
 
     if (name === "apply_patch") {
       flushReads();
-      const files = workspacePath(parsed?.args.files || parsed?.args.path || "");
-      const label =
-        files && !files.startsWith("/")
-          ? files
-          : diffs.length > 0
-            ? diffs.map((file) => file.path).join(", ")
-            : "apply_patch";
-      if (shownEdits.has(label)) {
-        sawApply = true;
-        continue;
-      }
-      shownEdits.add(label);
       beginPatching();
-      add("PATCHING", "action", `Edit(\`${label}\`)`, {
-        verb: "Apply",
-        toolType: "Edit",
-        filePath: diffs.length === 1 ? diffs[0].path : undefined,
-      });
+      // The job records apply_patch without paths. The mock (and the chat
+      // thread) is one Edit row plus the DiffBlock card per file — not a
+      // comma-joined label and not the apply_patch terminal.
+      if (shownEdits.size === 0 && diffs.length > 0) {
+        for (const file of diffs) {
+          shownEdits.add(file.path);
+          add("PATCHING", "action", `Edit(\`${file.path}\`)`, {
+            verb: "Apply",
+            toolType: "Edit",
+            filePath: file.path,
+          });
+          add("PATCHING", "block", diffFence(file));
+        }
+      } else if (shownEdits.size === 0) {
+        const files = workspacePath(parsed?.args.files || parsed?.args.path || "");
+        const label = files && !files.startsWith("/") ? files : "apply_patch";
+        shownEdits.add(label);
+        add("PATCHING", "action", `Edit(\`${label}\`)`, {
+          verb: "Apply",
+          toolType: "Edit",
+          filePath: label === "apply_patch" ? undefined : label,
+        });
+      }
       sawApply = true;
       continue;
     }
