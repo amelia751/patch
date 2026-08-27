@@ -259,6 +259,36 @@ async def _run(
             recorder.narrate(RunState.RECEIVED, baseline.narration)
             await recorder.flush()
 
+            skip_patch = False
+            async with pool.acquire() as connection:
+                reason = await connection.fetchval(
+                    """
+                    SELECT reason FROM run_state_transitions
+                    WHERE run_id = $1
+                    ORDER BY sequence DESC LIMIT 1
+                    """,
+                    UUID(row.run_id),
+                )
+                if str(reason or "") == "resumed":
+                    diff_body = await connection.fetchval(
+                        """
+                        SELECT body FROM artifacts
+                        WHERE run_id = $1 AND kind = 'diff' AND COALESCE(body, '') <> ''
+                        ORDER BY created_at DESC LIMIT 1
+                        """,
+                        UUID(row.run_id),
+                    )
+                    if diff_body:
+                        applied = session.apply_unified_diff(str(diff_body))
+                        if getattr(applied, "exit_code", 1) == 0:
+                            skip_patch = True
+                            recorder.narrate(
+                                RunState.RECEIVED,
+                                "Re-applied the working tree from the hold. "
+                                "The patch loop will not start over.",
+                            )
+                            await recorder.flush()
+
             context = RunContext(
                 run_id=row.run_id,
                 repo_root=repo_root(),
@@ -292,6 +322,7 @@ async def _run(
                 static_manifest=manifest_path,
                 deterministic=False,
                 setup_deterministic=True,
+                skip_patch=skip_patch,
             )
             await _persist(
                 pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline

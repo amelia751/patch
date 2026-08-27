@@ -354,7 +354,7 @@ function line(
  * the extras. It does not invent a thought the model did not say, a command
  * the sandbox did not run, or a check the verifier did not record.
  */
-function composeWorklog(
+export function composeWorklog(
   detail: RunDetail,
   change: ProjectChange | undefined,
   commands: SandboxCommand[],
@@ -547,11 +547,10 @@ function composeWorklog(
     if (name === "apply_patch") {
       flushReads();
       beginPatching();
-      // The job records apply_patch without paths. The mock and the chat
-      // thread are one Edit/Write row plus the DiffBlock card per file.
-      if (shownEdits.size === 0 && diffs.length > 0) {
-        for (const file of diffs) {
-          shownEdits.add(file.path);
+      const hunks = parsed?.output ? parseDiff(parsed.output) : [];
+      const files = hunks.length > 0 ? hunks : shownEdits.size === 0 ? diffs : [];
+      if (files.length > 0) {
+        for (const file of files) {
           const created = file.deletions === 0 && file.additions > 0;
           add("PATCHING", "action", `${created ? "Write" : "Edit"}(\`${file.path}\`)`, {
             verb: created ? "Write" : "Apply",
@@ -559,16 +558,17 @@ function composeWorklog(
             filePath: file.path,
           });
           add("PATCHING", "block", diffFence(file));
+          shownEdits.add(file.path);
         }
-      } else if (shownEdits.size === 0) {
-        const files = workspacePath(parsed?.args.files || parsed?.args.path || "");
-        const label = files && !files.startsWith("/") ? files : "apply_patch";
-        shownEdits.add(label);
+      } else {
+        const named = workspacePath(parsed?.args.files || parsed?.args.path || "");
+        const label = named && !named.startsWith("/") ? named : "apply_patch";
         add("PATCHING", "action", `Edit(\`${label}\`)`, {
           verb: "Apply",
           toolType: "Edit",
           filePath: label === "apply_patch" ? undefined : label,
         });
+        shownEdits.add(label);
       }
       sawApply = true;
       continue;

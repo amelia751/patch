@@ -115,6 +115,14 @@ def build_tool_guardrails(
             detail = tool_response.get("message")
         elif isinstance(tool_response, dict) and "exit_code" in tool_response:
             detail = command_detail(tool_response)
+        elif (
+            _tool_name(tool) == "apply_patch"
+            and isinstance(tool_response, dict)
+            and tool_response.get("applied")
+        ):
+            # The console draws the Edit card from this, on the next flush —
+            # not from the end-of-run artifact.
+            detail = str(args.get("diff") or "")
         _record(tool, args, status, tool_response, duration_ms, detail=detail)
         if isinstance(tool_response, dict):
             if "exit_code" in tool_response:

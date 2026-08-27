@@ -146,6 +146,7 @@ function SystemPageContent() {
   const [gcpEnvironmentConnections, setGcpEnvironmentConnections] = useState<
     Record<string, any>
   >({});
+  const [gcpRefreshTick, setGcpRefreshTick] = useState(0);
   const [gcpConnections, setGcpConnections] = useState<
     {
       id: string;
@@ -367,7 +368,7 @@ function SystemPageContent() {
     };
 
     fetchConnectionStatus();
-  }, [isAuthenticated, user?.id, cloudProvider, currentProject?.id]);
+  }, [isAuthenticated, user?.id, cloudProvider, currentProject?.id, gcpRefreshTick]);
 
   // Fetch requirements
   useEffect(() => {
@@ -887,6 +888,7 @@ function SystemPageContent() {
             workspaces={workspacesForSecrets}
             repos={isAuthenticated ? secretsRepos : []}
             secretsPreviewMode={!isAuthenticated}
+            onGcpConnected={() => setGcpRefreshTick((tick) => tick + 1)}
           />
         </TabsContent>
 

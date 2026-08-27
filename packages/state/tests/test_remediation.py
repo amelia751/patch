@@ -128,6 +128,75 @@ async def test_a_finished_run_begins_again_on_the_same_row(conn: Any) -> None:
     assert reason == ""
 
 
+async def test_an_operator_hold_keeps_its_worklog_on_continue(conn: Any) -> None:
+    """Continue after a secret/GCP hold is not a second remediation."""
+    project, change = await seed(conn)
+    first = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+    await remediation.advance(conn, first.run_id, RunState.SANITIZED, actor="job")
+    await remediation.advance(conn, first.run_id, RunState.NORMALIZED, actor="job")
+    await remediation.advance(conn, first.run_id, RunState.IMPACT_SCANNING, actor="job")
+    await remediation.advance(conn, first.run_id, RunState.POLICY_EVALUATION, actor="job")
+    await remediation.advance(conn, first.run_id, RunState.PATCHING, actor="job")
+    await remediation.advance(
+        conn, first.run_id, RunState.WAITING_ON_OPERATOR, actor="job", reason="need key"
+    )
+    await remediation.append_trace(
+        conn, first.run_id, state=RunState.WAITING_ON_OPERATOR, kind="narration", body="held"
+    )
+    await remediation.record_artifact(
+        conn, first.run_id, kind="diff", body="--- a/x\n+++ b/x\n"
+    )
+
+    again = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+
+    assert again.run_id == first.run_id
+    assert again.dispatch is True
+    traces = await conn.fetch(
+        "SELECT body FROM run_trace_events WHERE run_id = $1 ORDER BY sequence",
+        remediation._uuid(again.run_id),
+    )
+    assert [row["body"] for row in traces] == ["held"]
+    artifacts = await conn.fetch(
+        "SELECT body FROM artifacts WHERE run_id = $1",
+        remediation._uuid(again.run_id),
+    )
+    assert any("+++ b/x" in row["body"] for row in artifacts)
+    reason = await conn.fetchval(
+        """
+        SELECT reason FROM run_state_transitions
+        WHERE run_id = $1 ORDER BY sequence DESC LIMIT 1
+        """,
+        remediation._uuid(again.run_id),
+    )
+    assert reason == "resumed"
+
+
+async def test_a_failed_run_clears_its_worklog_on_retry(conn: Any) -> None:
+    """A broken attempt is not the worklog of the retry."""
+    project, change = await seed(conn)
+    first = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+    await remediation.append_trace(
+        conn, first.run_id, state=RunState.RECEIVED, kind="narration", body="old"
+    )
+    await remediation.advance(conn, first.run_id, RunState.FAILED, actor="job", reason="died")
+
+    again = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+
+    traces = await conn.fetch(
+        "SELECT body FROM run_trace_events WHERE run_id = $1",
+        remediation._uuid(again.run_id),
+    )
+    assert traces == []
+
+
 async def test_an_illegal_move_is_refused_and_leaves_nothing_behind(conn: Any) -> None:
     handle = await open_one(conn)
 

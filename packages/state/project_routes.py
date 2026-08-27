@@ -981,15 +981,23 @@ async def start_remediation(request: Request, project_id: UUID, external_id: str
         )
 
     async with _pool(request).acquire() as connection:
+        prior = await connection.fetchval(
+            "SELECT count(*) FROM run_trace_events WHERE run_id = $1",
+            handle.run_id,
+        )
         await append_trace(
             connection,
             handle.run_id,
             state=RunState.RECEIVED,
             kind="narration",
             body=(
-                f"Dispatched to {dispatcher.transport}"
-                + (f" ({execution})" if execution else "")
-                + ". Waiting for the remediator to claim this run."
+                "Operator supplied credentials. Continuing this run."
+                if int(prior or 0) > 0
+                else (
+                    f"Dispatched to {dispatcher.transport}"
+                    + (f" ({execution})" if execution else "")
+                    + ". Waiting for the remediator to claim this run."
+                )
             ),
         )
 

@@ -273,8 +273,12 @@ async def open_run(
         return _handle(existing, dispatch=False)
 
     restarted = await connection.fetchrow(_RESTART_SQL, existing["id"], base_sha, trace_id)
-    await connection.execute(_CLEAR_TRACE_SQL, existing["id"])
-    await connection.execute(_CLEAR_ARTIFACTS_SQL, existing["id"])
+    # A failed run begins again from an empty worklog. An operator hold does
+    # not: the traces and the diff are the work already done, and wiping them
+    # is how Continue looks like a second remediation.
+    if not is_resumable(state):
+        await connection.execute(_CLEAR_TRACE_SQL, existing["id"])
+        await connection.execute(_CLEAR_ARTIFACTS_SQL, existing["id"])
     await _transition(
         connection,
         existing["id"],

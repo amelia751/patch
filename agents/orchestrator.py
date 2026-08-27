@@ -610,7 +610,12 @@ class Orchestrator:
         )
 
     async def run_patch(
-        self, slice_: VerticalSlice, *, base_sha: str, deterministic: bool = False
+        self,
+        slice_: VerticalSlice,
+        *,
+        base_sha: str,
+        deterministic: bool = False,
+        skip_turn: bool = False,
     ) -> StageResult:
         """Migrate the workspace, then prove it independently of what was said.
 
@@ -620,6 +625,12 @@ class Orchestrator:
         exactly the evidence this product does not accept. The binding check runs
         first, so a patch that made the checks pass without removing the retired
         identifier still fails the stage.
+
+        `skip_turn` is a new Cloud Run execution after an operator hold: the
+        working tree already holds the rewrite, so the model must not start a
+        second loop. The park check, the binding gate, and the repository
+        checks still run — skipping the whole stage would jump PATCHING to
+        VERIFYING, which the machine forbids.
         """
         agent = AgentId.PATCH
         manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
@@ -632,7 +643,9 @@ class Orchestrator:
             self._hold_for_live_credentials(agent, slice_)
             return self._park_for_operator(agent, None)
 
-        if deterministic:
+        if skip_turn:
+            self._trace.emit("=== PATCH resume — working tree already rewritten ===")
+        elif deterministic:
             self._patch_deterministically(manifest, slice_, base_sha=base_sha)
         else:
             self._trace.emit("=== PATCH agent live — inspect, edit, run, look ===")
@@ -642,12 +655,13 @@ class Orchestrator:
             )
             if self._context.waiting_on_operator or (turn is not None and turn.paused):
                 return self._park_for_operator(agent, turn)
-            # The model had its turn. A one-line identifier rebind is mechanical
-            # and named by the manifest; land it if the turn did not.
-            source = self._read_entrypoint(slice_)
-            current = binding_value(source or "", slice_.binding)
-            if current in manifest.affected_identifiers:
-                self._patch_deterministically(manifest, slice_, base_sha=base_sha)
+
+        # A one-line identifier rebind is mechanical and named by the manifest.
+        # Land it when the model (or a resumed tree) left the identifier retired.
+        source = self._read_entrypoint(slice_)
+        current = binding_value(source or "", slice_.binding)
+        if source is not None and current in manifest.affected_identifiers:
+            self._patch_deterministically(manifest, slice_, base_sha=base_sha)
 
         source = self._read_entrypoint(slice_)
         if source is None:
@@ -1150,6 +1164,7 @@ class Orchestrator:
         deterministic: bool | None = None,
         setup_deterministic: bool = False,
         static_manifest: Path | None = None,
+        skip_patch: bool = False,
     ) -> SliceResult:
         """Run seed → impact → policy → patch → UI check → verify → PR.
 
@@ -1158,6 +1173,8 @@ class Orchestrator:
         a claimed pull request. `static_manifest` skips the provider crawl.
         `setup_deterministic` keeps Impact off the model so a live Patch turn
         still starts from a real scan.
+        `skip_patch` is the operator-resume path: the working tree already
+        holds the rewrite, so the model must not start a second patch loop.
         """
         if deterministic is None:
             deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
@@ -1187,7 +1204,12 @@ class Orchestrator:
             return result
         if not keep(await self.run_policy(slice_, deterministic=setup)):
             return result
-        patch = await self.run_patch(slice_, base_sha=base_sha, deterministic=deterministic)
+        patch = await self.run_patch(
+            slice_,
+            base_sha=base_sha,
+            deterministic=deterministic,
+            skip_turn=skip_patch,
+        )
         if not keep(patch):
             return result
         source = self._read_entrypoint(slice_)

@@ -319,6 +319,103 @@ async def test_imagen_parks_before_a_model_turn_when_the_key_is_missing(
     )
 
 
+@pytest.mark.asyncio
+async def test_imagen_continues_after_the_operator_connects_gcp(
+    sandboxed_context, repo_root, feed_dir, monkeypatch
+):
+    """Continue after Connect GCP is a new execution that must not park again."""
+    from agents.adk import TurnResult
+    from agents.context import RunContext
+    from agents.tools.credentials import RuntimeCredentialsInventory
+
+    parked = Orchestrator(sandboxed_context, ToolTrace(run_id="run-park"))
+    parked.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json"
+    )
+    await parked.run_impact(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True)
+    await parked.run_policy(LIVE_PROOF_SLICE, deterministic=True)
+    held = await parked.run_patch(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=False)
+    assert held.state is RunState.WAITING_ON_OPERATOR
+
+    # A Cloud Run job exits on the hold. Continue starts a new process with
+    # the connection the operator just stored, not the in-memory ADK session.
+    resumed_context = RunContext(
+        run_id="run-resume",
+        repo_root=repo_root,
+        feed_dir=feed_dir,
+        workspace_root=sandboxed_context.workspace_root,
+        sandbox=sandboxed_context.sandbox,
+        credentials_inventory=RuntimeCredentialsInventory(bound=True, gcp_connected=True),
+    )
+    called = {"turn": False}
+
+    async def _empty_turn(*_args, **_kwargs):
+        called["turn"] = True
+        return TurnResult(
+            agent="patch",
+            final_text="",
+            model_versions=(),
+            event_count=1,
+            trace=ToolTrace(run_id="run-resume"),
+            paused=False,
+        )
+
+    monkeypatch.setattr("agents.orchestrator.run_turn", _empty_turn)
+    resumed = Orchestrator(resumed_context, ToolTrace(run_id="run-resume"))
+    resumed.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json"
+    )
+    await resumed.run_impact(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True)
+    await resumed.run_policy(LIVE_PROOF_SLICE, deterministic=True)
+    result = await resumed.run_patch(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=False)
+
+    assert called["turn"]
+    assert result.state is RunState.TESTING, result.detail
+    assert not resumed_context.waiting_on_operator
+    assert (
+        binding_value(sandboxed_context.sandbox.read_file("lib/gemini.ts"), "IMAGE_MODEL")
+        == IMAGE_REPLACEMENT
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_resumed_tree_does_not_start_a_second_patch_turn(
+    sandboxed_context, session, repo_root, monkeypatch
+):
+    """A hold after apply_patch must not send the model around the loop again."""
+    from agents.tools.credentials import RuntimeCredentialsInventory
+
+    sandboxed_context.credentials_inventory = RuntimeCredentialsInventory(
+        bound=True, gcp_connected=True
+    )
+    first = Orchestrator(sandboxed_context, ToolTrace(run_id="run-first"))
+    first.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json"
+    )
+    await first.run_impact(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+    await first.run_policy(GEMINI20_SLICE, deterministic=True)
+    landed = await first.run_patch(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+    assert landed.state is RunState.TESTING
+    assert binding_value(session.read_file(GEMINI20_SLICE.entrypoint), "MODEL") == REPLACEMENT
+
+    async def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("the patch model must not start a second loop")
+
+    monkeypatch.setattr("agents.orchestrator.run_turn", _must_not_run)
+    again = Orchestrator(sandboxed_context, ToolTrace(run_id="run-resume"))
+    again.seed_static_manifest(
+        repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json"
+    )
+    await again.run_impact(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
+    await again.run_policy(GEMINI20_SLICE, deterministic=True)
+    result = await again.run_patch(
+        GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=False, skip_turn=True
+    )
+
+    assert result.state is RunState.TESTING, result.detail
+    assert binding_value(session.read_file(GEMINI20_SLICE.entrypoint), "MODEL") == REPLACEMENT
+
+
 def test_imagen_rewrites_image_model_without_running_generate_py(
     sandboxed_context, session, repo_root
 ):

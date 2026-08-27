@@ -193,7 +193,7 @@ def _body(event: object) -> str:
     line = f"{tool}({shown})"
     if summary:
         line += f" → {summary}"
-    if detail and getattr(event, "tool", "") == "run_command":
+    if detail and getattr(event, "tool", "") in {"run_command", "apply_patch"}:
         line += f"\n{detail}"
     if getattr(event, "status", None) is ToolStatus.DENIED:
         line = f"DENIED {line}"

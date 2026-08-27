@@ -69,6 +69,7 @@ export function ChangesTab({
   secretsPreviewMode = false,
   inboxTick = 0,
   assumeSubscribed = false,
+  onGcpConnected,
 }: {
   hasProject?: boolean;
   projectId?: string;
@@ -79,6 +80,7 @@ export function ChangesTab({
   secretsPreviewMode?: boolean;
   inboxTick?: number;
   assumeSubscribed?: boolean;
+  onGcpConnected?: () => void;
 }) {
   const [section, setSection] = useState<Section>("releases");
   // Held with the project they belong to, so switching projects shows nothing
@@ -269,12 +271,13 @@ export function ChangesTab({
     setSection("runs");
   };
 
-  // Resuming a paused run means starting it again: the API rejoins the same row
-  // and dispatches only if the previous execution ended, so the operator who
-  // just added the secret gets the run continued rather than duplicated.
+  // Continue dispatches a new execution of the same row. The API keeps the
+  // worklog; the remediator loads the credentials just stored and, when a
+  // diff already exists, skips a second patch loop.
   const onContinue = (id: string) => {
     const run = runs.find((item) => item.id === id);
     if (!projectId || !run) return;
+    onGcpConnected?.();
     void startRemediation(projectId, run.changeId, run.repo)
       .then(() => loadRuns(projectId))
       .catch(() => undefined);

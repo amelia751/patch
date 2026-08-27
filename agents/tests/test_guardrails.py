@@ -107,6 +107,20 @@ def test_the_trace_serializes_to_ndjson(trace):
     assert record["fleet_version"]
 
 
+def test_an_applied_patch_keeps_the_diff_for_the_console(trace):
+    """The Edit card is drawn from this detail on the next flush, not the final artifact."""
+    before, after = build_tool_guardrails(AgentId.PATCH, trace)
+    tool = FakeTool(str(ToolName.APPLY_PATCH))
+    diff = "--- a/lib/gemini.ts\n+++ b/lib/gemini.ts\n@@ -1 +1 @@\n-old\n+new\n"
+    args = {"diff": diff}
+
+    before(tool=tool, args=args)
+    after(tool=tool, args=args, tool_response={"applied": True, "files": ["lib/gemini.ts"]})
+
+    assert trace.events[0].detail == diff
+    assert "applied" in trace.events[0].result_summary
+
+
 def test_bulky_arguments_are_digested_not_copied_into_the_trace():
     trace = ToolTrace(run_id="run-digest")
     before, after = build_tool_guardrails(AgentId.CHANGE_INTELLIGENCE, trace)
