@@ -13,6 +13,8 @@ import {
   FolderSearch,
   GitPullRequest,
   Globe,
+  KeyRound,
+  List,
   Loader2,
   ScanSearch,
   Search,
@@ -54,6 +56,8 @@ const TOOL_CHROME: Record<
   Evaluate: { icon: Compass, color: "text-amber-400", label: "Evaluate" },
   Verify: { icon: BadgeCheck, color: "text-emerald-400", label: "Verify" },
   PullRequest: { icon: GitPullRequest, color: "text-emerald-400", label: "Pull request" },
+  List: { icon: List, color: "text-sky-400", label: "List" },
+  Request: { icon: KeyRound, color: "text-amber-400", label: "Request" },
 };
 
 const DEFAULT_CHROME = { icon: Wrench, color: "text-[var(--text-secondary)]", label: "" };

@@ -87,6 +87,10 @@ function asChange(raw: unknown): ProjectChange | null {
     failClosed: Boolean(row.failClosed),
     repo: row.repo ? String(row.repo) : undefined,
     repos: repos.length > 0 ? repos : undefined,
+    baseSha:
+      row.baseSha
+        ? String(row.baseSha)
+        : impacts.find((impact) => impact.baseSha)?.baseSha || undefined,
     fileHits: Number(row.fileHits ?? files.reduce((sum, file) => sum + (file.hits ?? 0), 0)),
     fileCount: Number(row.fileCount ?? files.length),
     files,

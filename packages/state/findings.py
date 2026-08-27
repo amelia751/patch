@@ -911,6 +911,15 @@ def _change_payload(row: asyncpg.Record) -> dict[str, Any]:
         "failClosed": bool(row["fail_closed"]),
         "repo": repos[0] if repos else None,
         "repos": repos,
+        "baseSha": next(
+            (
+                str(item.get("baseSha") or "")
+                for item in impacts
+                if isinstance(item, dict) and item.get("baseSha")
+            ),
+            None,
+        )
+        or None,
         "fileHits": int(row["file_hits"]),
         "fileCount": int(row["file_count"]),
         "files": files,

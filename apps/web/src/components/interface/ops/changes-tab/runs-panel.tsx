@@ -633,10 +633,13 @@ function unifiedFrom(file: DiffFile): string {
 const VERB_TOOL: Record<string, string> = {
   Read: "Read",
   Apply: "Edit",
+  Write: "Write",
   Run: "Bash",
   Normalize: "Normalize",
   Evaluate: "Evaluate",
   Verify: "Verify",
+  List: "List",
+  Request: "Request",
 };
 
 function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
@@ -709,7 +712,8 @@ function AgentLog({ run }: { run: MockRun }) {
 
 function PullRequestCard({ run }: { run: MockRun }) {
   const repo = run.repo ? repoTitle(run.repo) : "imported repositories";
-  const href = run.repo ? `https://github.com/${run.repo}` : undefined;
+  const href =
+    run.prUrl || (run.repo && run.prNumber ? `https://github.com/${run.repo}/pull/${run.prNumber}` : undefined);
 
   return (
     <div className="overflow-hidden rounded-lg border border-emerald-500/25 bg-[var(--bg-secondary)]">
@@ -719,8 +723,12 @@ function PullRequestCard({ run }: { run: MockRun }) {
             <GitPullRequest className="h-3.5 w-3.5 text-emerald-500" />
           </span>
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--text-primary)]">Pull request opened</p>
-            <p className="text-[11px] text-[var(--text-secondary)] truncate">{repo}</p>
+            <p className="text-[13px] font-medium text-[var(--text-primary)]">
+              {run.prNumber ? `Pull request #${run.prNumber}` : "Pull request opened"}
+            </p>
+            <p className="text-[11px] text-[var(--text-secondary)] truncate">
+              {run.prTitle || repo}
+            </p>
           </div>
         </div>
         <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
@@ -732,7 +740,7 @@ function PullRequestCard({ run }: { run: MockRun }) {
         <div className="flex items-center gap-2 min-w-0">
           <BranchChip name={run.prBranch ?? "proposed"} active />
           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
-          <BranchChip name="main" muted />
+          <BranchChip name={run.prBase ?? "main"} muted />
         </div>
         <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
           PatchAPI stops here. It does not merge.

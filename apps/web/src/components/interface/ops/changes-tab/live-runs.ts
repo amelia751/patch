@@ -19,16 +19,17 @@
 
 import type { ChangeActionId } from "./actions";
 import type { FileHit, ProjectChange } from "./data";
-import type {
-  AgentLogLine,
-  DiffFile,
-  DiffLine,
-  LogKind,
-  MachineState,
-  MockRun,
-  RunBucket,
-  SandboxCommand,
-  VerifyCheck,
+import {
+  HUMAN_REQUIRED_PAUSE,
+  type AgentLogLine,
+  type DiffFile,
+  type DiffLine,
+  type LogKind,
+  type MachineState,
+  type MockRun,
+  type RunBucket,
+  type SandboxCommand,
+  type VerifyCheck,
 } from "./run-scripts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -248,16 +249,43 @@ function diffFence(file: DiffFile): string {
   return ["```diff", ...lines, "```"].join("\n");
 }
 
+/** Fixture check copy. The job stores `build` / `tests` / `live_api` / `policy`. */
+const CHECK_LABEL: Record<string, string> = {
+  build: "Clean build from the diff alone",
+  tests: "Clean tests from the diff alone",
+  test: "Clean tests from the diff alone",
+  live_api: "Replacement resolves live",
+  policy: "Forbidden paths untouched",
+  identifiers: "Identifiers mapped as the manifest specifies",
+  changelog: "CHANGELOG.md and other history files untouched",
+};
+
 function checksFrom(verification: Record<string, unknown> | null): VerifyCheck[] {
   const raw = verification?.checks;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    .map((item) => ({
-      name: String(item.name ?? ""),
-      passed: Boolean(item.passed),
-    }))
-    .filter((check) => check.name);
+  const checks = Array.isArray(raw)
+    ? raw
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item) => {
+          const key = String(item.name ?? "");
+          return {
+            name: CHECK_LABEL[key] ?? key,
+            passed: Boolean(item.passed),
+          };
+        })
+        .filter((check) => check.name)
+    : [];
+  const independent =
+    verification &&
+    verification.verifier_agent &&
+    verification.patch_agent &&
+    verification.verifier_agent !== verification.patch_agent;
+  if (independent && !checks.some((check) => /verifier/i.test(check.name))) {
+    checks.push({
+      name: "Verifier did not see the patch author’s plan",
+      passed: true,
+    });
+  }
+  return checks;
 }
 
 function namedArgs(raw: string): Record<string, string> {
@@ -291,7 +319,6 @@ const HIDDEN_TOOLS = new Set([
   "computer_use_step",
   "list_verification_evidence",
   "list_dir",
-  "list_runtime_credentials",
   "record_patch_plan",
 ]);
 
@@ -331,6 +358,7 @@ function composeWorklog(
   change: ProjectChange | undefined,
   commands: SandboxCommand[],
   diffs: DiffFile[] = [],
+  inventory: FileHit[] = [],
 ): AgentLogLine[] {
   const lines: AgentLogLine[] = [];
   let n = 0;
@@ -450,9 +478,23 @@ function composeWorklog(
       if (identifier) {
         add("IMPACT_SCANNING", "thought", `Join \`${identifier}\` against ${repo} @ ${sha}, not HEAD.`);
       }
-      add("IMPACT_SCANNING", "action", "Search(`inventory`)", { verb: "Search", toolType: "Grep" });
+      add("IMPACT_SCANNING", "action", "Search(`inventory`)", {
+        verb: "Search",
+        toolType: "Grep",
+        toolUseId: "impact-search",
+      });
+      const runtime = inventory.filter((file) => !file.kind || file.kind === "runtime").slice(0, 3);
+      for (const file of runtime) {
+        if (shownReads.has(file.path)) continue;
+        shownReads.add(file.path);
+        add("IMPACT_SCANNING", "action", `Read(\`${file.path}\`)`, {
+          verb: "Read",
+          toolType: "Read",
+          filePath: file.path,
+        });
+      }
       const hits = impactHits();
-      if (hits) add("IMPACT_SCANNING", "result", hits);
+      if (hits) add("IMPACT_SCANNING", "result", hits, { toolUseId: "impact-search" });
       sawImpact = true;
       continue;
     }
@@ -496,15 +538,15 @@ function composeWorklog(
     if (name === "apply_patch") {
       flushReads();
       beginPatching();
-      // The job records apply_patch without paths. The mock (and the chat
-      // thread) is one Edit row plus the DiffBlock card per file — not a
-      // comma-joined label and not the apply_patch terminal.
+      // The job records apply_patch without paths. The mock and the chat
+      // thread are one Edit/Write row plus the DiffBlock card per file.
       if (shownEdits.size === 0 && diffs.length > 0) {
         for (const file of diffs) {
           shownEdits.add(file.path);
-          add("PATCHING", "action", `Edit(\`${file.path}\`)`, {
-            verb: "Apply",
-            toolType: "Edit",
+          const created = file.deletions === 0 && file.additions > 0;
+          add("PATCHING", "action", `${created ? "Write" : "Edit"}(\`${file.path}\`)`, {
+            verb: created ? "Write" : "Apply",
+            toolType: created ? "Write" : "Edit",
             filePath: file.path,
           });
           add("PATCHING", "block", diffFence(file));
@@ -520,6 +562,27 @@ function composeWorklog(
         });
       }
       sawApply = true;
+      continue;
+    }
+
+    if (name === "request_runtime_credentials") {
+      const need = parsed?.args.need || parsed?.args.names || "secret";
+      add(at === "NORMALIZED" ? "WAITING_ON_OPERATOR" : at, "action", `request_runtime_credentials(need=${need})`, {
+        verb: "Request",
+        toolType: "Request",
+      });
+      add("WAITING_ON_OPERATOR", "narration", HUMAN_REQUIRED_PAUSE);
+      continue;
+    }
+
+    if (name === "list_runtime_credentials") {
+      const paused =
+        machineOf(detail.state) === "WAITING_ON_OPERATOR" || machineOf(detail.state) === "HUMAN_REQUIRED";
+      if (!paused) continue;
+      add("WAITING_ON_OPERATOR", "action", "list_runtime_credentials()", {
+        verb: "List",
+        toolType: "List",
+      });
       continue;
     }
 
@@ -597,6 +660,12 @@ function composeWorklog(
   }
   if (detail.state === "BLOCKED" && !lines.some((item) => item.at === "BLOCKED")) {
     add("BLOCKED", "narration", "Policy blocked this path. No sandbox and no pull request.");
+  }
+  if (detail.state === "UNAFFECTED" && !lines.some((item) => item.at === "UNAFFECTED")) {
+    add("UNAFFECTED", "narration", "Report-only. No runtime path, so no worktree and no pull request.");
+  }
+  if (detail.state === "HELD" && !lines.some((item) => item.at === "HELD")) {
+    add("HELD", "narration", "Draft held. No pull request until the note takes effect.");
   }
 
   return lines;
@@ -707,7 +776,7 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
   const pullRequest = detail.pull_request ?? null;
   const files = change?.files.length ? change.files : filesFrom(diffs);
   const commands = commandsFrom(detail.artifacts);
-  const log = composeWorklog(detail, change, commands, diffs);
+  const log = composeWorklog(detail, change, commands, diffs, files);
 
   return {
     id: detail.run_id,
@@ -740,6 +809,10 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
     revealed: log.length,
     lineStartedAt: Date.now(),
     prBranch: pullRequest ? String(pullRequest.head_branch ?? "") : undefined,
+    prBase: pullRequest ? String(pullRequest.base_branch ?? "main") : undefined,
+    prUrl: pullRequest ? String(pullRequest.url ?? "") || undefined : undefined,
+    prNumber: pullRequest && pullRequest.number != null ? Number(pullRequest.number) : undefined,
+    prTitle: pullRequest ? String(pullRequest.title ?? "") || undefined : undefined,
     traceId: detail.run_id,
   };
 }

@@ -118,6 +118,10 @@ export interface MockRun {
   revealed: number;
   lineStartedAt: number;
   prBranch?: string;
+  prBase?: string;
+  prUrl?: string;
+  prNumber?: number;
+  prTitle?: string;
   traceId: string;
 }
 
