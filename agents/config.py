@@ -180,8 +180,8 @@ PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
     {
         **dict.fromkeys(AgentId, "1.1.0"),
         AgentId.CHANGE_INTELLIGENCE: "1.4.0",
-        AgentId.PATCH: "1.5.0",
-        AgentId.VERIFICATION: "1.3.0",
+        AgentId.PATCH: "1.6.0",
+        AgentId.VERIFICATION: "1.4.0",
     }
 )
 

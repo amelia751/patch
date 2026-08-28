@@ -91,6 +91,30 @@ def test_tool_policy_is_stated_in_the_instruction_not_in_provider_data(fleet):
         assert "record_human_required" in agent.instruction
 
 
+def test_no_prompt_names_a_provider_secret(fleet):
+    """Roadmap §12.2: which env var a migration needs is skill knowledge.
+
+    Naming them here means onboarding Stripe edits an agent instead of adding a
+    skill, and it lets a prompt disagree with the skill about what proof needs.
+    """
+    for agent_id, agent in fleet.items():
+        for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"):
+            assert name not in agent.instruction, f"{agent_id} hardcodes {name}"
+
+
+def test_the_patch_prompt_ends_on_its_constraints(fleet):
+    """Gemini 3 drops negative constraints that appear too early in a long prompt.
+
+    Google's prompting guidance for this generation is to end-load them, so the
+    honesty rules live after the steps rather than inside step 3 where the last
+    run's skipped live check went unreported.
+    """
+    instruction = fleet[AgentId.PATCH].instruction
+    assert instruction.index("## Constraints") > instruction.index("## Steps")
+    tail = instruction[instruction.index("## Constraints") :]
+    assert "Never report a check you did not run" in tail
+
+
 def test_the_prompt_version_is_visible_on_the_agent(fleet):
     for agent_id, agent in fleet.items():
         assert f"prompt v{prompt_version(agent_id)}" in agent.description
