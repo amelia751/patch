@@ -8,6 +8,7 @@ from packages.state import run_dispatch
 from packages.state.run_dispatch import (
     CloudRunRemediationDispatcher,
     LocalProcessDispatcher,
+    WarmPoolDispatcher,
     build_dispatcher,
     provisioning_note,
 )
@@ -47,6 +48,39 @@ def test_an_explicit_local_request_outranks_a_configured_job() -> None:
 def test_local_process_when_asked_and_no_job() -> None:
     built = build_dispatcher({"PATCHAPI_REMEDIATION_LOCAL": "1"})
     assert isinstance(built, LocalProcessDispatcher)
+
+
+def test_a_warm_pool_outranks_the_job_it_replaces() -> None:
+    """The job stays deployed for replaying a run by hand, and must not be preferred.
+
+    Measured, a job execution waits ~136s for capacity and pays it again when an
+    operator hold ends the execution. Choosing the job here would hand that back,
+    and would leave two remediators eligible for one row.
+    """
+    built = build_dispatcher(
+        {
+            "PATCHAPI_REMEDIATION_JOB": "patchapi-remediate",
+            "PATCHAPI_REMEDIATION_WORKER_POOL": "patchapi-remediate-worker",
+            "GCP_PROJECT": "patch-505223",
+        }
+    )
+    assert isinstance(built, WarmPoolDispatcher)
+    assert built.transport == "cloud-run-worker-pool:patchapi-remediate-worker"
+
+
+def test_an_explicit_local_request_outranks_a_warm_pool() -> None:
+    built = build_dispatcher(
+        {
+            "PATCHAPI_REMEDIATION_WORKER_POOL": "patchapi-remediate-worker",
+            "PATCHAPI_REMEDIATION_LOCAL": "1",
+        }
+    )
+    assert isinstance(built, LocalProcessDispatcher)
+
+
+async def test_dispatching_to_a_warm_pool_starts_nothing() -> None:
+    """The run row is the request. There is no execution to create."""
+    assert await WarmPoolDispatcher(pool="p").dispatch("11111111-1111-1111-1111-111111111111") == ""
 
 
 def test_the_local_command_names_the_workspace_member(monkeypatch) -> None:
@@ -90,10 +124,26 @@ def test_provisioning_note_stays_quiet_until_the_job_is_late() -> None:
     )
     assert note is not None
     assert "20s" in note
-    # Claims only what a run row can support. Attributing the whole wait to
-    # scheduling was wrong: measured, that is 5-15s of a 90s cold start.
+    # Claims only what a run row can support, and attributes the wait where the
+    # Cloud Run task API puts it: 136s waiting for capacity, 5.6s of container.
     assert "No agent has run yet" in note
     assert "ADK" not in note
+
+
+def test_a_silent_warm_pool_is_not_described_as_a_starting_container() -> None:
+    """Same silence, different cause. A pool has already found its capacity."""
+    started = datetime(2026, 8, 27, 22, 45, tzinfo=UTC)
+    note = provisioning_note(
+        state="RECEIVED",
+        traces=[{"body": "Dispatched to cloud-run-worker-pool:patchapi-remediate-worker"}],
+        started_at=started,
+        transport="cloud-run-worker-pool:patchapi-remediate-worker",
+        now=started + timedelta(seconds=20),
+    )
+    assert note is not None
+    assert "worker pool has a running instance" in note
+    assert "waiting for Cloud Run to give" not in note
+    assert "No agent has run yet" in note
 
 
 def test_provisioning_note_does_not_repeat_itself_on_every_poll() -> None:

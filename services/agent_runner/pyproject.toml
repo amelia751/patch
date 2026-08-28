@@ -28,7 +28,12 @@ dependencies = [
 patchapi-agent-runner-serve = "patchapi_agent_runner.serve:main"
 # The Cloud Run job. Same image and same fleet as the service above; a
 # remediation simply cannot be served on a request, so it gets its own command.
+# Kept for replaying one run by hand, and as the local dispatcher's command.
 patchapi-remediate = "patchapi_agent_runner.remediation.entrypoint:main"
+# The Cloud Run worker pool. Performs the same runs from a warm instance, which
+# is what removes the 136s a job execution waits for capacity — twice, because an
+# operator hold ends one execution and Continue starts another.
+patchapi-remediation-worker = "patchapi_agent_runner.remediation.worker:main"
 
 [tool.uv.sources]
 patchapi-events = { workspace = true }

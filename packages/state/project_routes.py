@@ -1050,10 +1050,15 @@ async def read_project_run(request: Request, project_id: UUID, run_id: str) -> J
                 connection, project_id=project_id, run_id=identifier, since=since
             )
             if detail is not None:
+                # Which lane is configured decides what a silence after dispatch
+                # means, so the note is told. Building the dispatcher reads the
+                # environment and opens nothing.
+                runner = build_remediation_dispatcher()
                 note = provisioning_note(
                     state=str(detail.get("state") or ""),
                     traces=list(detail.get("trace") or []),
                     started_at=detail.get("started_at"),
+                    transport=runner.transport if runner else "",
                 )
                 if note:
                     await append_trace(
