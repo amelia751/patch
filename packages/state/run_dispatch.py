@@ -109,6 +109,17 @@ class WarmPoolDispatcher:
             return "local-worker"
         return f"cloud-run-worker-pool:{self.pool}"
 
+    @property
+    def lane(self) -> str:
+        """Which workers may claim this run.
+
+        Written onto the run row, and matched against the polling worker's own
+        pool name. One database serves the deployment and every laptop with the
+        proxy open, so without this a hosted run is performed by whoever polled
+        first.
+        """
+        return self.pool
+
     async def dispatch(self, run_id: str) -> str:
         log.info("run %s left for the %s worker to claim", run_id, self.pool)
         return ""
@@ -133,6 +144,16 @@ class RemediationDispatcher(Protocol):
     @property
     def transport(self) -> str: ...
 
+    @property
+    def lane(self) -> str:
+        """Which polling workers may claim this run, empty for none.
+
+        Empty is the honest answer for a push lane: a Cloud Run job execution and
+        a local subprocess are both told which run to perform, so no worker
+        should find their rows by polling.
+        """
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class CloudRunRemediationDispatcher:
@@ -153,6 +174,10 @@ class CloudRunRemediationDispatcher:
     @property
     def transport(self) -> str:
         return f"cloud-run-job:{self.job}"
+
+    @property
+    def lane(self) -> str:
+        return ""  # this execution is given the run id; nothing polls for it
 
     @property
     def resource(self) -> str:
@@ -206,6 +231,10 @@ class LocalProcessDispatcher:
     @property
     def transport(self) -> str:
         return "local-process"
+
+    @property
+    def lane(self) -> str:
+        return ""  # this child is given the run id; nothing polls for it
 
     async def dispatch(self, run_id: str) -> str:
         command = _local_command()

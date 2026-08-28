@@ -35,6 +35,12 @@ if ! lsof -nP -iTCP:5433 -sTCP:LISTEN >/dev/null 2>&1; then
   done
 fi
 
+# Which runs this worker may claim. `local` matches what serve_control_api.sh
+# writes onto a row it dispatches, so this worker takes runs started on this
+# machine and leaves the deployment's alone — the Cloud SQL instance is shared,
+# so without this a hosted run gets performed here.
+export PATCHAPI_REMEDIATION_WORKER_POOL="${PATCHAPI_REMEDIATION_WORKER_POOL:-local}"
+
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-$ROOT/.secrets/gcp-service-account.json}"
 export GCP_PROJECT="${GCP_PROJECT:-patch-505223}"
 export GCP_REGION="${GCP_REGION:-us-central1}"

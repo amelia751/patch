@@ -52,7 +52,7 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> Any:
     calls: list[tuple[str, str]] = []
     pending: list[str | None] = []
 
-    async def claim(connection: object, name: str, **kwargs: object) -> str | None:
+    async def claim(connection: object, name: str, *, lane: str, **kwargs: object) -> str | None:
         run_id = pending.pop(0) if pending else None
         calls.append(("claim", run_id or ""))
         return run_id
@@ -142,7 +142,9 @@ async def test_one_bad_run_does_not_end_the_instance(
             await asyncio.sleep(0.01)
         stopping.set()
 
-    await asyncio.gather(worker.serve(_Pool(), "worker-a", stopping), stop_once_idle())
+    await asyncio.gather(
+        worker.serve(_Pool(), "worker-a", stopping, in_lane="test"), stop_once_idle()
+    )
 
     assert performed == ["run-bad", "run-good"]
 
@@ -155,7 +157,7 @@ async def test_an_unreachable_queue_backs_off_instead_of_spinning(
 
     attempts: list[int] = []
 
-    async def refuse(connection: object, name: str, **kwargs: object) -> str | None:
+    async def refuse(connection: object, name: str, *, lane: str, **kwargs: object) -> str | None:
         attempts.append(1)
         raise ConnectionError("postgres is gone")
 
@@ -168,7 +170,7 @@ async def test_an_unreachable_queue_backs_off_instead_of_spinning(
         await asyncio.sleep(0.12)
         stopping.set()
 
-    await asyncio.gather(worker.serve(_Pool(), "worker-a", stopping), stop_soon())
+    await asyncio.gather(worker.serve(_Pool(), "worker-a", stopping, in_lane="test"), stop_soon())
 
     # Backing off, not spinning: without the wait this would be thousands.
     assert 1 <= len(attempts) <= 6
@@ -177,6 +179,18 @@ async def test_an_unreachable_queue_backs_off_instead_of_spinning(
 def test_each_instance_leases_under_its_own_name() -> None:
     """Two instances sharing a lease name would each think it holds the other's run."""
     assert worker.worker_id() != worker.worker_id()
+
+
+def test_a_worker_without_a_lane_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One Cloud SQL instance serves the deployment and every laptop.
+
+    A worker that polled every lane would perform the hosted console's runs on
+    somebody's machine, so not knowing which lane it serves is fatal rather than
+    defaulted.
+    """
+    monkeypatch.delenv(worker.LANE_ENV_VAR, raising=False)
+    assert worker.lane() == ""
+    assert worker.main([]) == worker.EXIT_MISCONFIGURED
 
 
 def test_the_poll_interval_falls_back_when_the_environment_is_nonsense(

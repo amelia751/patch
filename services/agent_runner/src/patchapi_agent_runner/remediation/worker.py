@@ -62,6 +62,26 @@ POLL_SECONDS: Final[float] = 1.0
 ERROR_BACKOFF_SECONDS: Final[float] = 5.0
 
 POLL_ENV_VAR: Final[str] = "PATCHAPI_WORKER_POLL_SECONDS"
+# Deliberately the same variable the control plane reads to decide it has a warm
+# pool. Two names for one lane is how the API writes runs into a lane nothing
+# polls, and the console then shows a run that never starts.
+LANE_ENV_VAR: Final[str] = "PATCHAPI_REMEDIATION_WORKER_POOL"
+
+
+def lane() -> str:
+    """Which runs this worker is allowed to claim.
+
+    The same value the control plane has in `PATCHAPI_REMEDIATION_WORKER_POOL`,
+    which is what it writes onto a run row when it dispatches. One Cloud SQL
+    instance serves the deployment and every laptop with the proxy open, so a
+    worker without a lane claims other environments' runs — a hosted run gets
+    performed on somebody's machine, against a sandbox and a console nobody is
+    watching, and the operator sees a run that stopped for no reason.
+
+    No default. Guessing `local` here would make a misconfigured Cloud Run pool
+    silently start serving developers' runs, which is the failure this prevents.
+    """
+    return os.environ.get(LANE_ENV_VAR, "").strip()
 
 
 def worker_id() -> str:
@@ -108,8 +128,8 @@ async def perform(pool: asyncpg.Pool, run_id: str, worker: str) -> None:
             await run_queue.release(connection, run_id, worker)
 
 
-async def serve(pool: asyncpg.Pool, worker: str, stopping: asyncio.Event) -> None:
-    """Claim and perform runs until asked to stop.
+async def serve(pool: asyncpg.Pool, worker: str, stopping: asyncio.Event, *, in_lane: str) -> None:
+    """Claim and perform runs in one lane until asked to stop.
 
     The stop is checked between runs and never inside one. A remediation
     interrupted halfway leaves a sandbox allocated and a half-written worklog, and
@@ -122,7 +142,7 @@ async def serve(pool: asyncpg.Pool, worker: str, stopping: asyncio.Event) -> Non
     while not stopping.is_set():
         try:
             async with pool.acquire() as connection:
-                run_id = await run_queue.claim(connection, worker)
+                run_id = await run_queue.claim(connection, worker, lane=in_lane)
         except Exception as exc:
             log.warning("worker %s could not reach the run queue: %s", worker, exc)
             await _wait(stopping, ERROR_BACKOFF_SECONDS)
@@ -158,6 +178,13 @@ async def _main() -> int:
     from packages.state.config import database_url
     from packages.state.pool import create_pool
 
+    in_lane = lane()
+    if not in_lane:
+        # Refusing to start is the point. A worker that polled every lane would
+        # perform runs belonging to the deployment, or to another developer.
+        log.error("%s is unset; a worker must know which lane it serves", LANE_ENV_VAR)
+        return EXIT_MISCONFIGURED
+
     worker = worker_id()
     stopping = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -166,9 +193,9 @@ async def _main() -> int:
             loop.add_signal_handler(sig, stopping.set)
 
     pool = await create_pool(database_url())
-    log.info("worker %s ready; polling every %.1fs", worker, poll_seconds())
+    log.info("worker %s ready in lane %s; polling every %.1fs", worker, in_lane, poll_seconds())
     try:
-        await serve(pool, worker, stopping)
+        await serve(pool, worker, stopping, in_lane=in_lane)
         return EXIT_OK
     finally:
         await pool.close()

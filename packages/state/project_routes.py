@@ -917,6 +917,10 @@ async def start_remediation(request: Request, project_id: UUID, external_id: str
                     },
                     status_code=409,
                 )
+            # Built before the row exists, because the row is claimable the
+            # instant it is RECEIVED and the lane on it is what keeps a worker in
+            # another environment from taking the run.
+            dispatcher = build_remediation_dispatcher()
             handle = await open_run(
                 connection,
                 change_event_id=change_event_id,
@@ -924,6 +928,7 @@ async def start_remediation(request: Request, project_id: UUID, external_id: str
                 repository=resolved_repo,
                 base_sha=base_sha,
                 trace_id=f"run-{external_id}",
+                lane=dispatcher.lane if dispatcher else "",
             )
     except StateUnavailableError as exc:
         return JSONResponse(
@@ -944,7 +949,6 @@ async def start_remediation(request: Request, project_id: UUID, external_id: str
         # being told nothing happened.
         return JSONResponse(payload, status_code=200)
 
-    dispatcher = build_remediation_dispatcher()
     if dispatcher is None:
         async with _pool(request).acquire() as connection:
             await advance(

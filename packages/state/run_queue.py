@@ -37,6 +37,7 @@ WHERE id = (
     SELECT id
     FROM remediation_runs
     WHERE state = 'RECEIVED'
+      AND lane = $3
       AND (leased_by = '' OR leased_at IS NULL OR leased_at < now() - $2::interval)
     ORDER BY started_at
     FOR UPDATE SKIP LOCKED
@@ -56,15 +57,24 @@ async def claim(
     connection: asyncpg.Connection,
     worker: str,
     *,
+    lane: str,
     lease_seconds: float = LEASE_SECONDS,
 ) -> str | None:
-    """Take one run for this worker, or return None if there is nothing to do.
+    """Take one run in this lane for this worker, or None if there is nothing to do.
+
+    `lane` is not optional and has no default. One database serves the deployment
+    and every laptop with the Cloud SQL proxy open, so a claim without a lane is
+    a claim on other people's work: a hosted run performed on a laptop, against a
+    sandbox and a console nobody is watching. It also swept up rows no worker
+    should ever touch, including test fixtures for repositories that do not exist.
 
     The returned run is this worker's until it releases it. A caller that gets a
     run and then dies leaves the row at `RECEIVED` under a stale lease, which the
-    next poll of any instance reclaims.
+    next poll of a worker in the same lane reclaims.
     """
-    row = await connection.fetchrow(_CLAIM_SQL, worker, timedelta(seconds=lease_seconds))
+    if not lane:
+        raise ValueError("a claim needs a lane; an empty lane matches runs meant for nobody")
+    row = await connection.fetchrow(_CLAIM_SQL, worker, timedelta(seconds=lease_seconds), lane)
     return None if row is None else str(row["id"])
 
 

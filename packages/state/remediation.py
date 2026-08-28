@@ -63,8 +63,8 @@ class RunHandle:
 
 
 _OPEN_SQL: Final[str] = """
-INSERT INTO remediation_runs (change_event_id, project_id, repository, base_sha, trace_id)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO remediation_runs (change_event_id, project_id, repository, base_sha, trace_id, lane)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (change_event_id, project_id, repository) DO NOTHING
 RETURNING id, state::text AS state, repository, base_sha
 """
@@ -87,6 +87,7 @@ UPDATE remediation_runs
 SET state = 'RECEIVED', failure_reason = '', ended_at = NULL, attempts_used = 0,
     base_sha = CASE WHEN $2 <> '' THEN $2 ELSE base_sha END,
     trace_id = CASE WHEN $3 <> '' THEN $3 ELSE trace_id END,
+    lane = $4,
     updated_at = now()
 WHERE id = $1
 RETURNING id, state::text AS state, repository, base_sha
@@ -260,6 +261,7 @@ async def open_run(
     repository: str,
     base_sha: str = "",
     trace_id: str = "",
+    lane: str = "",
 ) -> RunHandle:
     """Return the run for this change and repository, creating or restarting it.
 
@@ -267,12 +269,19 @@ async def open_run(
     with `dispatch` false so the caller starts no second execution; a run that
     ended, or that is paused waiting on the operator, is begun again on the same
     row, keeping one stable id per card in the console and one history to read.
+
+    `lane` is which warm worker may claim the row, and it is written here rather
+    than after dispatching because the row is `RECEIVED` — and therefore
+    claimable — the moment this returns. Writing it a moment later leaves a
+    window in which any worker on the database takes the run, which on a shared
+    Cloud SQL instance means a hosted run performed on somebody's laptop. Empty
+    means no worker polls for it, which is correct for the push lanes.
     """
     change_uuid = _uuid(change_event_id)
     project_uuid = _uuid(project_id)
 
     row = await connection.fetchrow(
-        _OPEN_SQL, change_uuid, project_uuid, repository, base_sha, trace_id
+        _OPEN_SQL, change_uuid, project_uuid, repository, base_sha, trace_id, lane
     )
     if row is not None:
         await _transition(
@@ -291,7 +300,7 @@ async def open_run(
     if not is_terminal(state) and not is_resumable(state):
         return _handle(existing, dispatch=False)
 
-    restarted = await connection.fetchrow(_RESTART_SQL, existing["id"], base_sha, trace_id)
+    restarted = await connection.fetchrow(_RESTART_SQL, existing["id"], base_sha, trace_id, lane)
     # A failed run begins again from an empty worklog. An operator hold does
     # not: the traces and the diff are the work already done, and wiping them
     # is how Continue looks like a second remediation.

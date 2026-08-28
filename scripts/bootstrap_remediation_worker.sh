@@ -82,6 +82,11 @@ if [[ -n "$GITHUB_TOOLS_URL" ]]; then
 fi
 
 ENV_VARS="GCP_PROJECT=${PROJECT_ID}"
+# Which runs this pool may claim, and the same value the control plane writes
+# onto a row it dispatches. The Cloud SQL instance is shared with every laptop
+# running the proxy, so a worker without a lane performs developers' runs and
+# their workers perform the deployment's.
+ENV_VARS="${ENV_VARS},PATCHAPI_REMEDIATION_WORKER_POOL=${POOL}"
 ENV_VARS="${ENV_VARS},GOOGLE_CLOUD_PROJECT=${PROJECT_ID}"
 ENV_VARS="${ENV_VARS},GCP_VERTEX_LOCATION=global"
 ENV_VARS="${ENV_VARS},PATCHAPI_ENV=cloud"
