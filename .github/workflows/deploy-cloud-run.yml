@@ -259,7 +259,13 @@ jobs:
           workload_identity_provider: projects/913371146929/locations/global/workloadIdentityPools/github-actions/providers/github
           service_account: patchapi-github-deploy@patch-505223.iam.gserviceaccount.com
 
+      # `run worker-pools` is only on the beta track, and an uninstalled
+      # component makes `gcloud beta` prompt rather than fail — which, behind the
+      # `>/dev/null 2>&1` guard below, reported the pool as not existing and left
+      # the remediator on a stale image while the deploy went green.
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: beta
 
       - name: Skip until DATABASE_URL is a real DSN
         id: db
@@ -356,16 +362,22 @@ jobs:
       - name: Repoint the remediation worker pool
         if: steps.db.outputs.ready == 'true'
         run: |
-          if gcloud beta run worker-pools describe "${REMEDIATION_WORKER_POOL}" \
-               --project="${PROJECT_ID}" --region="${REGION}" >/dev/null 2>&1; then
+          # Any failure other than "no such pool" fails the deploy. Treating them
+          # all as absence is how a green deploy left the remediator running an
+          # image from before the change it was deploying.
+          if reason="$(gcloud beta run worker-pools describe "${REMEDIATION_WORKER_POOL}" \
+               --project="${PROJECT_ID}" --region="${REGION}" --format='value(name)' 2>&1)"; then
             gcloud beta run worker-pools update "${REMEDIATION_WORKER_POOL}" \
               --project="${PROJECT_ID}" \
               --region="${REGION}" \
               --image="${IMAGE}" \
               --quiet
-          else
+          elif printf '%s' "${reason}" | grep -qiE 'NOT_FOUND|could not be found|does not exist'; then
             echo "worker pool ${REMEDIATION_WORKER_POOL} does not exist yet;" \
                  "run scripts/bootstrap_remediation_worker.sh once"
+          else
+            echo "cannot read worker pool ${REMEDIATION_WORKER_POOL}: ${reason}" >&2
+            exit 1
           fi
 
   github-tools:
