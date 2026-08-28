@@ -1,14 +1,22 @@
-"""`patchapi-remediate --run-id <uuid>` — the Cloud Run job's command.
+"""`patchapi-remediate --run-id <uuid>` — one named run, in its own container.
 
-A job rather than a request handler, because a remediation takes minutes and
-neither of the alternatives survives that. A Pub/Sub push subscription stops
-waiting after ten minutes and redelivers, turning one slow migration into two
-racing to open the same pull request; a background task on a web instance dies
-whenever Cloud Run reclaims it.
+No longer the lane the console uses. `worker.py` performs runs on a warm Cloud
+Run worker pool, because this one waited 136s for Cloud Run to find capacity —
+measured on the task API, against 5.6s of container — and paid it again when an
+operator hold ended the execution and Continue started a second one.
 
-The run id is an argument rather than an environment variable so one deployed
-job serves every run, and so a failed execution can be replayed by hand with the
-same command the console issued.
+What survives is the reason a remediation is not served on a request, and it is
+still right: a Pub/Sub push subscription stops waiting after ten minutes and
+redelivers, turning one slow migration into two racing to open the same pull
+request, and a background task on a web instance dies whenever Cloud Run
+reclaims it. A warm pool is neither of those — it pulls, and its instances are
+not reclaimed between runs.
+
+So this stays deployed for the one thing a pool is worse at: performing exactly
+the run you name, now, in an isolated container whose logs belong to it alone.
+That is what an operator wants when asking why a particular run stopped. The run
+id is an argument rather than an environment variable so one deployed job serves
+every run, and so a failed run can be replayed with the same command.
 """
 
 from __future__ import annotations
