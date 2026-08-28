@@ -185,6 +185,17 @@ cp "${SCRATCH_DIR}/sandbox-template.rendered.yaml" "${EVIDENCE_DIR}/sandbox-temp
 kubectl apply -f "${SCRATCH_DIR}/sandbox-template.rendered.yaml" \
   2>&1 | tee "${EVIDENCE_DIR}/apply-template.txt"
 
+# Without the pool a claim schedules a pod from scratch, which measured 12s of a
+# run that a warm claim serves in under a second. The pool is applied before the
+# claim below so this script exercises the path a remediation actually takes.
+log "applying SandboxWarmPool"
+kubectl apply -f "${GKE_DIR}/warm-pool.yaml" \
+  2>&1 | tee "${EVIDENCE_DIR}/apply-warm-pool.txt"
+kubectl wait --for=jsonpath='{.status.replicas}'=1 \
+  sandboxwarmpool/patchapi-node22-warm -n "${PATCHAPI_SANDBOX_NAMESPACE}" \
+  --timeout=180s 2>&1 | tee "${EVIDENCE_DIR}/warm-pool-ready.txt" \
+  || fail "SandboxWarmPool did not reach one ready replica"
+
 log "claiming one sandbox: ${CLAIM_NAME}"
 sed "s|PATCHAPI_SANDBOX_CLAIM|${CLAIM_NAME}|" "${GKE_DIR}/sandbox-claim.yaml" \
   >"${SCRATCH_DIR}/sandbox-claim.rendered.yaml"

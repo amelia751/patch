@@ -260,12 +260,13 @@ def provisioning_note(
 ) -> str | None:
     """A worklog line for the wait before the remediator writes anything.
 
-    The gap after dispatch is a minute and a half on a cold image, and it used
-    to be described as job scheduling. Measured, scheduling is 5-15s of it: the
-    rest is the container running — starting Python, importing the agent
-    framework, connecting to Postgres and cloning the pinned tree. So the note
-    claims only what this function can know from a run row: no agent has run,
-    therefore nothing has been read or changed.
+    Measured on the Cloud Run task API rather than the execution API, which is
+    what makes this attributable: a task that only opens Postgres and reads one
+    row waited 136s for an instance and then lived 5.6s. So the wait is Cloud
+    Run finding capacity, not our image and not our imports, and the note says
+    so instead of blaming the container. The claim about what has happened is
+    the part this function can know from a run row: no agent has run, therefore
+    nothing has been read or changed.
     """
     if state != "RECEIVED":
         return None
@@ -286,9 +287,9 @@ def provisioning_note(
             if (clock - when).total_seconds() < PROVISION_EVERY_SECONDS:
                 return None
     return (
-        f"{PROVISION_PREFIX} ({int(elapsed)}s) — scheduling a container, loading "
-        "the agent image and cloning the pinned tree. No agent has run yet, so "
-        "nothing has been read or changed."
+        f"{PROVISION_PREFIX} ({int(elapsed)}s) — waiting for Cloud Run to give this "
+        "run a container. Almost all of this wait is that queue, not our image or "
+        "our code. No agent has run yet, so nothing has been read or changed."
     )
 
 
