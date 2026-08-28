@@ -77,7 +77,38 @@ def test_provisioning_note_stays_quiet_until_the_job_is_late() -> None:
     )
     assert note is not None
     assert "20s" in note
-    assert "job scheduling" in note
+    # Claims only what a run row can support. Attributing the whole wait to
+    # scheduling was wrong: measured, that is 5-15s of a 90s cold start.
+    assert "No agent has run yet" in note
+    assert "ADK" not in note
+
+
+def test_provisioning_note_does_not_repeat_itself_on_every_poll() -> None:
+    """The suppression match and the note itself have to stay one string."""
+    started = datetime(2026, 8, 27, 22, 45, tzinfo=UTC)
+    first_at = started + timedelta(seconds=20)
+    first = provisioning_note(
+        state="RECEIVED",
+        traces=[{"body": "Dispatched to cloud-run-job:patchapi-remediate"}],
+        started_at=started,
+        now=first_at,
+    )
+    assert first is not None
+    told = [
+        {"body": "Dispatched to cloud-run-job:patchapi-remediate"},
+        {"body": first, "occurred_at": first_at},
+    ]
+    assert (
+        provisioning_note(
+            state="RECEIVED", traces=told, started_at=started, now=first_at + timedelta(seconds=5)
+        )
+        is None
+    )
+    again = provisioning_note(
+        state="RECEIVED", traces=told, started_at=started, now=first_at + timedelta(seconds=30)
+    )
+    assert again is not None
+    assert "50s" in again
 
 
 def test_provisioning_note_stops_once_the_remediator_claims() -> None:

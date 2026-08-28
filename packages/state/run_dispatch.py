@@ -63,6 +63,9 @@ ENTRY_POINT_PACKAGE: Final[str] = "patchapi-agent-runner"
 # minute, which is the complaint this exists to answer.
 PROVISION_AFTER_SECONDS: Final[float] = 8.0
 PROVISION_EVERY_SECONDS: Final[float] = 15.0
+# Written into the note and matched to suppress the next one. Two copies of this
+# wording drifted apart once, and the note repeated on every poll.
+PROVISION_PREFIX: Final[str] = "Starting the remediator"
 
 
 class RemediationUnavailableError(RuntimeError):
@@ -251,12 +254,14 @@ def provisioning_note(
     started_at: datetime | None,
     now: datetime | None = None,
 ) -> str | None:
-    """A worklog line for the Cloud Run wait, or None if one should not be written.
+    """A worklog line for the wait before the remediator writes anything.
 
-    ADK is not running during this stretch. `run_live` is bidirectional audio
-    and is the wrong surface. The gap the console sees after dispatch is job
-    scheduling (often a minute-plus on a cold image). Saying that on the poll
-    is the honest stream, not a model token.
+    The gap after dispatch is a minute and a half on a cold image, and it used
+    to be described as job scheduling. Measured, scheduling is 5-15s of it: the
+    rest is the container running — starting Python, importing the agent
+    framework, connecting to Postgres and cloning the pinned tree. So the note
+    claims only what this function can know from a run row: no agent has run,
+    therefore nothing has been read or changed.
     """
     if state != "RECEIVED":
         return None
@@ -270,15 +275,16 @@ def provisioning_note(
     if elapsed < PROVISION_AFTER_SECONDS:
         return None
     last = traces[-1] if traces else None
-    if last and "Cloud Run is still starting the remediator" in str(last.get("body") or ""):
+    if last and PROVISION_PREFIX in str(last.get("body") or ""):
         occurred = last.get("occurred_at")
         if isinstance(occurred, datetime):
             when = occurred if occurred.tzinfo else occurred.replace(tzinfo=UTC)
             if (clock - when).total_seconds() < PROVISION_EVERY_SECONDS:
                 return None
     return (
-        f"Cloud Run is still starting the remediator ({int(elapsed)}s). "
-        "The agent has not started. This wait is job scheduling, not ADK."
+        f"{PROVISION_PREFIX} ({int(elapsed)}s) — scheduling a container, loading "
+        "the agent image and cloning the pinned tree. No agent has run yet, so "
+        "nothing has been read or changed."
     )
 
 
