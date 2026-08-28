@@ -52,9 +52,13 @@ log = logging.getLogger(__name__)
 
 JOB_VAR: Final[str] = "PATCHAPI_REMEDIATION_JOB"
 LOCAL_VAR: Final[str] = "PATCHAPI_REMEDIATION_LOCAL"
-# Names the Cloud Run worker pool performing remediations. Set on the API when a
-# warm pool is deployed, which means this request must start nothing.
+# Names the warm worker performing remediations, which means this request must
+# start nothing. Set on the API wherever a worker is already running.
 POOL_VAR: Final[str] = "PATCHAPI_REMEDIATION_WORKER_POOL"
+# The value that means the worker is a process on this machine rather than a
+# Cloud Run worker pool. A laptop gets the same instant claim as the deployment,
+# which is the only way local behaviour is evidence about deployed behaviour.
+LOCAL_POOL: Final[str] = "local"
 
 ENTRY_POINT: Final[str] = "patchapi-remediate"
 # The workspace member that declares `ENTRY_POINT` as a script.
@@ -77,33 +81,47 @@ class RemediationUnavailableError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class WarmPoolDispatcher:
-    """Hands a run to instances that are already running.
+    """Hands a run to a worker that is already running.
 
-    The only dispatcher that starts nothing. A Cloud Run worker pool polls
+    The only dispatcher that starts nothing. A warm worker polls
     `remediation_runs` for `RECEIVED` rows, and `open_run` has already written
     one by the time this is called, so the work is requested — there is no
     execution to create and no handle to return.
 
-    This is the point of the pool. The job dispatcher's execution waited 136s for
-    Cloud Run to find capacity, measured on the task API, and paid it again when
-    an operator hold ended the execution. A warm instance claims the row on its
-    next poll instead.
+    This is the point of it. The job dispatcher's execution waited 136s for Cloud
+    Run to find capacity, measured on the task API, and paid it again when an
+    operator hold ended the execution. A warm worker claims the row on its next
+    poll instead.
 
     Being a dispatcher rather than a branch at the call site keeps one shape for
-    "the run has been requested" across the local, job and pool lanes, so the
-    console's dispatch line and its idempotency do not have to know which
-    deployment they are talking to.
+    "the run has been requested" across the job and warm lanes, so the console's
+    dispatch line and its idempotency do not have to know which deployment they
+    are talking to.
     """
 
     pool: str
 
     @property
     def transport(self) -> str:
+        # A laptop and a Cloud Run pool behave the same and are still not the
+        # same thing. An operator reading the worklog is owed which one this was.
+        if self.pool == LOCAL_POOL:
+            return "local-worker"
         return f"cloud-run-worker-pool:{self.pool}"
 
     async def dispatch(self, run_id: str) -> str:
-        log.info("run %s left for the %s worker pool to claim", run_id, self.pool)
+        log.info("run %s left for the %s worker to claim", run_id, self.pool)
         return ""
+
+
+def warm_transport(transport: str) -> bool:
+    """Whether this transport means a worker was already running when we asked.
+
+    Read by the provisioning note, which has to describe two different silences:
+    a job that has not been given capacity yet, and a warm worker that should
+    have answered a second ago and did not.
+    """
+    return transport == "local-worker" or transport.startswith("cloud-run-worker-pool")
 
 
 @runtime_checkable
@@ -333,12 +351,12 @@ def provisioning_note(
             when = occurred if occurred.tzinfo else occurred.replace(tzinfo=UTC)
             if (clock - when).total_seconds() < PROVISION_EVERY_SECONDS:
                 return None
-    if transport.startswith("cloud-run-worker-pool"):
+    if warm_transport(transport):
         return (
             f"{PROVISION_PREFIX} ({int(elapsed)}s) — a warm remediator should have "
-            "claimed this within a second or two. Check that the worker pool has a "
-            "running instance. No agent has run yet, so nothing has been read or "
-            "changed."
+            "claimed this within a second or two. Check that a remediation worker is "
+            "running and can reach Postgres. No agent has run yet, so nothing has "
+            "been read or changed."
         )
     return (
         f"{PROVISION_PREFIX} ({int(elapsed)}s) — waiting for Cloud Run to give this "
@@ -359,4 +377,5 @@ __all__ = [
     "WarmPoolDispatcher",
     "build_dispatcher",
     "provisioning_note",
+    "warm_transport",
 ]

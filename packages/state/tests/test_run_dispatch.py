@@ -83,6 +83,20 @@ async def test_dispatching_to_a_warm_pool_starts_nothing() -> None:
     assert await WarmPoolDispatcher(pool="p").dispatch("11111111-1111-1111-1111-111111111111") == ""
 
 
+def test_a_local_worker_is_named_as_one() -> None:
+    """Same behaviour as the pool, and the worklog should not call a laptop Cloud Run."""
+    built = build_dispatcher({"PATCHAPI_REMEDIATION_WORKER_POOL": "local"})
+    assert isinstance(built, WarmPoolDispatcher)
+    assert built.transport == "local-worker"
+
+
+def test_both_warm_lanes_are_recognised_as_warm() -> None:
+    assert run_dispatch.warm_transport("local-worker") is True
+    assert run_dispatch.warm_transport("cloud-run-worker-pool:patchapi-remediate-worker") is True
+    assert run_dispatch.warm_transport("cloud-run-job:patchapi-remediate") is False
+    assert run_dispatch.warm_transport("local-process") is False
+
+
 def test_the_local_command_names_the_workspace_member(monkeypatch) -> None:
     """`uv run patchapi-remediate` resolves against the workspace root.
 
@@ -141,7 +155,7 @@ def test_a_silent_warm_pool_is_not_described_as_a_starting_container() -> None:
         now=started + timedelta(seconds=20),
     )
     assert note is not None
-    assert "worker pool has a running instance" in note
+    assert "a remediation worker is running" in note
     assert "waiting for Cloud Run to give" not in note
     assert "No agent has run yet" in note
 

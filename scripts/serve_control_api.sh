@@ -25,15 +25,30 @@ fi
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-$ROOT/.secrets/gcp-service-account.json}"
 export GCP_PROJECT="${GCP_PROJECT:-patch-505223}"
 export GCP_REGION="${GCP_REGION:-us-central1}"
-# Same job Cloud Run starts. Without this the console writes a FAILED row the
-# moment Start remediation is pressed, because nothing is configured to run it.
-export PATCHAPI_REMEDIATION_JOB="${PATCHAPI_REMEDIATION_JOB:-patchapi-remediate}"
 export DATABASE_URL
 DATABASE_URL="$(tr -d '\n' <"$DSN_FILE")"
-# A locally dispatched remediation is a child of this process and inherits its
-# environment, so anything the Cloud Run job is given has to be given here too.
-# Assembling it from whichever shell happened to start the server is how a run
-# reached the last step and died on a missing key.
+
+# A warm worker on this machine, matching the deployed worker pool. Started here
+# so one command still brings up a stack that can perform a run, and so pressing
+# Start remediation locally costs a poll interval rather than the 136s a Cloud
+# Run job execution waits for capacity.
+#
+# `PATCHAPI_REMEDIATION_LOCAL=1` still forces a subprocess per run, and
+# `PATCHAPI_REMEDIATION_JOB` still names the deployed job; either overrides this
+# by being set before this script runs.
+if [[ -z "${PATCHAPI_REMEDIATION_LOCAL:-}" && -z "${PATCHAPI_REMEDIATION_JOB:-}" ]]; then
+  export PATCHAPI_REMEDIATION_WORKER_POOL="${PATCHAPI_REMEDIATION_WORKER_POOL:-local}"
+  if [[ "$PATCHAPI_REMEDIATION_WORKER_POOL" == "local" ]] \
+     && ! pgrep -f 'patchapi-remediation-worker' >/dev/null 2>&1; then
+    printf 'starting the local remediation worker (log: /tmp/patchapi-worker.log)\n'
+    "$ROOT/scripts/serve_remediation_worker.sh" >/tmp/patchapi-worker.log 2>&1 &
+  fi
+fi
+
+# The worker is a child of this process and inherits its environment, so anything
+# the Cloud Run worker pool is given has to be given here too. Assembling it from
+# whichever shell happened to start the server is how a run reached the last step
+# and died on a missing key.
 export GOOGLE_API_KEY="${GOOGLE_API_KEY:-$(
   gcloud secrets versions access latest --secret=patchapi-gemini-api-key \
     --project="$GCP_PROJECT" 2>/dev/null || true
