@@ -18,17 +18,35 @@ if TYPE_CHECKING:
     import asyncpg
 
 
+def github_avatar_url(*, github_id: int | None, github_username: str | None) -> str | None:
+    """The public GitHub photo for a linked account.
+
+    Google's hosted picture 403s in the console (`UserAvatar` documents the
+    Referer block). GitHub's does not. `provider_user_id = '0'` is a leftover
+    placeholder, not a real account, so a login is the fallback.
+    """
+    if github_id is not None and github_id > 0:
+        return f"https://avatars.githubusercontent.com/u/{github_id}"
+    login = (github_username or "").strip()
+    if login:
+        return f"https://github.com/{login}.png"
+    return None
+
+
 def _profile(row: Any, *, github_app_installed: bool) -> dict[str, Any]:
     settings = row["settings"] if isinstance(row["settings"], dict) else {}
     created = row["created_at"]
+    github_id = int(row["github_id"]) if row["github_id"] is not None else None
+    github_username = row["github_username"]
     return {
         "id": str(row["id"]),
         "email": row["email"],
         "display_name": row["display_name"],
-        "avatar_url": row["avatar_url"],
+        "avatar_url": github_avatar_url(github_id=github_id, github_username=github_username)
+        or row["avatar_url"],
         "email_verified": bool(row["email_verified"]),
-        "github_id": int(row["github_id"]) if row["github_id"] is not None else None,
-        "github_username": row["github_username"],
+        "github_id": github_id,
+        "github_username": github_username,
         "github_app_installed": github_app_installed,
         "type": row["type"],
         "created_at": created.isoformat() if created is not None else None,
@@ -50,7 +68,13 @@ async def upsert_google_user(pool: asyncpg.Pool, profile: GoogleProfile) -> dict
                     VALUES ($1, $2, $3, $4, 'personal', '{}'::jsonb)
                     ON CONFLICT (email) DO UPDATE
                     SET display_name = EXCLUDED.display_name,
-                        avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
+                        avatar_url = CASE
+                            WHEN EXISTS (
+                                SELECT 1 FROM user_identities i
+                                WHERE i.user_id = users.id AND i.provider = 'github'
+                            ) THEN users.avatar_url
+                            ELSE COALESCE(EXCLUDED.avatar_url, users.avatar_url)
+                        END,
                         email_verified = users.email_verified OR EXCLUDED.email_verified,
                         updated_at = now()
                     RETURNING id, email, display_name, avatar_url, email_verified,
@@ -122,7 +146,7 @@ async def upsert_github_user(
                         VALUES ($1, $2, $3, $4, 'personal', '{}'::jsonb)
                         ON CONFLICT (email) DO UPDATE
                         SET display_name = COALESCE(NULLIF(users.display_name, ''), EXCLUDED.display_name),
-                            avatar_url = COALESCE(users.avatar_url, EXCLUDED.avatar_url),
+                            avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
                             email_verified = users.email_verified OR EXCLUDED.email_verified,
                             updated_at = now()
                         RETURNING id
