@@ -32,8 +32,14 @@ env:
   # The poll behind both Cloud Scheduler and the console's "Check now" button.
   REFRESH_JOB: patchapi-refresh-releases
   # One remediation, started by the console's "Start remediation" button. A job
-  # rather than a request because it runs for minutes.
+  # rather than a request because it runs for minutes. Kept deployed for
+  # replaying a single run by hand; the console prefers the warm pool below.
   REMEDIATION_JOB: patchapi-remediate
+  # Always-on instances that claim RECEIVED runs. Created by
+  # scripts/bootstrap_remediation_worker.sh. A job execution waited 136s for
+  # Cloud Run to find capacity and paid it again on Continue; a warm instance
+  # claims the run on its next poll.
+  REMEDIATION_WORKER_POOL: patchapi-remediate-worker
   # Created by scripts/bootstrap_remediation_job.sh. Narrower than
   # roles/run.developer, which is the only predefined role carrying the
   # `runWithOverrides` permission a run id needs.
@@ -154,7 +160,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=2 \
-            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|GCP_REGION=${REGION}|PATCHAPI_REFRESH_JOB=${REFRESH_JOB}|PATCHAPI_REMEDIATION_JOB=${REMEDIATION_JOB}|PATCHAPI_SECRET_READER_ACCOUNTS=${REMEDIATION_SA}|PATCHAPI_EVIDENCE_BASE_URL=${API_URL}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_DB_POOL_MIN=1|PATCHAPI_DB_POOL_MAX=3|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=${API_URL}/api/auth/github/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action|GITHUB_APP_SLUG=patchapi|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem|PATCHAPI_GITHUB_APP=/var/github-json/app.json" \
+            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|GCP_REGION=${REGION}|PATCHAPI_REFRESH_JOB=${REFRESH_JOB}|PATCHAPI_REMEDIATION_JOB=${REMEDIATION_JOB}|PATCHAPI_REMEDIATION_WORKER_POOL=${REMEDIATION_WORKER_POOL}|PATCHAPI_SECRET_READER_ACCOUNTS=${REMEDIATION_SA}|PATCHAPI_EVIDENCE_BASE_URL=${API_URL}|PATCHAPI_PUBSUB_TOPIC_PREFIX=patchapi-dev|PATCHAPI_ENV=cloud|PATCHAPI_DB_POOL_MIN=1|PATCHAPI_DB_POOL_MAX=3|PATCHAPI_FRONTEND_ORIGIN=${WEB_URL}|PATCHAPI_CORS_ORIGINS=${WEB_URL},${WEB_URL_CLASSIC}|PATCHAPI_GOOGLE_OAUTH_REDIRECT_URI=${API_URL}/api/auth/google/callback|PATCHAPI_GITHUB_OAUTH_REDIRECT_URI=${API_URL}/api/auth/github/callback|PATCHAPI_COOKIE_SECURE=1|PATCHAPI_IDENTITY_ACTION_URL=${WEB_URL}/auth/action|GITHUB_APP_SLUG=patchapi|GITHUB_APP_PRIVATE_KEY_PATH=/var/github/app.pem|PATCHAPI_GITHUB_APP=/var/github-json/app.json" \
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
             --set-secrets="DATABASE_URL=patchapi-database-url:latest,PATCHAPI_SESSION_SECRET=patchapi-session-secret:latest,PATCHAPI_IDENTITY_API_KEY=patchapi-identity-api-key:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_ID=patchapi-google-oauth-client-id:latest,PATCHAPI_GOOGLE_OAUTH_CLIENT_SECRET=patchapi-google-oauth-client-secret:latest,PATCHAPI_GITHUB_WEBHOOK_SECRET=patchapi-github-webhook-secret:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_ID=patchapi-github-oauth-client-id:latest,PATCHAPI_GITHUB_OAUTH_CLIENT_SECRET=patchapi-github-oauth-client-secret:latest,GITHUB_APP_ID=patchapi-github-app-id:latest,/var/github/app.pem=patchapi-github-app-private-key:latest,/var/github-json/app.json=patchapi-github-app:latest"
 
@@ -342,6 +348,24 @@ jobs:
           else
             echo "job ${REMEDIATION_JOB} does not exist yet;" \
                  "run scripts/bootstrap_remediation_job.sh once"
+          fi
+
+      # The lane that actually performs runs. Repointed for the same reason as
+      # the job, and more urgently: an instance here is long-lived, so without
+      # this it would keep serving the old image until something restarted it.
+      - name: Repoint the remediation worker pool
+        if: steps.db.outputs.ready == 'true'
+        run: |
+          if gcloud beta run worker-pools describe "${REMEDIATION_WORKER_POOL}" \
+               --project="${PROJECT_ID}" --region="${REGION}" >/dev/null 2>&1; then
+            gcloud beta run worker-pools update "${REMEDIATION_WORKER_POOL}" \
+              --project="${PROJECT_ID}" \
+              --region="${REGION}" \
+              --image="${IMAGE}" \
+              --quiet
+          else
+            echo "worker pool ${REMEDIATION_WORKER_POOL} does not exist yet;" \
+                 "run scripts/bootstrap_remediation_worker.sh once"
           fi
 
   github-tools:
