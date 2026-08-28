@@ -22,7 +22,7 @@ import signal
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Protocol, runtime_checkable
@@ -80,6 +80,15 @@ class SandboxSession(Protocol):
 
     def write_file(self, relpath: str, content: str) -> None:
         """Write a workspace-relative text file, creating parents."""
+
+    def write_tree(self, tree: Path, relpaths: Sequence[str]) -> None:
+        """Put many files from a local tree into the workspace at once.
+
+        Separate from `write_file` because a remote session pays a round-trip per
+        call, and staging a checkout is the one place that count is the whole
+        cost: 20 small files were 9s of `kubectl exec` before the agent's first
+        action. Implementations must not resolve any path outside the workspace.
+        """
 
     def apply_unified_diff(self, diff: str) -> ExecutionResult:
         """Apply a unified diff to the workspace with `git apply -p1`."""
@@ -225,6 +234,13 @@ class LocalSession:
         path = Path(resolve_within(self._workspace, relpath))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+
+    def write_tree(self, tree: Path, relpaths: Sequence[str]) -> None:
+        """Copy the named files in. No archive: there is no round-trip to save."""
+        for relpath in relpaths:
+            destination = Path(resolve_within(self._workspace, relpath))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(tree / relpath, destination)
 
     def apply_unified_diff(self, diff: str, timeout_seconds: float = 30) -> ExecutionResult:
         try:

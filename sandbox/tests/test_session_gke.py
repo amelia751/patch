@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from sandbox.gke.session import (  # noqa: E402
     GkeSession,
+    SandboxPathError,
     SandboxUnavailableError,
     load_cluster_config,
 )
@@ -178,6 +179,59 @@ def test_two_sessions_run_concurrently_and_both_are_destroyed(kube, worker_run_i
 
     remaining = kube.claim_names()
     assert not set(names) & set(remaining), remaining
+
+
+def test_a_whole_tree_arrives_in_one_exec(kube, worker_run_id, tmp_path):
+    """The staging path a run takes, against a real pod.
+
+    Worth an integration test rather than a mocked one because the two things
+    that can go wrong are both on the far side of `kubectl exec`: base64 over a
+    text stdin, and tar's `data` filter refusing a member. Both would pass a test
+    that stopped at the archive.
+    """
+    source = tmp_path / "checkout"
+    (source / "lib").mkdir(parents=True)
+    (source / "lib" / "gemini.ts").write_text('export const MODEL = "imagen-4";\n')
+    (source / "package.json").write_text('{"name":"storygen"}\n')
+    (source / "logo.png").write_bytes(bytes(range(256)))
+
+    session = GkeSession(
+        f"{worker_run_id}-tree",
+        ready_timeout_seconds=READY_TIMEOUT_SECONDS,
+        lifetime_seconds=LIFETIME_SECONDS,
+    )
+    try:
+        open_or_skip(session)
+
+        session.write_tree(source, ["lib/gemini.ts", "package.json", "logo.png"])
+
+        assert session.read_file("lib/gemini.ts") == 'export const MODEL = "imagen-4";\n'
+        assert session.read_file("package.json") == '{"name":"storygen"}\n'
+        # Binary, which the per-file text write could not carry at all.
+        listed = session.execute(
+            ["python3", "-c", "import pathlib;print(len(pathlib.Path('logo.png').read_bytes()))"],
+            timeout_seconds=60,
+        )
+        assert listed.exit_code == 0, listed.stderr
+        assert listed.stdout.strip() == "256"
+    finally:
+        session.close()
+
+
+def test_a_staged_tree_may_not_escape_the_workspace(kube, worker_run_id, tmp_path):
+    source = tmp_path / "hostile"
+    source.mkdir()
+    session = GkeSession(
+        f"{worker_run_id}-esc",
+        ready_timeout_seconds=READY_TIMEOUT_SECONDS,
+        lifetime_seconds=LIFETIME_SECONDS,
+    )
+    try:
+        open_or_skip(session)
+        with pytest.raises(SandboxPathError):
+            session.write_tree(source, ["../escape.txt"])
+    finally:
+        session.close()
 
 
 @pytest.fixture(scope="module")

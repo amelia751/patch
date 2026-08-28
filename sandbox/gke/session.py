@@ -21,13 +21,16 @@ runtime on port 8888 that the PatchAPI runner image does not serve.
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
+import tarfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -103,6 +106,35 @@ _READ_PROGRAM = "import pathlib,sys; sys.stdout.write(pathlib.Path(sys.argv[1]).
 _WRITE_PROGRAM = (
     "import pathlib,sys; p=pathlib.Path(sys.argv[1]); "
     "p.parent.mkdir(parents=True, exist_ok=True); p.write_text(sys.stdin.read())"
+)
+# Reads a base64 gzipped tar from stdin and extracts it under argv[1].
+#
+# Members are checked and written one at a time rather than handed to
+# `extractall`. `extractall(filter='data')` would say the same thing in one line,
+# and the sandbox image runs Python 3.11.2, where that keyword does not exist —
+# the alternative is `extractall` with no filter at all, which is the traversal
+# that keyword was added to stop. The orchestrator writes this archive, so the
+# check is defence in depth rather than the only guard; `write_tree` has already
+# resolved every path against the workspace before sending.
+#
+# Base64 rather than raw bytes because `kubectl exec` stdin is plumbed here as
+# text, and a binary pipe buys nothing on a tree this size.
+_EXTRACT_PROGRAM = (
+    "import base64,io,os,pathlib,sys,tarfile\n"
+    "root=pathlib.Path(sys.argv[1]).resolve()\n"
+    "root.mkdir(parents=True, exist_ok=True)\n"
+    "blob=base64.b64decode(sys.stdin.read())\n"
+    "with tarfile.open(fileobj=io.BytesIO(blob), mode='r:gz') as tar:\n"
+    "    for member in tar.getmembers():\n"
+    "        if not member.isfile():\n"
+    "            raise SystemExit('refused non-file member %s' % member.name)\n"
+    "        dest=pathlib.Path(os.path.normpath(str(root / member.name)))\n"
+    "        if root not in dest.parents:\n"
+    "            raise SystemExit('refused member outside the workspace: %s' % member.name)\n"
+    "        dest.parent.mkdir(parents=True, exist_ok=True)\n"
+    "        source=tar.extractfile(member)\n"
+    "        dest.write_bytes(b'' if source is None else source.read())\n"
+    "        os.chmod(dest, member.mode & 0o755)\n"
 )
 
 _ASSIGNMENT = re.compile(r'^([A-Z][A-Z0-9_]*)="?(.*?)"?$')
@@ -456,6 +488,52 @@ class GkeSession:
         result = self._exec_python(_WRITE_PROGRAM, str(path), stdin=content)
         if result.exit_code != 0:
             raise SandboxPathError(f"cannot write {path} in {self._claim_name}: {result.stderr}")
+
+    def write_tree(self, tree: Path, relpaths: Sequence[str]) -> None:
+        """Put many files into the workspace in one call.
+
+        A pod's only write path was `write_file`, and a checkout went in a file at
+        a time. Each one is a `kubectl exec`: a TLS handshake to the API server, a
+        SPDY upgrade, a container attach. Measured on the demo tree that is 9s of
+        API round-trips for 20 small files, which was the largest remaining wait
+        before the agent's first action once the run itself stopped waiting for a
+        container. One archive is one round-trip, so it does not grow with the
+        repository.
+
+        Paths are relative and resolved through the same guard as `write_file`, so
+        a tree cannot place a file outside the workspace; extraction re-checks
+        with tar's `data` filter, because the archive is what the pod trusts.
+
+        Binary files are included. `write_file` could not carry them and skipped
+        them, which quietly gave the sandbox a tree that was not the commit.
+        """
+        members = [(tree / relpath, relpath) for relpath in relpaths]
+        for source, relpath in members:
+            resolve_within(_POD_WORKSPACE, relpath)
+            if not source.is_file():
+                raise SandboxPathError(f"cannot stage {relpath}: not a file under {tree}")
+
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            for source, relpath in members:
+                info = tar.gettarinfo(str(source), arcname=relpath)
+                # Ownership and timestamps from the orchestrator's disk describe
+                # nothing about the commit and would differ between a laptop and
+                # Cloud Run. Mode is narrowed to the read/write bit so nothing
+                # arrives executable that was not.
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                info.mtime = 0
+                info.mode = 0o755 if info.mode & 0o100 else 0o644
+                with source.open("rb") as handle:
+                    tar.addfile(info, handle)
+
+        payload = base64.b64encode(buffer.getvalue()).decode("ascii")
+        result = self._exec_python(_EXTRACT_PROGRAM, str(_POD_WORKSPACE), stdin=payload)
+        if result.exit_code != 0:
+            raise SandboxPathError(
+                f"cannot stage {len(members)} files into {self._claim_name}: {result.stderr}"
+            )
 
     def apply_unified_diff(self, diff: str, timeout_seconds: float = 120) -> ExecutionResult:
         """Stage the diff in the pod and apply it with `git apply -p1`.

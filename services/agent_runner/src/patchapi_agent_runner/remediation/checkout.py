@@ -147,8 +147,13 @@ def stage(session: Any, checkout: Checkout) -> int:
     """Copy the tree into the sandbox workspace. Never the reverse.
 
     A local session exposes a real directory and takes a `copytree`. A pod does
-    not, and each file goes over `write_file`, which is the only write path a
-    remote sandbox offers.
+    not, and the whole tree goes over `write_tree` in one transfer.
+
+    It used to go a file at a time over `write_file`, which is one `kubectl exec`
+    each: 20 small files measured 9s, the largest wait left before the agent's
+    first action once the run stopped waiting for a container. It also could not
+    carry a binary file and skipped it, so the sandbox held a tree that was not
+    the commit.
     """
     paths = list(_stageable(checkout.tree))
     total = sum(path.stat().st_size for path in paths)
@@ -169,15 +174,10 @@ def stage(session: Any, checkout: Checkout) -> int:
         )
         return len(paths)
 
-    for path in paths:
-        relative = path.relative_to(checkout.tree).as_posix()
-        try:
-            session.write_file(relative, path.read_text(encoding="utf-8"))
-        except UnicodeDecodeError:
-            # Binary assets are not what a migration edits, and a pod's write
-            # path is text. Skipping one keeps the run going; the build will say
-            # so if it turns out to have mattered.
-            log.debug("skipped binary %s", relative)
+    session.write_tree(
+        checkout.tree,
+        [path.relative_to(checkout.tree).as_posix() for path in paths],
+    )
     return len(paths)
 
 

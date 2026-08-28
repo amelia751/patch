@@ -135,6 +135,18 @@ def test_apply_unified_diff_reports_a_patch_that_does_not_apply(session):
     assert result.stderr != ""
 
 
+def test_write_tree_puts_a_whole_checkout_in(session, tmp_path):
+    source = tmp_path / "checkout"
+    (source / "lib").mkdir(parents=True)
+    (source / "lib" / "gemini.ts").write_text("export const MODEL = 'imagen-4';\n")
+    (source / "logo.png").write_bytes(b"\x89PNG\x00\xff")
+
+    session.write_tree(source, ["lib/gemini.ts", "logo.png"])
+
+    assert session.read_file("lib/gemini.ts") == "export const MODEL = 'imagen-4';\n"
+    assert (session.working_dir / "logo.png").read_bytes() == b"\x89PNG\x00\xff"
+
+
 @pytest.mark.parametrize(
     "relpath",
     ["../escape.txt", "src/../../escape.txt", "/etc/passwd", "src/../../"],
@@ -144,6 +156,16 @@ def test_paths_may_not_escape_the_workspace(session, relpath):
         session.write_file(relpath, "nope")
     with pytest.raises(SandboxPathError):
         session.read_file(relpath)
+
+
+@pytest.mark.parametrize("relpath", ["../escape.txt", "src/../../escape.txt", "/etc/passwd"])
+def test_a_staged_tree_may_not_escape_the_workspace(session, tmp_path, relpath):
+    """A bulk write is still a write. One guard for both, or only one is guarded."""
+    source = tmp_path / "hostile"
+    source.mkdir()
+
+    with pytest.raises(SandboxPathError):
+        session.write_tree(source, [relpath])
 
 
 def test_close_destroys_the_workspace(tmp_path):
