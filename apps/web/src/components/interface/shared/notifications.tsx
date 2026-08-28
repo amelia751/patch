@@ -39,7 +39,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import {
   isMockNotificationId,
-  mockReleaseNotifications,
+  // mockReleaseNotifications,
 } from "@/components/interface/shared/mock-release-notifications";
 
 type NotificationType = "success" | "pending" | "question" | "info" | "error";
@@ -96,21 +96,26 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mockedReleases = useCallback((): Notification[] => {
-    return mockReleaseNotifications()
-      .filter((item) => !dismissedMockIds.includes(item.id))
-      .map((item) => item as Notification);
-  }, [dismissedMockIds]);
+  // Temporary: fixtures stay off the bell while the inbox is forced empty.
+  // const mockedReleases = useCallback((): Notification[] => {
+  //   return mockReleaseNotifications()
+  //     .filter((item) => !dismissedMockIds.includes(item.id))
+  //     .map((item) => item as Notification);
+  // }, [dismissedMockIds]);
 
   const applyList = useCallback(
-    (items: Notification[]) => {
-      if (isAuthenticated && !isDemoMode) {
-        setNotifications(items);
-        return;
-      }
-      setNotifications(items.length > 0 ? items : mockedReleases());
+    (_items: Notification[]) => {
+      // Temporary: keep the bell, show an empty inbox. Restore the block
+      // below to put live (and fixture) cards back in the dropdown.
+      setNotifications([]);
+      // if (isAuthenticated && !isDemoMode) {
+      //   setNotifications(_items);
+      //   return;
+      // }
+      // setNotifications(_items.length > 0 ? _items : mockedReleases());
     },
-    [isAuthenticated, isDemoMode, mockedReleases],
+    [],
+    // [isAuthenticated, isDemoMode, mockedReleases],
   );
   
   useEffect(() => {
