@@ -895,11 +895,12 @@ function SystemPageContent() {
             secretsPreviewMode={!isAuthenticated}
             onGcpConnected={() => {
               setGcpRefreshTick((tick) => tick + 1);
-              setCurrentProject((prev) =>
-                prev && prev.cloud_provider !== "aws" && prev.cloud_provider !== "gcp"
-                  ? { ...prev, cloud_provider: "gcp" }
-                  : prev,
-              );
+              // Storing a key *is* choosing a provider. Without this the
+              // Connections tab keeps offering "choose your cloud provider"
+              // to a project that just connected one.
+              if (currentProject && !currentProject.cloud_provider) {
+                setCurrentProject({ ...currentProject, cloud_provider: "gcp" });
+              }
             }}
           />
         </TabsContent>

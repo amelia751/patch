@@ -11,7 +11,7 @@ import type { SecretRepoOption, SecretWorkspaceOption } from "@/components/inter
 import { dismissProjectChange, fetchProjectChanges, reopenProjectChange } from "./api";
 import { runKey, type ProjectChange } from "./data";
 import { RunsPanel, bucketNeedsYou } from "./runs-panel";
-import { fetchRun, fetchRuns, isLive, startRemediation, toRun } from "./live-runs";
+import { fetchRun, fetchRuns, isLive, pendingRun, startRemediation, toRun } from "./live-runs";
 import { inboxProgressFor, type MockRun } from "./run-scripts";
 
 type Section = "releases" | "runs";
@@ -254,6 +254,17 @@ export function ChangesTab({
     if (!projectId) return;
     setProgress((prev) => ({ ...prev, [runKey(change)]: "running" }));
     setSection("runs");
+    // Draw the card's own inventory now. Opening the panel on a no-runs empty
+    // state while the row is being created reads as "nothing found", which is
+    // the opposite of what the join already knows.
+    const placeholder = pendingRun(change, runs.length);
+    setLoaded((prev) =>
+      prev.projectId === projectId &&
+      prev.runs.some((item) => runKey({ id: item.changeId, repo: item.repo }) === runKey(change))
+        ? prev
+        : { projectId, runs: [placeholder, ...(prev.projectId === projectId ? prev.runs : [])] },
+    );
+    setSelectedRunId((prev) => prev ?? placeholder.id);
     void startRemediation(projectId, change.id, change.repo)
       .then((started) => {
         setSelectedRunId(started.run_id);

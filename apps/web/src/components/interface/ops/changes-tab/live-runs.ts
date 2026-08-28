@@ -18,7 +18,7 @@
  */
 
 import type { ChangeActionId } from "./actions";
-import type { FileHit, ProjectChange } from "./data";
+import { runKey, type FileHit, type ProjectChange } from "./data";
 import {
   HUMAN_REQUIRED_PAUSE,
   failureCopy,
@@ -422,6 +422,20 @@ export function composeWorklog(
   const shownEdits = new Set<string>();
   const shownReads = new Set<string>();
   const pendingReads: string[] = [];
+  // A run that paused for a credential is continued by a *new* job execution:
+  // Cloud Run cannot keep a container alive across an operator hold. That
+  // execution has to re-clone the tree, re-open a sandbox and re-run the
+  // deterministic scan, so it writes the setup lines a second time. Drawing
+  // them twice is what made Continue look like a restart of the whole
+  // remediation. The worklog is one story per run, so a line already told is
+  // not told again — only what the new execution genuinely adds.
+  const told = new Set<string>();
+  const fresh = (text: string): boolean => {
+    const key = text.trim().toLowerCase();
+    if (!key || told.has(key)) return false;
+    told.add(key);
+    return true;
+  };
 
   const flushReads = () => {
     for (const path of pendingReads) {
@@ -454,14 +468,14 @@ export function composeWorklog(
     const body = row.body.trim();
 
     if (row.kind === "thought" && body) {
-      if (isToolDump(body)) continue;
+      if (isToolDump(body) || !fresh(body)) continue;
       flushReads();
       add(at, "thought", body);
       continue;
     }
 
     if (row.kind === "narration" && body) {
-      if (isNoiseNarration(body) || isToolDump(body)) continue;
+      if (isNoiseNarration(body) || isToolDump(body) || !fresh(body)) continue;
       flushReads();
       add(at, "narration", body);
       continue;
@@ -484,6 +498,7 @@ export function composeWorklog(
     }
 
     if (name === "scan_repository") {
+      if (sawImpact) continue;
       if (identifier) {
         add("IMPACT_SCANNING", "thought", `Join \`${identifier}\` against ${repo} @ ${sha}, not HEAD.`);
       }
@@ -826,6 +841,56 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
     prNumber: pullRequest && pullRequest.number != null ? Number(pullRequest.number) : undefined,
     prTitle: pullRequest ? String(pullRequest.title ?? "") || undefined : undefined,
     traceId: detail.run_id,
+  };
+}
+
+/**
+ * The run to draw between pressing Start and the first poll landing.
+ *
+ * Start switches to the Runs panel immediately, but the row does not exist
+ * until the API answers and its detail is read — a second or two in which the
+ * panel had nothing to draw and showed its no-runs empty state. That empty
+ * state is a lie: the base tree is the inventory join, which was known before
+ * the button was pressed. So this builds the run from the card, and the first
+ * real poll replaces it.
+ *
+ * Nothing here is evidence. No diff, no command, no check, and a worklog that
+ * says only that the run is waiting to be claimed.
+ */
+export function pendingRun(change: ProjectChange, index: number): MockRun {
+  return {
+    id: `pending:${runKey(change)}`,
+    code: `R-${String(index + 1).padStart(3, "0")}`,
+    changeId: change.id,
+    title: change.title,
+    repo: change.repo,
+    baseSha: change.baseSha,
+    fileHits: change.fileHits,
+    fileCount: change.fileCount,
+    identifiers: change.identifiers,
+    replacement: change.replacement,
+    files: change.files,
+    action: "start" as ChangeActionId,
+    machine: "NORMALIZED",
+    path: ["NORMALIZED"],
+    bucket: "active",
+    createdAt: Date.now(),
+    attempt: 0,
+    attemptBudget: 3,
+    commands: [],
+    diffs: [],
+    checks: [],
+    log: [
+      line(
+        "pending-1",
+        "NORMALIZED",
+        "narration",
+        "Waiting for the remediator to claim this run. Lines appear as the job writes them.",
+      ),
+    ],
+    revealed: 1,
+    lineStartedAt: Date.now(),
+    traceId: "",
   };
 }
 
