@@ -44,6 +44,13 @@ async def _main(run_id: str) -> int:
     pool = await create_pool(database_url())
     try:
         return await job.execute(pool, run_id)
+    except Exception as exc:
+        # The pool is still open here, which is the only reason this is caught
+        # inside `_main` rather than in `main`: the run has to be told it is over
+        # before the connection goes.
+        logging.getLogger(__name__).exception("remediation job crashed: %s", exc)
+        await job.abandon(pool, run_id, exc)
+        return EXIT_MISCONFIGURED
     finally:
         await pool.close()
 

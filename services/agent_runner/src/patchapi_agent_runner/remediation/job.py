@@ -152,6 +152,24 @@ async def _stop(pool: asyncpg.Pool, run_id: str, reason: str) -> int:
     return EXIT_FAILED
 
 
+async def abandon(pool: asyncpg.Pool, run_id: str, exc: BaseException) -> None:
+    """Record that the remediator died before this run reached a terminal state.
+
+    Without this the row keeps whatever state it had when the process went, and
+    a crash during setup leaves it on RECEIVED — where the console reads
+    "waiting for the remediator to claim this run" and waits for good. A run
+    nobody is performing has to say so.
+    """
+    reason = (
+        f"The remediator stopped on an unexpected {type(exc).__name__} and this run did "
+        f"not finish: {exc}"
+    )
+    try:
+        await _stop(pool, run_id, reason)
+    except Exception:  # pragma: no cover - the original error is what matters
+        log.exception("run %s could not be marked failed", run_id)
+
+
 async def execute(pool: asyncpg.Pool, run_id: str) -> int:
     """Run one remediation to a terminal state."""
     async with pool.acquire() as connection:
@@ -911,4 +929,12 @@ def _pull_request(result: Any) -> dict[str, Any]:
     return {}
 
 
-__all__ = ["ACTOR", "EXIT_FAILED", "EXIT_OK", "SANDBOX_ENV_VAR", "execute", "sandbox_kind"]
+__all__ = [
+    "ACTOR",
+    "EXIT_FAILED",
+    "EXIT_OK",
+    "SANDBOX_ENV_VAR",
+    "abandon",
+    "execute",
+    "sandbox_kind",
+]
