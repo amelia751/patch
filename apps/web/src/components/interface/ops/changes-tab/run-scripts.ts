@@ -714,29 +714,47 @@ export function inboxProgressFor(bucket: RunBucket): RunProgress {
   return "idle";
 }
 
-export function treeAvailable(machine: MachineState, tree: TreeId): boolean {
+/** States a run can only be in once it has a sandbox to work in. */
+const PAST_SANDBOX: ReadonlySet<MachineState> = new Set<MachineState>([
+  "PATCHING",
+  "BUILDING",
+  "TESTING",
+  "VERIFYING",
+  "PR_CREATED",
+]);
+
+/**
+ * Whether this run actually has the tree in question.
+ *
+ * Answered from the run's own evidence, not from its state alone. `HUMAN_REQUIRED`
+ * and `WAITING_ON_OPERATOR` can be reached before a sandbox exists or long after
+ * the patch is verified, and a whitelist of states that omitted both told the
+ * operator an allocated sandbox was "not allocated" and a passed verification was
+ * "not verified".
+ */
+export function treeAvailable(run: MockRun, tree: TreeId): boolean {
   if (tree === "base") return true;
   if (tree === "sandbox") {
-    return (
-      machine === "PATCHING" ||
-      machine === "BUILDING" ||
-      machine === "TESTING" ||
-      machine === "VERIFYING" ||
-      machine === "FAILED" ||
-      machine === "PR_CREATED"
-    );
+    return PAST_SANDBOX.has(run.machine) || run.commands.length > 0 || run.diffs.length > 0;
   }
-  return machine === "VERIFYING" || machine === "PR_CREATED" || machine === "FAILED";
+  return run.diffs.length > 0 || run.machine === "PR_CREATED";
 }
 
-export function treeForMachine(machine: MachineState): TreeId {
-  if (treeAvailable(machine, "proposed")) return "proposed";
-  if (treeAvailable(machine, "sandbox")) return "sandbox";
+/** Why there is no proposed tree to show, in the operator's terms. */
+export function proposedPending(run: MockRun): string {
+  if (run.diffs.length === 0) return run.machine === "FAILED" ? "no patch" : "not patched yet";
+  if (run.checks.length === 0) return "not verified";
+  return "no pull request";
+}
+
+export function treeForMachine(run: MockRun): TreeId {
+  if (treeAvailable(run, "proposed")) return "proposed";
+  if (treeAvailable(run, "sandbox")) return "sandbox";
   return "base";
 }
 
 export function visibleCommands(run: MockRun): SandboxCommand[] {
-  if (!treeAvailable(run.machine, "sandbox")) return [];
+  if (!treeAvailable(run, "sandbox")) return [];
   if (run.machine === "PATCHING") return run.commands.filter((item) => item.phase === "patch");
   if (run.machine === "BUILDING") {
     return run.commands.filter((item) => item.phase === "patch" || item.phase === "build");

@@ -32,6 +32,7 @@ import {
   HUMAN_REQUIRED_SECRET_NAME,
   MACHINE_LABEL,
   failureCopy,
+  proposedPending,
   treeAvailable,
   treeForMachine,
   visibleLog,
@@ -360,7 +361,7 @@ function RunDetail({
   repos: SecretRepoOption[];
   secretsPreviewMode: boolean;
 }) {
-  const current = treeForMachine(run.machine);
+  const current = treeForMachine(run);
   const [picked, setPicked] = useState<TreeId | null>(null);
   const [secretOpen, setSecretOpen] = useState(false);
   const [gcpOpen, setGcpOpen] = useState(false);
@@ -791,7 +792,7 @@ function TreeRail({
     {
       id: "sandbox",
       icon: FolderGit2,
-      chip: treeAvailable(run.machine, "sandbox")
+      chip: treeAvailable(run, "sandbox")
         ? { name: "worktree", sha: shortSha(run.baseSha) }
         : { pending: "not allocated" },
     },
@@ -799,9 +800,9 @@ function TreeRail({
       id: "proposed",
       icon: GitPullRequest,
       chip:
-        treeAvailable(run.machine, "proposed") && run.prBranch && run.machine !== "FAILED"
+        treeAvailable(run, "proposed") && run.prBranch && run.machine !== "FAILED"
           ? { name: run.prBranch }
-          : { pending: run.machine === "FAILED" ? "not opened" : "not verified" },
+          : { pending: proposedPending(run) },
     },
   ];
 
@@ -809,7 +810,7 @@ function TreeRail({
     <div className="px-4 py-3 border-b border-[var(--border-color)]">
       <div className="flex items-stretch gap-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-1">
         {steps.map((step) => {
-          const open = treeAvailable(run.machine, step.id);
+          const open = treeAvailable(run, step.id);
           const selected = tree === step.id;
           return (
             <button

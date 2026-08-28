@@ -305,15 +305,28 @@ function workspacePath(path: string): string {
     .replace(/^\/tmp\/patchapi-sandbox\/?/, "");
 }
 
-function parseToolCall(body: string): { name: string; args: Record<string, string>; output: string } | null {
+function parseToolCall(
+  body: string,
+): { name: string; args: Record<string, string>; output: string; result: string } | null {
   const raw = body.trim();
   const arrow = raw.indexOf(" → ");
   const newline = raw.indexOf("\n");
   const head = arrow >= 0 ? raw.slice(0, arrow) : newline >= 0 ? raw.split("\n")[0] : raw;
   const output = newline >= 0 ? raw.slice(newline + 1).trim() : "";
+  // The one-line summary a tool returned. Kept separate from `output` because a
+  // tool that failed says so here and has no body at all, and a caller that
+  // only reads `output` cannot tell that apart from a tool that said nothing.
+  const result = arrow >= 0 ? raw.slice(arrow + 3).split("\n")[0].trim() : "";
   const match = head.replace(/\s*→\s*[\s\S]*$/, "").match(/^([A-Za-z_][A-Za-z0-9_]*)\((.*)\)\s*$/);
   if (!match) return null;
-  return { name: match[1], args: namedArgs(match[2]), output };
+  return { name: match[1], args: namedArgs(match[2]), output, result };
+}
+
+/** Whether a tool's one-line result says the call did not do what it was asked. */
+function refused(result: string): boolean {
+  return /^error\b|\berror:|does not apply|not on the .* allowlist|exit code [1-9]|\bexit [1-9]/i.test(
+    result,
+  );
 }
 
 const HIDDEN_TOOLS = new Set([
@@ -419,7 +432,10 @@ export function composeWorklog(
   let sawApply = false;
   let sawPr = false;
   const shownCommands = new Set<string>();
-  const shownEdits = new Set<string>();
+  // Path → the diff already drawn for it. A second `apply_patch` carrying the
+  // same hunks is the same edit seen again, not a second edit; a second one
+  // carrying different hunks is a real change and is drawn.
+  const shownEdits = new Map<string, string>();
   const shownReads = new Set<string>();
   const pendingReads: string[] = [];
   // A run that paused for a credential is continued by a *new* job execution:
@@ -454,6 +470,18 @@ export function composeWorklog(
     if (sawPatchThought) return;
     add("PATCHING", "thought", "Read the binding at the pinned SHA before rewriting.");
     sawPatchThought = true;
+  };
+
+  // The header on a terminal fence. It used to be the literal string
+  // `/tmp/patchapi-sandbox`, which is not where anything ran: a GKE sandbox
+  // executes in its own container. The job names the sandbox it opened, so say
+  // that instead of a path this side cannot know.
+  const sandboxLabel = (): string => {
+    for (const row of detail.trace) {
+      const found = /isolated (\w+) sandbox/.exec(row.body ?? "");
+      if (found) return `${found[1]} sandbox`;
+    }
+    return "sandbox";
   };
 
   const impactHits = (): string | undefined => {
@@ -562,28 +590,41 @@ export function composeWorklog(
     if (name === "apply_patch") {
       flushReads();
       beginPatching();
+      // An attempt that did not apply is not an edit. This used to fall through
+      // to the run's final diff and draw the rejected attempt as two green
+      // edits, crediting it with a change it never made — and then the retry
+      // that did apply drew the same files again.
+      if (parsed && refused(parsed.result)) {
+        add("PATCHING", "action", "Edit(`apply_patch`)", { verb: "Apply", toolType: "Edit" });
+        add("PATCHING", "result", parsed.result);
+        continue;
+      }
       const hunks = parsed?.output ? parseDiff(parsed.output) : [];
       const files = hunks.length > 0 ? hunks : shownEdits.size === 0 ? diffs : [];
       if (files.length > 0) {
         for (const file of files) {
+          const fence = diffFence(file);
+          if (shownEdits.get(file.path) === fence) continue;
           const created = file.deletions === 0 && file.additions > 0;
           add("PATCHING", "action", `${created ? "Write" : "Edit"}(\`${file.path}\`)`, {
             verb: created ? "Write" : "Apply",
             toolType: created ? "Write" : "Edit",
             filePath: file.path,
           });
-          add("PATCHING", "block", diffFence(file));
-          shownEdits.add(file.path);
+          add("PATCHING", "block", fence);
+          shownEdits.set(file.path, fence);
         }
       } else {
         const named = workspacePath(parsed?.args.files || parsed?.args.path || "");
         const label = named && !named.startsWith("/") ? named : "apply_patch";
-        add("PATCHING", "action", `Edit(\`${label}\`)`, {
-          verb: "Apply",
-          toolType: "Edit",
-          filePath: label === "apply_patch" ? undefined : label,
-        });
-        shownEdits.add(label);
+        if (!shownEdits.has(label)) {
+          add("PATCHING", "action", `Edit(\`${label}\`)`, {
+            verb: "Apply",
+            toolType: "Edit",
+            filePath: label === "apply_patch" ? undefined : label,
+          });
+          shownEdits.set(label, "");
+        }
       }
       sawApply = true;
       continue;
@@ -632,7 +673,7 @@ export function composeWorklog(
         sawApply ? "TESTING" : "PATCHING",
         tail ? "block" : "action",
         tail
-          ? terminalFence("/tmp/patchapi-sandbox", [{ cmd: argv, out: tail }])
+          ? terminalFence(sandboxLabel(), [{ cmd: argv, out: tail }])
           : `$ ${argv}`,
       );
       continue;
@@ -674,7 +715,7 @@ export function composeWorklog(
       "TESTING",
       "block",
       terminalFence(
-        "/tmp/patchapi-sandbox",
+        sandboxLabel(),
         unused.map((command) => ({
           cmd: command.argv === "build" || command.argv === "tests" ? command.phase : command.argv,
           out: command.tail,
