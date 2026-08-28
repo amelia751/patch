@@ -1097,7 +1097,26 @@ class Orchestrator:
 
         report = self._context.output(STAGE_CONTRACTS[agent])
         if not isinstance(report, VerificationReport):
-            return self._fail(agent, "no VerificationReport was recorded", turn)
+            # A verifier that graded nothing has produced no verdict, which is
+            # inconclusive rather than a failed migration. Observed when the run
+            # reached this stage with no runtime credentials bound: the verifier
+            # listed them, found none, and ended its turn without either
+            # requesting them or recording a skip.
+            #
+            # No pull request either way — that is constraint 6 and it is not
+            # negotiable. But FAILED threw away a patch whose tests were green
+            # and told the operator the migration failed, which was not true and
+            # left nothing to act on. HUMAN_REQUIRED is the honest ending: the
+            # diff and the sandbox logs are in the console, and the judgment the
+            # verifier owed is the one thing missing.
+            self._advance(RunState.HUMAN_REQUIRED)
+            return self._stage(
+                agent,
+                turn,
+                None,
+                "the verifier ended its turn without recording a report, so nothing "
+                "has graded this patch; the evidence is in the worklog for review",
+            )
         if str(report.verdict) == "fail":
             return self._fail(agent, report.notes or "verification failed", turn)
         if str(report.verdict) != "pass":
