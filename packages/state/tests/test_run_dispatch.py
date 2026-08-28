@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from packages.state import run_dispatch
 from packages.state.run_dispatch import (
     CloudRunRemediationDispatcher,
     LocalProcessDispatcher,
@@ -33,6 +34,33 @@ def test_cloud_run_wins_when_the_job_and_project_are_set() -> None:
 def test_local_process_when_asked_and_no_job() -> None:
     built = build_dispatcher({"PATCHAPI_REMEDIATION_LOCAL": "1"})
     assert isinstance(built, LocalProcessDispatcher)
+
+
+def test_the_local_command_names_the_workspace_member(monkeypatch) -> None:
+    """`uv run patchapi-remediate` resolves against the workspace root.
+
+    The root does not declare the script, so the child exited before writing a
+    line and the run sat on "waiting for the remediator" for good.
+    """
+    monkeypatch.setattr(
+        run_dispatch.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None
+    )
+    assert run_dispatch._local_command() == [
+        "/usr/bin/uv",
+        "run",
+        "--package",
+        "patchapi-agent-runner",
+        "patchapi-remediate",
+    ]
+
+
+def test_an_installed_entry_point_is_run_directly(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_dispatch.shutil,
+        "which",
+        lambda name: "/venv/bin/patchapi-remediate" if name == "patchapi-remediate" else None,
+    )
+    assert run_dispatch._local_command() == ["/venv/bin/patchapi-remediate"]
 
 
 def test_provisioning_note_stays_quiet_until_the_job_is_late() -> None:

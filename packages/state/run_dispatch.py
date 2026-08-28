@@ -54,6 +54,8 @@ JOB_VAR: Final[str] = "PATCHAPI_REMEDIATION_JOB"
 LOCAL_VAR: Final[str] = "PATCHAPI_REMEDIATION_LOCAL"
 
 ENTRY_POINT: Final[str] = "patchapi-remediate"
+# The workspace member that declares `ENTRY_POINT` as a script.
+ENTRY_POINT_PACKAGE: Final[str] = "patchapi-agent-runner"
 
 # How long the console sits on the dispatch line before we say Cloud Run is
 # still starting the container. Shorter than this and a fast claim looks like
@@ -182,7 +184,11 @@ def _local_command() -> list[str] | None:
         return [installed]
     uv = shutil.which("uv")
     if uv:
-        return [uv, "run", ENTRY_POINT]
+        # `--package` is not optional. This is a uv workspace, and a bare
+        # `uv run patchapi-remediate` resolves against the root member, which
+        # does not expose the entry point — the child died before writing a
+        # line and the run sat on "waiting for the remediator" forever.
+        return [uv, "run", "--package", ENTRY_POINT_PACKAGE, ENTRY_POINT]
     return [sys.executable, "-m", "patchapi_remediation.entrypoint"]
 
 
