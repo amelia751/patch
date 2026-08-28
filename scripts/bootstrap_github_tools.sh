@@ -82,6 +82,19 @@ if gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$RE
       --role=roles/run.invoker --quiet >/dev/null
   done
   printf 'invokers: %s, %s\n' "$(sa_email "$AGENTS_SA_ID")" "$(sa_email "$API_SA_ID")"
+  # A remediation started from a laptop runs as the key file, not as a Cloud Run
+  # identity. Without this it patches, verifies, and then stops at the last step
+  # with "the GitHub tool service is not configured" — after minutes of work.
+  if [[ -f "$KEY_FILE" ]]; then
+    LOCAL_SA="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['client_email'])" "$KEY_FILE")"
+    if [[ -n "$LOCAL_SA" ]]; then
+      gcloud run services add-iam-policy-binding "$SERVICE" \
+        --project="$PROJECT_ID" --region="$REGION" \
+        --member="serviceAccount:${LOCAL_SA}" \
+        --role=roles/run.invoker --quiet >/dev/null
+      printf 'local invoker: %s\n' "$LOCAL_SA"
+    fi
+  fi
 else
   printf 'service %s not deployed yet; rerun after the workflow creates it to grant invokers\n' "$SERVICE"
 fi

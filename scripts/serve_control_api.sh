@@ -30,6 +30,30 @@ export GCP_REGION="${GCP_REGION:-us-central1}"
 export PATCHAPI_REMEDIATION_JOB="${PATCHAPI_REMEDIATION_JOB:-patchapi-remediate}"
 export DATABASE_URL
 DATABASE_URL="$(tr -d '\n' <"$DSN_FILE")"
+# A locally dispatched remediation is a child of this process and inherits its
+# environment, so anything the Cloud Run job is given has to be given here too.
+# Assembling it from whichever shell happened to start the server is how a run
+# reached the last step and died on a missing key.
+export GOOGLE_API_KEY="${GOOGLE_API_KEY:-$(
+  gcloud secrets versions access latest --secret=patchapi-gemini-api-key \
+    --project="$GCP_PROJECT" 2>/dev/null || true
+)}"
+if [[ -z "$GOOGLE_API_KEY" ]]; then
+  printf 'warning: no Gemini API key; a locally dispatched run cannot reason\n' >&2
+fi
+
+# The remediator opens the pull request through this service, which owns the
+# GitHub App key. A local run inherits this variable from here; without it the
+# run patches and verifies and then stops on "the GitHub tool service is not
+# configured", which reads like a disconnected GitHub App and is not one.
+export PATCHAPI_GITHUB_TOOLS_URL="${PATCHAPI_GITHUB_TOOLS_URL:-$(
+  gcloud run services describe patchapi-github-tools \
+    --project="$GCP_PROJECT" --region="$GCP_REGION" \
+    --format='value(status.url)' 2>/dev/null || true
+)}"
+if [[ -z "$PATCHAPI_GITHUB_TOOLS_URL" ]]; then
+  printf 'warning: patchapi-github-tools has no URL; runs will stop before the pull request\n' >&2
+fi
 export PATCHAPI_CORS_ORIGINS="${PATCHAPI_CORS_ORIGINS:-http://localhost:3000}"
 export PATCHAPI_FRONTEND_ORIGIN="${PATCHAPI_FRONTEND_ORIGIN:-http://localhost:3000}"
 export PATCHAPI_IDENTITY_ACTION_URL="${PATCHAPI_IDENTITY_ACTION_URL:-http://localhost:3000/auth/action}"

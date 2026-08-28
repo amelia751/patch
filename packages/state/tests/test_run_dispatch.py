@@ -19,7 +19,21 @@ def test_no_dispatcher_until_a_job_is_named() -> None:
     assert build_dispatcher({"PATCHAPI_REMEDIATION_JOB": "patchapi-remediate"}) is None
 
 
-def test_cloud_run_wins_when_the_job_and_project_are_set() -> None:
+def test_cloud_run_runs_the_job_when_nothing_asked_for_the_local_lane() -> None:
+    built = build_dispatcher(
+        {"PATCHAPI_REMEDIATION_JOB": "patchapi-remediate", "GCP_PROJECT": "patch-505223"}
+    )
+    assert isinstance(built, CloudRunRemediationDispatcher)
+    assert built.job == "patchapi-remediate"
+
+
+def test_an_explicit_local_request_outranks_a_configured_job() -> None:
+    """A developer asking for the local lane means it, job name or not.
+
+    A laptop that knows the Cloud Run job name is the normal case, so preferring
+    the job sent every run to a container built from a different commit than the
+    one being edited.
+    """
     built = build_dispatcher(
         {
             "PATCHAPI_REMEDIATION_JOB": "patchapi-remediate",
@@ -27,8 +41,7 @@ def test_cloud_run_wins_when_the_job_and_project_are_set() -> None:
             "PATCHAPI_REMEDIATION_LOCAL": "1",
         }
     )
-    assert isinstance(built, CloudRunRemediationDispatcher)
-    assert built.job == "patchapi-remediate"
+    assert isinstance(built, LocalProcessDispatcher)
 
 
 def test_local_process_when_asked_and_no_job() -> None:

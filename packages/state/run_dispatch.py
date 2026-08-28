@@ -236,14 +236,18 @@ def build_dispatcher(
     which is worse than a button that says the lane is not wired.
     """
     environ = os.environ if env is None else env
+    # An explicit "run it here" outranks a configured job. Asking for the local
+    # lane on a machine that also knows the Cloud Run job name is the normal
+    # case while developing, and silently preferring the job sent the work to a
+    # container that cannot see the code being changed.
+    if environ.get(LOCAL_VAR, "").strip().lower() in {"1", "true", "yes"}:
+        root = repo_root or Path(__file__).resolve().parents[2]
+        return LocalProcessDispatcher(repo_root=root, log_dir=root / ".runs")
+
     job = environ.get(JOB_VAR, "").strip()
     project = gcp_project(env)
     if job and project:
         return CloudRunRemediationDispatcher(project=project, region=gcp_region(env), job=job)
-
-    if environ.get(LOCAL_VAR, "").strip().lower() in {"1", "true", "yes"}:
-        root = repo_root or Path(__file__).resolve().parents[2]
-        return LocalProcessDispatcher(repo_root=root, log_dir=root / ".runs")
     return None
 
 
