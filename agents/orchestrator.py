@@ -28,7 +28,7 @@ from time import perf_counter
 from typing import Any, Final
 
 from agents import live_check
-from agents.adk import TurnResult, new_session_service, run_turn
+from agents.adk import TurnResult, new_session_service, resume_turn, run_turn, session_id_for
 from agents.config import AgentId
 from agents.context import RunContext
 from agents.journal import RunJournal
@@ -179,6 +179,37 @@ class SliceResult:
     stages: list[StageResult] = field(default_factory=list)
 
     @property
+    def parked_turn(self) -> TurnResult | None:
+        """The agent turn this run stopped inside, if a turn is what stopped it.
+
+        What the caller persists so a later execution can answer the tool call
+        rather than replay the turn. `None` when the hold was decided before any
+        model ran, which is a hold with nothing to resume.
+        """
+        if self.state is not RunState.WAITING_ON_OPERATOR:
+            return None
+        for stage in reversed(self.stages):
+            if stage.turn is not None and stage.turn.resumable:
+                return stage.turn
+        return None
+
+    @property
+    def parked_mid_turn_without_a_pointer(self) -> bool:
+        """A turn stopped, but nothing survives to answer the call it stopped on.
+
+        Distinct from a hold decided before any model ran: there the replay
+        costs nothing. Here the model's reading and running is about to be paid
+        for twice, and the operator should hear that rather than wonder why
+        Continue looked like a restart.
+        """
+        if self.state is not RunState.WAITING_ON_OPERATOR:
+            return False
+        return any(
+            stage.turn is not None and stage.turn.paused and not stage.turn.resumable
+            for stage in self.stages
+        )
+
+    @property
     def reached_testing(self) -> bool:
         """Whether the patch built and its tests ran green in the workspace."""
         if self.state in {
@@ -302,6 +333,49 @@ class Orchestrator:
             None,
             detail or str(request.get("message") or "waiting on the operator"),
         )
+
+    def _hold_for(self, agent: AgentId) -> dict[str, str]:
+        """The parked turn this agent may resume, or empty if there is none.
+
+        Checked against the agent that parked: answering the Patch agent's
+        credential request inside the Verification session would hand one
+        specialist another's history, which is the separation `session_id_for`
+        exists to keep.
+        """
+        hold = self._context.agent_hold or {}
+        if str(hold.get("agent") or "") != str(agent):
+            return {}
+        if not hold.get("call_id") or not hold.get("tool"):
+            return {}
+        if str(hold.get("session_id") or "") != session_id_for(self._context.run_id, str(agent)):
+            return {}
+        return {str(key): str(value) for key, value in hold.items()}
+
+    def _credential_answer(self) -> dict[str, Any]:
+        """What the parked `request_runtime_credentials` call returns on resume.
+
+        Names and connection status only. The tool the model called never
+        returned a secret value and neither does this: what changed is what the
+        vault can now reach, and the live check — not the model — uses it.
+        """
+        inventory = resolve_inventory(self._context)
+        names = tuple(getattr(inventory, "secret_names", ()) or ())
+        connected = bool(getattr(inventory, "gcp_connected", False))
+        project = str(getattr(inventory, "gcp_project_id", "") or "")
+        return {
+            "status": "ok" if (connected or names) else "still_missing",
+            "gcp_connected": connected,
+            "gcp_project_id": project,
+            "secret_names": list(names),
+            "detail": (
+                "The operator answered. Continue the migration from where you stopped: "
+                "do not re-read files you have already read. Credentials are never shown "
+                "to you; the run proves the resolve on your behalf."
+                if (connected or names)
+                else "The operator has not supplied a usable credential. If you cannot "
+                "proceed honestly, call record_human_required."
+            ),
+        }
 
     def resume_after_operator(self) -> RunState:
         """Leave the hold and return to the specialist that asked.
@@ -643,10 +717,23 @@ class Orchestrator:
             self._hold_for_live_credentials(agent, slice_)
             return self._park_for_operator(agent, None)
 
+        hold = self._hold_for(agent)
         if skip_turn:
             self._trace.emit("=== PATCH resume — working tree already rewritten ===")
         elif deterministic:
             self._patch_deterministically(manifest, slice_, base_sha=base_sha)
+        elif hold:
+            self._trace.emit("=== PATCH resume — answering the parked credential request ===")
+            turn = await resume_turn(
+                self.agent(agent),
+                call_id=hold["call_id"],
+                tool_name=hold["tool"],
+                response=self._credential_answer(),
+                trace=self._trace,
+                session_service=self._sessions(),
+            )
+            if self._context.waiting_on_operator or (turn is not None and turn.paused):
+                return self._park_for_operator(agent, turn)
         else:
             self._trace.emit("=== PATCH agent live — inspect, edit, run, look ===")
             prompt = self._patch_prompt(manifest, report, slice_)

@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from agents import live_check
+from agents.adk import session_hold_reason
 from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.context import RunContext
 from agents.journal import RunJournal
@@ -66,7 +67,20 @@ ACTOR: Final[str] = "remediation-job"
 # local temp directory: this lane executes code a model wrote, and the isolation
 # is the reason it is allowed to run at all. A cluster that cannot be reached
 # stops the run rather than quietly downgrading the boundary.
-SANDBOX_KIND: Final[str] = "gke"
+#
+# `PATCHAPI_SANDBOX` may name `local` instead, and only a developer's own
+# checkout should: it is the same temp-workspace transport the roadmap allows
+# for the early phases, and it is what makes the local dispatcher able to run a
+# real remediation on a machine with no cluster. Deployments leave it unset, so
+# no hosted run can lose the boundary by forgetting a variable.
+SANDBOX_ENV_VAR: Final[str] = "PATCHAPI_SANDBOX"
+
+
+def sandbox_kind() -> str:
+    """Which sandbox transport this process runs patches in."""
+    requested = os.environ.get(SANDBOX_ENV_VAR, "").strip().lower()
+    return requested if requested in {"local", "gke"} else "gke"
+
 
 # The baseline is a diagnostic, not the run. A repository whose checks take
 # longer than this is one whose build the patch loop would time out on anyway.
@@ -182,16 +196,37 @@ async def _run(
     trace = ToolTrace(run_id=row.run_id)
     recorder = _recorder(pool, row.run_id, journal, trace)
     session: Any = None
+    kind = sandbox_kind()
+
+    resume = await _resume_state(pool, row)
+    inventory = await _credentials(pool, row.project_id)
 
     # The pump has to start before the clone. Held until after sandbox +
     # baseline, the console sits on an empty log for the slowest minute of
     # the run — the part the operator is watching.
     async with recorder:
-        recorder.narrate(
-            RunState.RECEIVED,
-            f"Remediator claimed {row.repository} at {row.base_sha[:12]}. "
-            "Fetching the pinned tree.",
-        )
+        if resume.resumed:
+            # The operator is watching for one thing: that pressing Continue
+            # continued. Say so before the re-clone, because everything the
+            # setup writes next is a line this run's worklog already has.
+            recorder.narrate(
+                RunState.RECEIVED,
+                f"Continuing this run. {resume.describe(inventory)} "
+                f"Re-establishing the sandbox at {row.base_sha[:12]} — the worklog above "
+                "is the same run, not a new one. "
+                + (
+                    f"The {resume.hold.get('agent', 'patch')} agent's turn is resumed at "
+                    f"`{resume.hold.get('tool', '')}` rather than restarted."
+                    if resume.hold
+                    else ""
+                ),
+            )
+        else:
+            recorder.narrate(
+                RunState.RECEIVED,
+                f"Remediator claimed {row.repository} at {row.base_sha[:12]}. "
+                "Fetching the pinned tree.",
+            )
         await recorder.flush()
 
         try:
@@ -222,13 +257,13 @@ async def _run(
 
         recorder.narrate(
             RunState.RECEIVED,
-            f"Allocating an isolated {SANDBOX_KIND} sandbox.",
+            f"Allocating an isolated {kind} sandbox.",
         )
         await recorder.flush()
 
         try:
             session = open_session(
-                SANDBOX_KIND, run_id=f"run-{row.run_id[:12]}", scratch_root=scratch / "sandbox"
+                kind, run_id=f"run-{row.run_id[:12]}", scratch_root=scratch / "sandbox"
             )
         except (SandboxUnavailableError, ImportError, TypeError) as exc:
             return await _stop(
@@ -242,7 +277,7 @@ async def _run(
             recorder.narrate(
                 RunState.RECEIVED,
                 f"Staged {staged} files from {row.repository} at {row.base_sha[:12]} into an "
-                f"isolated {SANDBOX_KIND} sandbox. "
+                f"isolated {kind} sandbox. "
                 + (
                     (
                         f"Local checks for this change: `{slice_.build_command}`."
@@ -259,35 +294,22 @@ async def _run(
             recorder.narrate(RunState.RECEIVED, baseline.narration)
             await recorder.flush()
 
+            # A hold that already produced a patch keeps it: the tree the
+            # operator was shown is the tree the run continues from, and asking
+            # the model to derive it a second time would be a new patch, not a
+            # continuation. A hold inside an unfinished turn is different — the
+            # agent is answered and carries on, so the tree is its to write.
             skip_patch = False
-            async with pool.acquire() as connection:
-                reason = await connection.fetchval(
-                    """
-                    SELECT reason FROM run_state_transitions
-                    WHERE run_id = $1
-                    ORDER BY sequence DESC LIMIT 1
-                    """,
-                    UUID(row.run_id),
-                )
-                if str(reason or "") == "resumed":
-                    diff_body = await connection.fetchval(
-                        """
-                        SELECT body FROM artifacts
-                        WHERE run_id = $1 AND kind = 'diff' AND COALESCE(body, '') <> ''
-                        ORDER BY created_at DESC LIMIT 1
-                        """,
-                        UUID(row.run_id),
+            if resume.resumed and resume.diff and not resume.hold:
+                applied = session.apply_unified_diff(resume.diff)
+                if getattr(applied, "exit_code", 1) == 0:
+                    skip_patch = True
+                    recorder.narrate(
+                        RunState.RECEIVED,
+                        "Restored the patched tree from before the hold. The patch loop "
+                        "does not start over; the run picks up at its checks.",
                     )
-                    if diff_body:
-                        applied = session.apply_unified_diff(str(diff_body))
-                        if getattr(applied, "exit_code", 1) == 0:
-                            skip_patch = True
-                            recorder.narrate(
-                                RunState.RECEIVED,
-                                "Re-applied the working tree from the hold. "
-                                "The patch loop will not start over.",
-                            )
-                            await recorder.flush()
+                    await recorder.flush()
 
             context = RunContext(
                 run_id=row.run_id,
@@ -298,8 +320,9 @@ async def _run(
                 ),
                 sandbox=session,
                 project_id=row.project_id,
-                credentials_inventory=await _credentials(pool, row.project_id),
+                credentials_inventory=inventory,
                 live_credentials=await _live_credentials(pool, row.project_id),
+                agent_hold=resume.hold,
             )
             orchestrator = Orchestrator(context, trace, journal)
 
@@ -309,7 +332,7 @@ async def _run(
                     row.run_id,
                     patch_agent="patch",
                     prompt_version=slice_.skill_id,
-                    sandbox_ref=f"{SANDBOX_KIND}:{getattr(session, 'name', row.run_id)}",
+                    sandbox_ref=f"{kind}:{getattr(session, 'name', row.run_id)}",
                 )
 
             # Impact and policy stay deterministic: whether a repository is
@@ -327,12 +350,128 @@ async def _run(
             await _persist(
                 pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline
             )
+            await _remember_hold(pool, row, result, recorder)
             log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
             if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
                 return EXIT_OK
             return EXIT_FAILED
         finally:
             session.close()
+
+
+@dataclass(frozen=True, slots=True)
+class ResumeState:
+    """Whether this execution is continuing a run that paused for the operator.
+
+    A Cloud Run job cannot survive an operator hold: it exits, and Continue
+    starts a new execution of the same run row. That execution has to know it
+    is a continuation, because the difference between continuing and restarting
+    is not cosmetic — it decides whether the model is asked to patch a second
+    time and whether the console tells the operator their click worked.
+    """
+
+    resumed: bool
+    diff: str = ""
+    parked: dict[str, str] | None = None
+
+    @property
+    def hold(self) -> dict[str, str]:
+        """The parked agent turn, or an empty mapping when nothing is parked."""
+        return dict(self.parked or {})
+
+    def describe(self, inventory: Any) -> str:
+        """One sentence naming what the operator supplied, from the vault's own view."""
+        if not self.resumed:
+            return ""
+        project = str(getattr(inventory, "gcp_project_id", "") or "")
+        names = tuple(getattr(inventory, "secret_names", ()) or ())
+        if getattr(inventory, "gcp_connected", False) and project:
+            supplied = f"GCP project {project} is connected."
+        elif getattr(inventory, "gcp_connected", False):
+            supplied = "A GCP connection is stored."
+        elif names:
+            supplied = f"{len(names)} runtime secret name(s) are configured."
+        else:
+            # Fail honest: continuing without visible credentials will park
+            # again, and saying otherwise would make the next hold look broken.
+            supplied = "No new credential is visible to this project yet."
+        return supplied
+
+
+async def _remember_hold(pool: asyncpg.Pool, row: RunRow, result: Any, recorder: Any) -> None:
+    """Write down the parked agent turn, or clear a pointer that no longer holds.
+
+    Called after every slice, not only after a park: a run that moved past its
+    hold must not leave a pointer behind for the next execution to answer.
+    """
+    parked = getattr(result, "parked_turn", None)
+    hold = (
+        {
+            "agent": str(parked.agent),
+            "session_id": parked.session_id,
+            "call_id": parked.pending_call_id,
+            "tool": str(parked.long_running_tool or ""),
+        }
+        if parked is not None
+        else None
+    )
+    try:
+        async with pool.acquire() as connection:
+            await remediation.record_agent_hold(connection, row.run_id, hold)
+    except Exception as exc:
+        # The run's state is already written. Losing the pointer costs a replay
+        # of the turn on Continue, not correctness, so it is logged and the
+        # console is told rather than failing a run that reached its hold.
+        log.warning("run %s could not record its agent hold: %s", row.run_id, exc)
+        return
+    if hold:
+        recorder.narrate(
+            RunState.WAITING_ON_OPERATOR,
+            f"The {hold['agent']} agent's turn is held open at `{hold['tool']}`. "
+            "Continue answers that call, so the files it has already read and the "
+            "commands it has already run stay in context.",
+        )
+        await recorder.flush()
+        return
+    if getattr(result, "parked_mid_turn_without_a_pointer", False):
+        recorder.narrate(
+            RunState.WAITING_ON_OPERATOR,
+            "An agent turn stopped mid-way and could not be held open "
+            f"({session_hold_reason() or 'the session was not stored'}). Continue will "
+            "start that turn again rather than answering it.",
+        )
+        await recorder.flush()
+
+
+async def _resume_state(pool: asyncpg.Pool, row: RunRow) -> ResumeState:
+    """Read whether Continue opened this execution, and the tree it left behind."""
+    try:
+        async with pool.acquire() as connection:
+            reason = await connection.fetchval(
+                """
+                SELECT reason FROM run_state_transitions
+                WHERE run_id = $1
+                ORDER BY sequence DESC LIMIT 1
+                """,
+                UUID(row.run_id),
+            )
+            if str(reason or "") != remediation.RESUMED_REASON:
+                return ResumeState(resumed=False)
+            diff = await connection.fetchval(
+                """
+                SELECT body FROM artifacts
+                WHERE run_id = $1 AND kind = 'diff' AND COALESCE(body, '') <> ''
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                UUID(row.run_id),
+            )
+            hold = await remediation.read_agent_hold(connection, row.run_id)
+    except Exception as exc:
+        # Not knowing means treating this as a fresh execution, which is the
+        # safe direction: it patches again rather than skipping the patch.
+        log.warning("run %s could not read its resume state: %s", row.run_id, exc)
+        return ResumeState(resumed=False)
+    return ResumeState(resumed=True, diff=str(diff or ""), parked=hold)
 
 
 @dataclass(frozen=True, slots=True)
@@ -772,4 +911,4 @@ def _pull_request(result: Any) -> dict[str, Any]:
     return {}
 
 
-__all__ = ["ACTOR", "EXIT_FAILED", "EXIT_OK", "SANDBOX_KIND", "execute"]
+__all__ = ["ACTOR", "EXIT_FAILED", "EXIT_OK", "SANDBOX_ENV_VAR", "execute", "sandbox_kind"]

@@ -175,6 +175,79 @@ async def test_an_operator_hold_keeps_its_worklog_on_continue(conn: Any) -> None
     assert reason == "resumed"
 
 
+async def test_an_operator_hold_keeps_the_agent_turn_it_parked_inside(conn: Any) -> None:
+    """Continue has to be able to answer the tool call, not just re-dispatch.
+
+    The pointer is the only thing that survives the job exiting, so a resume
+    that dropped it would leave the model re-reading every file it had read.
+    """
+    project, change = await seed(conn)
+    run = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+    hold = {
+        "agent": "patch",
+        "session_id": f"{run.run_id}:patch",
+        "call_id": "call_654359",
+        "tool": "request_runtime_credentials",
+    }
+    await remediation.record_agent_hold(conn, run.run_id, hold)
+    await remediation.advance(conn, run.run_id, RunState.SANITIZED, actor="job")
+    await remediation.advance(conn, run.run_id, RunState.NORMALIZED, actor="job")
+    await remediation.advance(conn, run.run_id, RunState.IMPACT_SCANNING, actor="job")
+    await remediation.advance(conn, run.run_id, RunState.POLICY_EVALUATION, actor="job")
+    await remediation.advance(conn, run.run_id, RunState.PATCHING, actor="job")
+    await remediation.advance(
+        conn, run.run_id, RunState.WAITING_ON_OPERATOR, actor="job", reason="need key"
+    )
+
+    again = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+
+    assert again.run_id == run.run_id
+    assert await remediation.read_agent_hold(conn, again.run_id) == hold
+
+
+async def test_a_restart_forgets_the_turn_it_used_to_be_parked_inside(conn: Any) -> None:
+    """A retry is a new conversation, so the old call id must not be answered."""
+    project, change = await seed(conn)
+    run = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+    await remediation.record_agent_hold(
+        conn,
+        run.run_id,
+        {
+            "agent": "patch",
+            "session_id": f"{run.run_id}:patch",
+            "call_id": "call_654359",
+            "tool": "request_runtime_credentials",
+        },
+    )
+    await remediation.advance(conn, run.run_id, RunState.FAILED, actor="job", reason="broke")
+
+    again = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+
+    assert again.run_id == run.run_id
+    assert await remediation.read_agent_hold(conn, again.run_id) == {}
+
+
+async def test_a_run_that_moved_on_can_drop_its_hold(conn: Any) -> None:
+    project, change = await seed(conn)
+    run = await remediation.open_run(
+        conn, change_event_id=change, project_id=project, repository=REPO
+    )
+    await remediation.record_agent_hold(
+        conn, run.run_id, {"agent": "patch", "session_id": "s", "call_id": "c", "tool": "t"}
+    )
+    await remediation.record_agent_hold(conn, run.run_id, None)
+
+    assert await remediation.read_agent_hold(conn, run.run_id) == {}
+
+
 async def test_a_failed_run_clears_its_worklog_on_retry(conn: Any) -> None:
     """A broken attempt is not the worklog of the retry."""
     project, change = await seed(conn)

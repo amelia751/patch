@@ -20,6 +20,7 @@ and only a row written *before* the GitHub call can prevent that.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -39,6 +40,12 @@ MAX_REASON_CHARS: Final[int] = 500
 MAX_ARTIFACT_BODY_CHARS: Final[int] = 60_000
 
 CONSOLE_ACTOR: Final[str] = "console"
+
+# The transition reason that tells the next job execution it is continuing a run
+# rather than beginning one. A Cloud Run job exits when a run parks for the
+# operator, so this string is the only thing that survives to say which it is.
+RESUMED_REASON: Final[str] = "resumed"
+RESTARTED_REASON: Final[str] = "restarted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +232,18 @@ UPDATE idempotency_keys SET result_ref = $4
 WHERE run_id = $1 AND action_type = $2 AND base_sha = $3
 """
 
+_CLEAR_HOLD_SQL: Final[str] = """
+UPDATE remediation_runs SET agent_hold = '{}'::jsonb WHERE id = $1
+"""
+
+_WRITE_HOLD_SQL: Final[str] = """
+UPDATE remediation_runs SET agent_hold = $2::jsonb, updated_at = now() WHERE id = $1
+"""
+
+_READ_HOLD_SQL: Final[str] = """
+SELECT agent_hold FROM remediation_runs WHERE id = $1
+"""
+
 _AUDIT_SQL: Final[str] = """
 INSERT INTO audit_events (
     actor, action, target, outcome, reason, trace_id, run_id, project_id, repository
@@ -279,15 +298,55 @@ async def open_run(
     if not is_resumable(state):
         await connection.execute(_CLEAR_TRACE_SQL, existing["id"])
         await connection.execute(_CLEAR_ARTIFACTS_SQL, existing["id"])
+        # A restart has no turn to rejoin. Keeping the pointer would send the
+        # next execution to answer a tool call in a conversation it is not
+        # continuing.
+        await connection.execute(_CLEAR_HOLD_SQL, existing["id"])
     await _transition(
         connection,
         existing["id"],
         state,
         RunState.RECEIVED,
         CONSOLE_ACTOR,
-        "resumed" if is_resumable(state) else "restarted",
+        RESUMED_REASON if is_resumable(state) else RESTARTED_REASON,
     )
     return _handle(restarted, dispatch=True)
+
+
+async def record_agent_hold(
+    connection: asyncpg.Connection,
+    run_id: UUID | str,
+    hold: dict[str, str] | None,
+) -> None:
+    """Remember which agent turn this run parked inside, or forget it.
+
+    The pointer a later execution needs to answer the tool call that stopped the
+    turn: the session it belongs to, the unanswered call id, the tool's name and
+    the agent that called it. No credential and no model output — the
+    conversation itself is the session store's, and the evidence is the
+    artifacts'. Written on a park, cleared once the turn moves on.
+    """
+    if not hold:
+        await connection.execute(_CLEAR_HOLD_SQL, _uuid(run_id))
+        return
+    await connection.execute(
+        _WRITE_HOLD_SQL,
+        _uuid(run_id),
+        json.dumps({str(key): str(value) for key, value in hold.items()}),
+    )
+
+
+async def read_agent_hold(connection: asyncpg.Connection, run_id: UUID | str) -> dict[str, str]:
+    """The parked turn recorded for this run, or an empty mapping."""
+    raw = await connection.fetchval(_READ_HOLD_SQL, _uuid(run_id))
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): str(value) for key, value in raw.items()}
 
 
 async def advance(
@@ -791,6 +850,8 @@ __all__ = [
     "CONSOLE_ACTOR",
     "MAX_ARTIFACT_BODY_CHARS",
     "MAX_TRACE_BODY_CHARS",
+    "RESTARTED_REASON",
+    "RESUMED_REASON",
     "RunHandle",
     "advance",
     "append_trace",
@@ -801,7 +862,9 @@ __all__ = [
     "fulfil",
     "list_runs",
     "open_run",
+    "read_agent_hold",
     "read_run",
+    "record_agent_hold",
     "record_artifact",
     "record_policy",
     "record_pull_request",

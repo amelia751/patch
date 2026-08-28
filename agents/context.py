@@ -81,6 +81,12 @@ class RunContext:
     # cannot contact a provider, which the live check reports rather than
     # treating as a pass.
     live_credentials: Callable[[tuple[str, ...]], dict[str, str]] | None = None
+    # The agent turn a previous execution of this run parked inside, as
+    # `{"agent", "session_id", "call_id", "tool"}`. A remediation that asks the
+    # operator for a credential ends its job; the next execution reads this to
+    # answer the tool call that stopped the turn instead of running the turn
+    # again from the first file read. Empty on a run that never parked.
+    agent_hold: dict[str, str] = field(default_factory=dict)
     index_usages: list[dict[str, Any]] = field(default_factory=list)
     outputs: dict[str, RecordedOutput] = field(default_factory=dict)
     human_required: list[dict[str, str]] = field(default_factory=list)

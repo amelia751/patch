@@ -4,17 +4,20 @@ version = "0.1.0"
 description = "PatchAPI Google ADK orchestrator and the four reasoning agents."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "asyncpg>=0.30",
     # Google ADK is the only agent framework PatchAPI is permitted to use at
     # runtime (CLAUDE.md constraint 1). The floor is the release whose
     # `LlmAgent` tool-callback signature this tree is written against; the
     # resolver picks the newest build that also satisfies the rest of the
     # workspace.
     "google-adk>=2.1,<3",
+    "greenlet>=3",
     "patchapi-policy",
     "patchapi-providers",
     "patchapi-repo-scan",
     "patchapi-schemas",
     "pydantic>=2.9,<3",
+    "sqlalchemy>=2.0",
 ]
 
 # Agent code is deployed to Agent Runtime from source and imported in-tree by

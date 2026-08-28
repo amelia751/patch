@@ -12,6 +12,7 @@ would break test collection wherever the extra is not installed
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,8 @@ from agents.tools import build_tools
 from agents.trace import ToolTrace
 from packages.providers.google.config import GoogleProviderConfig
 from packages.providers.google.vertex import credentials_available
+
+log = logging.getLogger(__name__)
 
 ENV_USE_VERTEX: Final[str] = "GOOGLE_GENAI_USE_VERTEXAI"
 ENV_CLOUD_PROJECT: Final[str] = "GOOGLE_CLOUD_PROJECT"
@@ -185,7 +188,9 @@ class TurnResult:
     """What one agent turn produced.
 
     `model_versions` is the identity Vertex reported, not the one requested.
-    `paused` is set when ADK yielded a long-running tool (operator hold).
+    `paused` is set when ADK yielded a long-running tool (operator hold), and
+    the three fields after it are what a later execution needs to answer that
+    tool instead of starting the turn again.
     """
 
     agent: str
@@ -196,17 +201,79 @@ class TurnResult:
     errors: tuple[str, ...] = field(default_factory=tuple)
     paused: bool = False
     long_running_tool: str | None = None
+    session_id: str = ""
+    pending_call_id: str = ""
+    invocation_id: str = ""
 
     @property
     def served_model(self) -> str:
         return self.model_versions[0] if self.model_versions else ""
 
+    @property
+    def resumable(self) -> bool:
+        """Whether this pause can be answered rather than replayed."""
+        return bool(self.paused and self.session_id and self.pending_call_id)
+
 
 def new_session_service() -> Any:
-    """One in-memory ADK session service. The orchestrator holds it for the run."""
+    """The ADK session service for this run.
+
+    Postgres-backed where a DSN is configured, so a turn that parks for the
+    operator survives the job exiting and can be answered rather than replayed.
+    In memory otherwise — which still runs agents, and still patches; it only
+    costs the ability to resume. See `agents/sessions.py`.
+    """
+    from agents.sessions import engine_options, session_dsn
+
+    dsn = session_dsn()
+    if dsn:
+        try:
+            from google.adk.sessions.database_session_service import DatabaseSessionService
+
+            return DatabaseSessionService(db_url=dsn, **engine_options())
+        except Exception as exc:
+            # A session store that will not answer must not stop the run from
+            # patching. What it costs is reported by `session_hold_reason`.
+            log.warning("agent sessions are in memory only: %s", exc)
     from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
     return InMemorySessionService()
+
+
+def session_hold_reason() -> str | None:
+    """Return None when a turn parked for the operator can be resumed."""
+    from agents.sessions import undurable_reason
+
+    return adk_unavailable_reason() or undurable_reason()
+
+
+def session_id_for(run_id: str, agent_name: str) -> str:
+    """The session one agent holds within one run.
+
+    Per agent, not per run: Verification must not read the Patch agent's
+    reasoning, and sharing a session id would hand it over.
+    """
+    return f"{run_id}:{agent_name}"
+
+
+def _resumable_runner(agent: Any, session_service: Any, app_name: str) -> Any:
+    """A `Runner` whose invocations can be resumed after a long-running tool.
+
+    `is_resumable` is what makes ADK persist `agent_state` and `end_of_agent`
+    on its events, which is what lets a later process rehydrate the invocation
+    rather than replay it. Building the `App` here keeps that flag in the one
+    module allowed to touch ADK.
+    """
+    from google.adk.apps import App
+    from google.adk.apps.app import ResumabilityConfig
+    from google.adk.runners import Runner
+
+    app = App(
+        name=app_name,
+        root_agent=agent,
+        resumability_config=ResumabilityConfig(is_resumable=True),
+    )
+    return Runner(app=app, session_service=session_service)
 
 
 async def run_turn(
@@ -223,13 +290,77 @@ async def run_turn(
     Session id is `{run_id}:{agent}` so specialists do not share chat history.
     Verification must not see the Patch turn. The service itself is per run.
     """
-    from google.adk.agents.run_config import RunConfig, StreamingMode
-    from google.adk.runners import Runner
     from google.genai import types
 
+    return await _drive(
+        agent,
+        types.Content(role="user", parts=[types.Part(text=prompt)]),
+        trace=trace,
+        session_service=session_service,
+        user_id=user_id,
+        app_name=app_name,
+    )
+
+
+async def resume_turn(
+    agent: Any,
+    *,
+    call_id: str,
+    tool_name: str,
+    response: dict[str, Any],
+    trace: ToolTrace,
+    session_service: Any,
+    user_id: str = "patchapi-orchestrator",
+    app_name: str = APP_NAME,
+) -> TurnResult:
+    """Answer the long-running tool this run parked on, continuing that turn.
+
+    The official ADK resume for a `LongRunningFunctionTool`: send a
+    `FunctionResponse` carrying the id of the unanswered `FunctionCall`. ADK
+    finds the call in the stored event history, recovers the invocation it
+    belonged to, and the agent picks up from there — so the files it already
+    read and the commands it already ran are still in context and are not
+    repeated.
+
+    https://github.com/google/adk-docs/blob/main/docs/runtime/resume.md
+    """
+    from google.genai import types
+
+    trace.emit(f"  resume {tool_name} (answering the parked call)")
+    return await _drive(
+        agent,
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=call_id, name=tool_name, response=response
+                    )
+                )
+            ],
+        ),
+        trace=trace,
+        session_service=session_service,
+        user_id=user_id,
+        app_name=app_name,
+    )
+
+
+async def _drive(
+    agent: Any,
+    message: Any,
+    *,
+    trace: ToolTrace,
+    session_service: Any | None = None,
+    user_id: str = "patchapi-orchestrator",
+    app_name: str = APP_NAME,
+) -> TurnResult:
+    """Run the ADK event loop for one message and report what it produced."""
+    from google.adk.agents.run_config import RunConfig, StreamingMode
+
     service = session_service if session_service is not None else new_session_service()
-    runner = Runner(agent=agent, app_name=app_name, session_service=service)
-    session_id = f"{trace.run_id}:{agent.name}"
+    runner = _resumable_runner(agent, service, app_name)
+    session_id = session_id_for(trace.run_id, agent.name)
     session = await service.get_session(app_name=app_name, user_id=user_id, session_id=session_id)
     if session is None:
         session = await service.create_session(
@@ -242,6 +373,8 @@ async def run_turn(
     events = 0
     paused = False
     long_running_tool: str | None = None
+    pending_call_id = ""
+    invocation_id = ""
     seen_calls: set[str] = set()
     try:
         # `run_live` is bidirectional audio/video. The worklog surface is
@@ -252,11 +385,13 @@ async def run_turn(
         async for event in runner.run_async(
             user_id=user_id,
             session_id=session.id,
-            new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
+            new_message=message,
             run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
             events += 1
             stop = False
+            if getattr(event, "invocation_id", None):
+                invocation_id = str(event.invocation_id)
             if event.model_version and event.model_version not in models:
                 models.append(event.model_version)
                 trace.emit(f"  model {event.model_version}")
@@ -276,6 +411,9 @@ async def run_turn(
                         trace.emit(f"  model → {call.name}")
                         if pending_ids and getattr(call, "id", None) in pending_ids:
                             long_running_tool = str(call.name)
+                            # The id is what a later execution answers. Without
+                            # it the only way forward is to run the turn again.
+                            pending_call_id = str(call.id)
                             trace.emit(f"  pause {call.name} (long-running)")
                 if event.partial:
                     continue
@@ -309,6 +447,9 @@ async def run_turn(
         errors=tuple(errors),
         paused=paused,
         long_running_tool=long_running_tool,
+        session_id=session.id,
+        pending_call_id=pending_call_id,
+        invocation_id=invocation_id,
     )
 
 
@@ -334,6 +475,9 @@ __all__ = [
     "generate_content_config",
     "new_session_service",
     "repo_root",
+    "resume_turn",
     "run_turn",
+    "session_hold_reason",
+    "session_id_for",
     "vertex_unavailable_reason",
 ]
