@@ -178,3 +178,23 @@ def test_open_session_builds_a_local_session(tmp_path):
 def test_open_session_rejects_an_unknown_kind(tmp_path):
     with pytest.raises(ValueError, match="unknown session kind"):
         open_session("docker", root=tmp_path, run_id="run-local-5")
+
+
+def test_open_session_accepts_the_call_shape_the_job_uses(tmp_path):
+    """The remediation job names the directory `scratch_root` for both transports.
+
+    It has to, because it does not know which one it asked for. Only the GKE
+    session took that keyword, so `PATCHAPI_SANDBOX=local` died on an unexpected
+    argument and the run ended with no generated code executed at all. The other
+    test in this file passes `root=`, which is why nothing caught it.
+    """
+    session = open_session(
+        "local", run_id="run-local-6", scratch_root=tmp_path / "scratch" / "sandbox"
+    )
+    try:
+        assert isinstance(session, LocalSession)
+        session.write_file("bound.txt", "gemini-3.5-flash")
+        assert session.read_file("bound.txt") == "gemini-3.5-flash"
+        assert (tmp_path / "scratch" / "sandbox") in session.working_dir.parents
+    finally:
+        session.close()

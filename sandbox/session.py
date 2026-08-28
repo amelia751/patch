@@ -20,6 +20,7 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -268,7 +269,19 @@ def open_session(kind: str, **kwargs: object) -> SandboxSession:
     """
 
     if kind == "local":
-        return LocalSession(**kwargs)  # type: ignore[arg-type]
+        # The job opens either transport with one call shape, and names the
+        # directory it may use `scratch_root`. GKE keeps the workspace in its own
+        # container and treats that as somewhere to spill; the local session *is*
+        # that directory. Translating here rather than at the call site keeps the
+        # job from knowing which transport it asked for — without it,
+        # PATCHAPI_SANDBOX=local failed on an unexpected keyword argument and no
+        # generated code ran at all.
+        arguments = dict(kwargs)
+        scratch = arguments.pop("scratch_root", None)
+        root = arguments.pop("root", None) or scratch
+        return LocalSession(  # type: ignore[arg-type]
+            root=Path(str(root)) if root else Path(tempfile.mkdtemp()), **arguments
+        )
     if kind == "gke":
         from .gke.session import GkeSession
 
