@@ -26,6 +26,7 @@ and saying so is better than a resume that quietly starts over.
 from __future__ import annotations
 
 import os
+from importlib.util import find_spec
 from typing import Final
 
 # The schema `0020_agent_hold.sql` creates. `public` stays on the search path so
@@ -69,12 +70,32 @@ def engine_options() -> dict[str, object]:
     return {"connect_args": {"server_settings": {"search_path": SEARCH_PATH}}}
 
 
+def missing_driver() -> str | None:
+    """The import the session store needs and does not have, or None.
+
+    Checked rather than assumed. The image installs `services/agent_runner`, not
+    `agents`, so these can be declared in the wrong manifest and be absent at
+    runtime — which is how a deployment once ran every turn in memory while
+    reporting itself durable.
+    """
+    for module in ("sqlalchemy", "greenlet"):
+        if find_spec(module) is None:
+            return module
+    return None
+
+
 def undurable_reason(env: dict[str, str] | None = None) -> str | None:
     """Return None when a parked turn could be resumed, else why it cannot."""
     if not session_dsn(env):
         return (
             f"no {ENV_DATABASE_URL}, so agent sessions are held in memory and a turn "
             "parked for the operator starts over instead of resuming"
+        )
+    absent = missing_driver()
+    if absent:
+        return (
+            f"{absent} is not installed, so the Postgres session store cannot be built "
+            "and a turn parked for the operator starts over instead of resuming"
         )
     return None
 
@@ -86,6 +107,7 @@ __all__ = [
     "ENV_SESSION_URL",
     "SEARCH_PATH",
     "engine_options",
+    "missing_driver",
     "session_dsn",
     "undurable_reason",
 ]

@@ -20,7 +20,13 @@ from agents.adk import TurnResult, session_id_for
 from agents.config import AgentId
 from agents.context import RunContext
 from agents.orchestrator import Orchestrator, SliceResult, StageResult
-from agents.sessions import ASYNC_SCHEME, ENV_DATABASE_URL, session_dsn, undurable_reason
+from agents.sessions import (
+    ASYNC_SCHEME,
+    ENV_DATABASE_URL,
+    missing_driver,
+    session_dsn,
+    undurable_reason,
+)
 from agents.trace import ToolTrace
 from packages.schemas.run_state import RunState
 
@@ -293,3 +299,20 @@ def test_no_database_means_a_parked_turn_is_reported_as_unresumable():
 
 def test_a_configured_database_can_resume_a_parked_turn():
     assert undurable_reason({ENV_DATABASE_URL: "postgresql://u:p@host:5432/db"}) is None
+
+
+def test_the_session_store_driver_is_installed_where_the_job_runs():
+    """`agents` is copied into the remediator image as source, not installed.
+
+    Declaring the session store's driver in `agents/pyproject.toml` alone left
+    it absent from the deployed image, which resumed nothing and said nothing.
+    """
+    assert missing_driver() is None
+
+
+def test_a_missing_driver_is_reported_rather_than_assumed_away(monkeypatch):
+    """A DSN is not durability if the engine cannot be built."""
+    monkeypatch.setattr("agents.sessions.missing_driver", lambda: "sqlalchemy")
+    reason = undurable_reason({ENV_DATABASE_URL: "postgresql://u:p@host:5432/db"})
+    assert reason is not None
+    assert "sqlalchemy" in reason

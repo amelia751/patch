@@ -13,6 +13,12 @@ dependencies = [
     "patchapi-repo-scan",
     "google-adk>=2.1,<3",
     "asyncpg>=0.30,<0.31",
+    # `agents` is copied into the image as source, not installed, so its
+    # manifest cannot carry these. ADK's Postgres session store is what lets a
+    # turn parked for the operator be answered instead of replayed, and it needs
+    # an async SQLAlchemy engine — which needs greenlet.
+    "sqlalchemy>=2.0",
+    "greenlet>=3",
     "fastapi>=0.115,<1",
     "uvicorn>=0.30,<0.40",
     "httpx>=0.27,<0.29",
