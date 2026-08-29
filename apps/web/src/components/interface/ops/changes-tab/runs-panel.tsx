@@ -113,7 +113,7 @@ const TREE_COPY: Record<TreeId, { label: string; hint: string }> = {
   },
   proposed: {
     label: "Proposed",
-    hint: "Verified diff replayed onto a clean tree. This is the branch the publisher opens. PatchAPI does not merge.",
+    hint: "",
   },
 };
 
@@ -468,10 +468,12 @@ function RunDetail({
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 space-y-4">
         <AgentLog run={run} />
         <section>
-          <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-            {TREE_COPY[tree].hint}
-          </p>
-          <div className="mt-2">
+          {TREE_COPY[tree].hint && (
+            <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+              {TREE_COPY[tree].hint}
+            </p>
+          )}
+          <div className={TREE_COPY[tree].hint ? "mt-2" : undefined}>
             {tree === "base" && <BaseTree run={run} />}
             {tree === "sandbox" && <SandboxTree run={run} />}
             {tree === "proposed" && <ProposedTree run={run} />}
@@ -586,16 +588,16 @@ function ProposedTree({ run }: { run: MockRun }) {
           Independent verification
         </h3>
         <div className="mt-1.5 border border-[var(--border-color)] rounded-md px-3 py-2.5">
-          <p className="text-[12px] text-[var(--text-primary)]">
-            {failed
-              ? run.pauseReason
-                ? failureCopy(run.pauseReason)
-                : "Nothing has graded this run. Fail closed. No pull request."
-              : verified
-                ? "Verifier is not the patch author and was not given the patch plan."
+          {(failed || !verified) && (
+            <p className="text-[12px] text-[var(--text-primary)]">
+              {failed
+                ? run.pauseReason
+                  ? failureCopy(run.pauseReason)
+                  : "Nothing has graded this run. Fail closed. No pull request."
                 : "Nothing has graded this run."}
-          </p>
-          <ul className="mt-2 space-y-1">
+            </p>
+          )}
+          <ul className={failed || !verified ? "mt-2 space-y-1" : "space-y-1"}>
             {run.checks.map((check) => (
               <li key={check.name} className="flex items-start gap-2 text-[11px]">
                 {check.passed && (verified || failed) ? (
@@ -757,9 +759,6 @@ function PullRequestCard({ run }: { run: MockRun }) {
           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--text-secondary)]" />
           <BranchChip name={run.prBase ?? "main"} muted />
         </div>
-        <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-          PatchAPI stops here. It does not merge.
-        </p>
         {href ? (
           <a
             href={href}

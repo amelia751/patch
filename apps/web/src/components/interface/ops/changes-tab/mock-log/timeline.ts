@@ -511,7 +511,7 @@ function summarize(phase: PhaseId, steps: Step[], fixture: RunFixture): string {
         .join(" · ");
     }
     case "publish":
-      return fixture.pull_request_number ? `#${fixture.pull_request_number} opened · PatchAPI does not merge` : "pull request opened";
+      return fixture.pull_request_number ? `#${fixture.pull_request_number} opened` : "pull request opened";
   }
 }
 

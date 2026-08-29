@@ -429,9 +429,6 @@ export function RunLog({ fixture }: { fixture: RunFixture }) {
               verification <span className="text-emerald-500">{timeline.verdict}</span>
             </span>
           )}
-          <span className="text-[var(--text-tertiary)]">
-            PatchAPI stops here. It does not merge.
-          </span>
           <span className="ml-auto tabular-nums text-[var(--text-tertiary)]/70">
             {humanMs(timeline.totalMs)} · {timeline.steps} steps
           </span>
