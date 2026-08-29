@@ -241,8 +241,14 @@ function prettyQuery(raw: string): string {
     if (lower === "generatecontent" || lower === "image" || lower === "text") return false;
     return all.findIndex((other) => other.toLowerCase() === lower) === index;
   });
-  const pick = terms.slice(0, 2);
-  return pick.join(" · ") || raw.replace(/"/g, "").trim().slice(0, 42);
+  const pick = terms.slice(0, 3);
+  return pick.join(" · ") || raw.replace(/"/g, "").trim().slice(0, 48);
+}
+
+function clip(text: string, max = 72): string {
+  const one = text.split(/\n/)[0].trim().replace(/\.$/, "");
+  if (one.length <= max) return one;
+  return `${one.slice(0, max - 1).trimEnd()}…`;
 }
 
 /** The result of a tool call, cut to something that fits on one line. */
@@ -278,26 +284,32 @@ function fromNarration(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | 
       icon: "repo",
     };
   }
-  // Fetch and allocate are implied by staging. Drawing them as their own rows
-  // is how six setup sentences become six setup rows.
-  if (/^Fetched /.test(one) || /^Allocating an isolated /.test(one)) return null;
-  match = /^Staged (\d+) files/.exec(one);
+  match = /^Fetched (\S+) at (\w+)/.exec(one);
+  if (match) {
+    return { label: "Fetched", detail: `pinned tree @ ${match[2].slice(0, 7)}`, tone: "neutral", icon: "repo" };
+  }
+  match = /^Allocating an isolated (\w+) sandbox/.exec(one);
+  if (match) {
+    return { label: "Sandbox", detail: `${match[1]} · isolated`, tone: "neutral", icon: "sandbox" };
+  }
+  match = /^Staged (\d+) files(?: from (\S+))?/.exec(one);
   if (match) {
     const kind = /isolated (\w+) sandbox/.exec(one)?.[1];
+    const repo = match[2] ? ` from ${match[2].split("/").pop()}` : "";
     return {
       label: "Staged",
-      detail: `${match[1]} files`,
+      detail: `${match[1]} files${repo}`,
       outcome: kind ? `${kind} sandbox` : "sandbox",
       tone: "neutral",
       icon: "sandbox",
     };
   }
   if (/^Operator supplied credentials/.test(one)) {
-    return { label: "Credentials supplied", tone: "good", icon: "key" };
+    return { label: "Credentials supplied", detail: "continuing this run", tone: "good", icon: "key" };
   }
   match = /GCP project (\S+) is connected/.exec(one);
   if (match) {
-    return { label: "Resumed", detail: "GCP connected", tone: "good", icon: "key" };
+    return { label: "Resumed", detail: "GCP connected · same run", tone: "good", icon: "key" };
   }
   if (/no local repository check/.test(one)) return null;
   if (/^Baseline checks already fail/.test(one)) {
@@ -328,13 +340,14 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
 
   switch (name) {
     case "seed_static_manifest":
-      return { label: "Normalize", detail: "manifest", tone: "neutral", icon: "normalize" };
+      return { label: "Normalize", detail: "ChangeManifest", outcome: "identifiers as claims", tone: "neutral", icon: "normalize" };
     case "scan_repository":
       return { label: "Scan", detail: listed(arg(args, "identifiers"), "identifier"), outcome, tone: "neutral", icon: "scan" };
     case "record_impact_report":
       return {
         label: "Impact",
-        detail: arg(args, "affected") === "True" ? "affected" : "not affected",
+        detail: arg(args, "affected") === "True" ? "this repo is affected" : "not affected",
+        outcome: arg(args, "migration_character") || undefined,
         tone: "neutral",
         icon: "scan",
       };
@@ -354,13 +367,13 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
     case "list_verification_evidence":
       return { label: "List evidence", tone: "neutral", icon: "find" };
     case "list_runtime_credentials":
-      return { label: "Credentials", detail: "checked", tone: "neutral", icon: "key" };
+      return { label: "Credentials", detail: "what's bound to this run", tone: "neutral", icon: "key" };
     case "search_web":
       return { label: "Search", detail: prettyQuery(arg(args, "request") || args), tone: "neutral", icon: "web" };
     case "request_runtime_credentials":
       return {
         label: "Needs you",
-        detail: arg(args, "need") === "either" ? "GCP or a key" : arg(args, "need"),
+        detail: clip(arg(args, "reason") || (arg(args, "need") === "either" ? "GCP or a key" : arg(args, "need"))),
         body: arg(args, "reason"),
         tone: "warn",
         icon: "key",
@@ -376,7 +389,7 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
     case "record_verification_report":
       return { label: "Verdict", detail: arg(args, "verdict") || "recorded", tone: "good", icon: "verify" };
     case "computer_use_step":
-      return { label: "Preview", tone: "neutral", icon: "eye" };
+      return { label: "Preview", detail: "proposed tree", tone: "neutral", icon: "eye" };
     case "open_pull_request":
       return { label: "Pull request", detail: arg(args, "head_branch"), tone: "good", icon: "pr" };
     case "run_command": {
@@ -495,16 +508,23 @@ function summarize(phase: PhaseId, steps: Step[], fixture: RunFixture): string {
   switch (phase) {
     case "setup": {
       const staged = find("Staged");
-      return [staged?.detail, staged?.outcome].filter(Boolean).join(" · ") || "sandbox ready";
+      return staged
+        ? `${staged.detail} into ${staged.outcome ?? "a sandbox"}`
+        : "sandbox ready";
     }
     case "understand": {
       const hits = find("Scan")?.outcome ?? "";
-      return hits || "inventory joined";
+      return hits ? `${hits} at the pinned SHA` : "inventory joined at the pinned SHA";
     }
-    case "decide":
-      return find("Policy")?.outcome || "evaluated";
+    case "decide": {
+      const paths = find("Policy")?.detail;
+      const verdict = find("Policy")?.outcome || "evaluated";
+      return [verdict, paths].filter(Boolean).join(" · ");
+    }
     case "hold":
-      return find("Resumed") ? "continued" : "waiting for GCP or a key";
+      return find("Resumed")
+        ? "paused for credentials, then the same run continued"
+        : "waiting for GCP or a key";
     case "patch":
       return [
         tally("Read") && plural(tally("Read"), "read"),
@@ -518,7 +538,7 @@ function summarize(phase: PhaseId, steps: Step[], fixture: RunFixture): string {
     case "check":
       return [
         tally("Run") && plural(tally("Run"), "local check"),
-        tally("Preview") && "previewed",
+        tally("Preview") && "previewed the proposed tree",
       ]
         .filter(Boolean)
         .join(" · ") || "checked";
@@ -536,8 +556,8 @@ function summarize(phase: PhaseId, steps: Step[], fixture: RunFixture): string {
   }
 }
 
-/** Phases that are worth having open when the run is finished. */
-const OPEN_WHEN_DONE = new Set<PhaseId>(["hold", "patch", "publish"]);
+/** A long tool run starts collapsed; short phases stay open so the page is not an outline. */
+const COLLAPSE_AFTER = 8;
 
 export function buildTimeline(fixture: RunFixture): Timeline {
   const origin = MS(fixture.started_at);
@@ -558,13 +578,49 @@ export function buildTimeline(fixture: RunFixture): Timeline {
       said.add(row.body);
       built.push({
         phase: phaseOf(row),
-        step: { id: `t${row.sequence}`, label: "Thought", tone: "think", icon: "think", at, durationMs, body: row.body },
+        step: {
+          id: `t${row.sequence}`,
+          label: "Thought",
+          detail: clip(row.body, 88),
+          tone: "think",
+          icon: "think",
+          at,
+          durationMs,
+          body: row.body,
+        },
       });
       return;
     }
 
     const drawn = row.kind === "narration" ? fromNarration(row) : fromAction(row);
     if (!drawn) return;
+
+    const tool = row.kind === "action" ? parseCall(row.body).name : "";
+    const repoName = fixture.repository.split("/").pop() ?? fixture.repository;
+    const sha = fixture.base_sha.slice(0, 7);
+    const framing: Record<string, string> = {
+      seed_static_manifest: "Provider text is untrusted. Screen it before anything joins inventory.",
+      scan_repository: `Join this change against ${repoName} @ ${sha}, not HEAD.`,
+      read_file: "Read the binding at the pinned SHA before rewriting.",
+      list_verification_evidence: "Grade the diff and the clean logs. Do not read the patch author’s plan.",
+    };
+    const frame = framing[tool];
+    if (frame && !said.has(`thought|${frame}`)) {
+      said.add(`thought|${frame}`);
+      built.push({
+        phase: phaseOf(row),
+        step: {
+          id: `t${row.sequence}`,
+          label: "Thought",
+          detail: clip(frame, 88),
+          tone: "think",
+          icon: "think",
+          at,
+          durationMs: 0,
+          body: frame,
+        },
+      });
+    }
 
     // Resuming replays the setup narration and the deterministic slices, so this
     // run's rows 14-24 repeat rows 3-11. It is the same run, so the second telling
@@ -621,7 +677,7 @@ export function buildTimeline(fixture: RunFixture): Timeline {
     const tail = phase.steps[phase.steps.length - 1];
     phase.durationMs = tail.at + tail.durationMs - phase.at;
     phase.summary = summarize(phase.phase, phase.steps, fixture);
-    phase.collapsed = !OPEN_WHEN_DONE.has(phase.phase);
+    phase.collapsed = phase.steps.length > COLLAPSE_AFTER;
     // How the phase *ended*, not whether anything inside it went wrong. A patch
     // phase that hits a refused command and a failing baseline before landing a
     // clean edit has recovered, and marking it red says the opposite. Red is for

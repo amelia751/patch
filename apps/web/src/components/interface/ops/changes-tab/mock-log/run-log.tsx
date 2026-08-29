@@ -164,11 +164,16 @@ function StepRow({ step, running }: { step: Step; running: boolean }) {
           {step.label}
         </span>
 
-        {step.detail && (
-          <code className="min-w-0 truncate font-mono text-[11.5px] text-[var(--text-secondary)]">
-            {step.detail}
-          </code>
-        )}
+        {step.detail &&
+          (step.icon === "think" || step.icon === "web" || step.icon === "key" || step.icon === "policy" || step.icon === "scan" || step.icon === "normalize" || step.icon === "skill" ? (
+            <span className="min-w-0 truncate text-[11.5px] text-[var(--text-secondary)]">
+              {step.detail}
+            </span>
+          ) : (
+            <code className="min-w-0 truncate font-mono text-[11.5px] text-[var(--text-secondary)]">
+              {step.detail}
+            </code>
+          ))}
 
         {step.outcome && (
           <span className={cn("shrink-0 text-[11px]", TONE[step.tone])}>{step.outcome}</span>
@@ -270,7 +275,7 @@ function PhaseBlock({
           {phase.title}
         </span>
 
-        {!open && phase.summary && (
+        {phase.summary && (
           <span className="min-w-0 truncate text-[11.5px] text-[var(--text-tertiary)]">
             {phase.summary}
           </span>
@@ -311,13 +316,6 @@ function PhaseBlock({
         </div>
       )}
 
-      {/* Recapped under an open phase, where the collapsed header cannot show it.
-          Not under Publish: the run's footer already says how it ended. */}
-      {open && phase.summary && phase.phase !== "publish" && (
-        <p className="ml-[17px] mt-0.5 mb-1 text-[11px] text-[var(--text-tertiary)]/80">
-          {phase.summary}
-        </p>
-      )}
     </div>
   );
 }
