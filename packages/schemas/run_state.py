@@ -63,13 +63,36 @@ ALLOWED_RUN_STATE_TRANSITIONS: Final[MappingProxyType[RunState, frozenset[RunSta
             RunState.POLICY_EVALUATION: frozenset(
                 {RunState.PATCHING, RunState.HUMAN_REQUIRED, RunState.BLOCKED, RunState.FAILED}
             ),
+            # HUMAN_REQUIRED is reachable from every state that runs a model turn
+            # or grades one. `record_human_required` is the fail-closed exit any
+            # specialist may take, and a run whose specialist took it has to be
+            # able to say so. Without these edges the run had nowhere legal to go
+            # and stopped mid-flight, which reads in the console as a run still
+            # working on something no process is executing.
             RunState.PATCHING: frozenset(
-                {RunState.BUILDING, RunState.WAITING_ON_OPERATOR, RunState.FAILED}
+                {
+                    RunState.BUILDING,
+                    RunState.WAITING_ON_OPERATOR,
+                    RunState.HUMAN_REQUIRED,
+                    RunState.FAILED,
+                }
             ),
-            RunState.BUILDING: frozenset({RunState.TESTING, RunState.RETRY_PATCH, RunState.FAILED}),
+            RunState.BUILDING: frozenset(
+                {
+                    RunState.TESTING,
+                    RunState.RETRY_PATCH,
+                    RunState.HUMAN_REQUIRED,
+                    RunState.FAILED,
+                }
+            ),
             RunState.RETRY_PATCH: frozenset({RunState.PATCHING, RunState.FAILED}),
             RunState.TESTING: frozenset(
-                {RunState.VERIFYING, RunState.RETRY_PATCH, RunState.FAILED}
+                {
+                    RunState.VERIFYING,
+                    RunState.RETRY_PATCH,
+                    RunState.HUMAN_REQUIRED,
+                    RunState.FAILED,
+                }
             ),
             RunState.VERIFYING: frozenset(
                 {

@@ -372,6 +372,17 @@ async def _run(
             log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
             if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
                 return EXIT_OK
+            if not is_terminal(result.state):
+                # The orchestrator owes every run an ending. If one gets away
+                # without it, the row is the only thing left holding a state
+                # nothing will move, so it is closed here rather than left to
+                # read as in-flight for good.
+                return await _stop(
+                    pool,
+                    row.run_id,
+                    f"The run stopped in {result.state} without reaching an ending. "
+                    f"{result.detail}".strip(),
+                )
             return EXIT_FAILED
         finally:
             session.close()

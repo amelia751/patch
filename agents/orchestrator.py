@@ -393,6 +393,42 @@ class Orchestrator:
         self._advance(nxt)
         return nxt
 
+    def _slice_keeper(self) -> tuple[Callable[[StageResult], bool], SliceResult]:
+        """The stage accumulator a slice walks with, and the result it fills in.
+
+        Returns `keep`, which records a finished stage and answers whether the
+        slice carries on. Where it answers no, the run has an ending before the
+        call returns: a stage can succeed while the agent that ran it asked for
+        a human, and a run left resting in PATCHING, BUILDING, or TESTING is one
+        no process is executing and no operator has been asked about.
+        """
+        result = SliceResult(state=self._state, detail="")
+
+        def keep(stage: StageResult) -> bool:
+            result.stages.append(stage)
+            going_on = not (
+                is_terminal(self._state)
+                or self._state is RunState.WAITING_ON_OPERATOR
+                or self._context.stopped_for_human
+                or self._context.waiting_on_operator
+            )
+            result.detail = stage.detail
+            if (
+                not going_on
+                and not is_terminal(self._state)
+                and self._state is not RunState.WAITING_ON_OPERATOR
+            ):
+                self._advance(RunState.HUMAN_REQUIRED)
+                # The stage's own detail reads as success, because the stage did
+                # succeed. What the operator needs is the reason the agent gave
+                # for stopping on top of it.
+                asked = self._context.human_required[-1] if self._context.human_required else {}
+                result.detail = str(asked.get("reason") or "") or stage.detail
+            result.state = self._state
+            return going_on
+
+        return keep, result
+
     def _stage(
         self, agent: AgentId, turn: TurnResult | None, output: Any | None, detail: str
     ) -> StageResult:
@@ -1301,18 +1337,7 @@ class Orchestrator:
             deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
         setup = deterministic or setup_deterministic
 
-        result = SliceResult(state=self._state, detail="")
-
-        def keep(stage: StageResult) -> bool:
-            result.stages.append(stage)
-            result.state = self._state
-            result.detail = stage.detail
-            return not (
-                is_terminal(self._state)
-                or self._state is RunState.WAITING_ON_OPERATOR
-                or self._context.stopped_for_human
-                or self._context.waiting_on_operator
-            )
+        keep, result = self._slice_keeper()
 
         seeded = (
             self.seed_static_manifest(static_manifest)
