@@ -617,7 +617,7 @@ function ProposedTree({ run }: { run: MockRun }) {
       {run.diffs.length > 0 && (
         <section>
           <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Unified diff against {shortSha(run.baseSha)}
+            Changes against {shortSha(run.baseSha)}
           </h3>
           <div className="mt-1.5 space-y-1">
             {run.diffs.map((file) => (
