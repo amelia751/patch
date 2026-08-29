@@ -191,12 +191,12 @@ function StepRow({ step, running }: { step: Step; running: boolean }) {
       {open && step.folded && (
         <div className="ml-[18px] mt-0.5 mb-1 flex flex-col gap-px border-l border-[var(--border-color)] pl-2.5">
           {step.folded.map((item, index) => (
-            <code
+            <span
               key={index}
-              className="truncate font-mono text-[11px] text-[var(--text-tertiary)]"
+              className="truncate text-[11.5px] text-[var(--text-secondary)]"
             >
               {item.detail}
-            </code>
+            </span>
           ))}
         </div>
       )}

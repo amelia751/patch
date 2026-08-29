@@ -218,6 +218,33 @@ function listed(value: string, noun: string): string {
   return value.replace(/^\[|\]$/g, "");
 }
 
+function humanSkill(id: string): string {
+  return id.replace(/^google_/, "").replace(/gemini20/, "gemini 2.0").replace(/_/g, " ");
+}
+
+/**
+ * A web-search request, as two words a person would actually read.
+ *
+ * The agent searches with boolean soup (`"responseModalities" "IMAGE" OR …`).
+ * Quoted phrases and camelCase API names are the bits that distinguish one
+ * query from the next; the operators and the repeated `generateContent` are not.
+ */
+function prettyQuery(raw: string): string {
+  const quoted = [...raw.matchAll(/"([^"]+)"/g)].map((match) => match[1].trim()).filter(Boolean);
+  const leftover = raw
+    .replace(/"[^"]+"/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word && !/^(OR|AND|NOT|google|gemini)$/i.test(word));
+  const terms = [...quoted, ...leftover].filter((term, index, all) => {
+    const lower = term.toLowerCase();
+    if (lower === "generatecontent" || lower === "image" || lower === "text") return false;
+    return all.findIndex((other) => other.toLowerCase() === lower) === index;
+  });
+  const pick = terms.slice(0, 2);
+  return pick.join(" · ") || raw.replace(/"/g, "").trim().slice(0, 42);
+}
+
 /** The result of a tool call, cut to something that fits on one line. */
 function shortOutcome(result: string): string {
   const first = result.split("\n")[0].trim();
@@ -240,60 +267,51 @@ function fromNarration(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | 
 
   let match = /^Dispatched to ([^.]+)\./.exec(one);
   if (match) {
-    return { label: "Dispatched", detail: match[1], tone: "neutral", icon: "dispatch", body };
+    return { label: "Dispatched", detail: match[1], tone: "neutral", icon: "dispatch" };
   }
   match = /^Remediator claimed (\S+) at (\w+)/.exec(one);
   if (match) {
     return {
       label: "Claimed",
-      detail: `${match[1]} @ ${match[2].slice(0, 7)}`,
+      detail: `${match[1].split("/").pop()} @ ${match[2].slice(0, 7)}`,
       tone: "neutral",
       icon: "repo",
-      body,
     };
   }
-  match = /^Fetched (\S+) at (\w+)/.exec(one);
-  if (match) {
-    return { label: "Fetched", detail: "pinned tree", tone: "neutral", icon: "repo", body };
-  }
-  match = /^Allocating an isolated (\w+) sandbox/.exec(one);
-  if (match) {
-    return { label: "Sandbox", detail: `${match[1]} · allocating`, tone: "neutral", icon: "sandbox", body };
-  }
+  // Fetch and allocate are implied by staging. Drawing them as their own rows
+  // is how six setup sentences become six setup rows.
+  if (/^Fetched /.test(one) || /^Allocating an isolated /.test(one)) return null;
   match = /^Staged (\d+) files/.exec(one);
   if (match) {
+    const kind = /isolated (\w+) sandbox/.exec(one)?.[1];
     return {
       label: "Staged",
       detail: `${match[1]} files`,
-      outcome: "isolated sandbox",
+      outcome: kind ? `${kind} sandbox` : "sandbox",
       tone: "neutral",
       icon: "sandbox",
-      body,
     };
   }
   if (/^Operator supplied credentials/.test(one)) {
-    return { label: "Credentials supplied", tone: "good", icon: "key", body };
+    return { label: "Credentials supplied", tone: "good", icon: "key" };
   }
   match = /GCP project (\S+) is connected/.exec(one);
   if (match) {
-    return { label: "Resumed", detail: match[1], outcome: "same run", tone: "good", icon: "key", body };
+    return { label: "Resumed", detail: "GCP connected", tone: "good", icon: "key" };
   }
-  // The two "no local repository check" sentences say the same thing twice, and
-  // what they mean is a property of the change rather than an event in the run.
-  // It is reported once, in the phase summary, not as two steps.
   if (/no local repository check/.test(one)) return null;
   if (/^Baseline checks already fail/.test(one)) {
-    return { label: "Baseline already failing", tone: "warn", icon: "shell", body };
+    return { label: "Baseline already failing", tone: "warn", icon: "shell" };
   }
   match = /^Local checks for this change: (.+)$/.exec(one);
   if (match) {
-    return { label: "Local checks", detail: match[1].replace(/[`.]/g, ""), tone: "neutral", icon: "shell", body };
+    return { label: "Local checks", detail: match[1].replace(/[`.]/g, ""), tone: "neutral", icon: "shell" };
   }
   if (/^Pull request opened/.test(one)) {
-    return { label: "Pull request opened", outcome: "PatchAPI stopped", tone: "good", icon: "pr", body };
+    return { label: "Pull request opened", tone: "good", icon: "pr" };
   }
-  if (/^Starting the remediator/.test(one)) return null; // a wait, not a step
-  return { label: one.replace(/\.$/, ""), tone: "neutral", icon: "eye", body };
+  if (/^Starting the remediator/.test(one)) return null;
+  return { label: one.replace(/\.$/, ""), tone: "neutral", icon: "eye" };
 }
 
 const READ_TOOLS = new Set([
@@ -310,23 +328,24 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
 
   switch (name) {
     case "seed_static_manifest":
-      return { label: "Normalize", detail: "ChangeManifest", outcome: "identifiers kept as claims", tone: "neutral", icon: "normalize" };
+      return { label: "Normalize", detail: "manifest", tone: "neutral", icon: "normalize" };
     case "scan_repository":
-      return { label: "Scan inventory", detail: listed(arg(args, "identifiers"), "identifier"), outcome, tone: "neutral", icon: "scan" };
+      return { label: "Scan", detail: listed(arg(args, "identifiers"), "identifier"), outcome, tone: "neutral", icon: "scan" };
     case "record_impact_report":
       return {
         label: "Impact",
-        detail: arg(args, "migration_character") || (arg(args, "affected") === "True" ? "affected" : "not affected"),
-        outcome: arg(args, "affected") === "True" ? "affected" : "not affected",
+        detail: arg(args, "affected") === "True" ? "affected" : "not affected",
         tone: "neutral",
         icon: "scan",
       };
     case "evaluate_policy":
       return { label: "Policy", detail: listed(arg(args, "proposed_paths"), "path"), outcome, tone: outcome === "allow" ? "good" : "warn", icon: "policy" };
     case "record_policy_decision":
-      return { label: "Decision", detail: arg(args, "escalate_to_human") === "False" ? "ALLOW · merge stays off" : "escalated", tone: "good", icon: "policy" };
+      // evaluate_policy already said allow or deny. Recording it is a second
+      // row that only restates the same fact in louder words.
+      return null;
     case "load_migration_skill":
-      return { label: "Skill", detail: arg(args, "skill_id"), tone: "neutral", icon: "skill" };
+      return { label: "Skill", detail: humanSkill(arg(args, "skill_id")), tone: "neutral", icon: "skill" };
     case "read_file":
     case "read_verification_evidence":
       return { label: "Read", detail: arg(args, "path") || arg(args, "name"), tone: "neutral", icon: "read" };
@@ -335,11 +354,17 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
     case "list_verification_evidence":
       return { label: "List evidence", tone: "neutral", icon: "find" };
     case "list_runtime_credentials":
-      return { label: "Credentials", detail: "what is bound", tone: "neutral", icon: "key" };
+      return { label: "Credentials", detail: "checked", tone: "neutral", icon: "key" };
     case "search_web":
-      return { label: "Search", detail: arg(args, "request") || args, tone: "neutral", icon: "web", body: result };
+      return { label: "Search", detail: prettyQuery(arg(args, "request") || args), tone: "neutral", icon: "web" };
     case "request_runtime_credentials":
-      return { label: "Needs you", detail: arg(args, "need"), body: arg(args, "reason"), tone: "warn", icon: "key" };
+      return {
+        label: "Needs you",
+        detail: arg(args, "need") === "either" ? "GCP or a key" : arg(args, "need"),
+        body: arg(args, "reason"),
+        tone: "warn",
+        icon: "key",
+      };
     case "record_patch_plan":
       return {
         label: "Plan",
@@ -351,7 +376,7 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
     case "record_verification_report":
       return { label: "Verdict", detail: arg(args, "verdict") || "recorded", tone: "good", icon: "verify" };
     case "computer_use_step":
-      return { label: "Look at it", detail: arg(args, "goal"), tone: "neutral", icon: "eye" };
+      return { label: "Preview", tone: "neutral", icon: "eye" };
     case "open_pull_request":
       return { label: "Pull request", detail: arg(args, "head_branch"), tone: "good", icon: "pr" };
     case "run_command": {
@@ -464,26 +489,22 @@ function fold(steps: Step[]): Step[] {
 
 function summarize(phase: PhaseId, steps: Step[], fixture: RunFixture): string {
   const find = (label: string) => steps.find((step) => step.label === label);
-  const detail = (label: string) => find(label)?.detail ?? "";
   /** How many of a label, counting the ones folded inside a folded row. */
   const tally = (label: string) =>
     steps.filter((step) => step.label === label).reduce((sum, step) => sum + (step.folded?.length ?? 1), 0);
   switch (phase) {
     case "setup": {
-      const staged = detail("Staged");
-      const noCheck = fixture.trace.some((row) => /no local repository check/.test(row.body));
-      return [staged && `${staged} staged into an isolated sandbox`, noCheck && "no local check pinned — proof is a live resolve"]
-        .filter(Boolean)
-        .join(" · ");
+      const staged = find("Staged");
+      return [staged?.detail, staged?.outcome].filter(Boolean).join(" · ") || "sandbox ready";
     }
     case "understand": {
-      const hits = find("Scan inventory")?.outcome ?? "";
-      return hits ? `${hits} at the pinned SHA` : "inventory joined at the pinned SHA";
+      const hits = find("Scan")?.outcome ?? "";
+      return hits || "inventory joined";
     }
     case "decide":
-      return detail("Decision") || "policy evaluated";
+      return find("Policy")?.outcome || "evaluated";
     case "hold":
-      return find("Resumed") ? "resolved — the same run continued" : "connect GCP or add a key to continue";
+      return find("Resumed") ? "continued" : "waiting for GCP or a key";
     case "patch":
       return [
         tally("Read") && plural(tally("Read"), "read"),
@@ -497,7 +518,7 @@ function summarize(phase: PhaseId, steps: Step[], fixture: RunFixture): string {
     case "check":
       return [
         tally("Run") && plural(tally("Run"), "local check"),
-        tally("Look at it") && "viewed in a browser",
+        tally("Preview") && "previewed",
       ]
         .filter(Boolean)
         .join(" · ") || "checked";
