@@ -32,6 +32,7 @@ from agents.context import RunContext
 from agents.errors import AdkUnavailableError
 from agents.guardrails import build_tool_guardrails
 from agents.tools import build_tools
+from agents.tools.results import is_refusal
 from agents.trace import ToolTrace
 from packages.providers.google.config import GoogleProviderConfig
 from packages.providers.google.vertex import credentials_available
@@ -151,7 +152,11 @@ def _search_web_tool() -> Any:
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,
     )
-    return AgentTool(agent=child, skip_summarization=True)
+    # skip_summarization must stay off. ADK marks a response event carrying it
+    # as `is_final_response()`, which ends the calling agent's turn — so the
+    # search result never reaches the model that asked for it, and whatever the
+    # agent still owed (a VerificationReport, a patch plan) is never recorded.
+    return AgentTool(agent=child)
 
 
 def build_agent(
@@ -204,10 +209,22 @@ class TurnResult:
     session_id: str = ""
     pending_call_id: str = ""
     invocation_id: str = ""
+    finish_reason: str = ""
 
     @property
     def served_model(self) -> str:
         return self.model_versions[0] if self.model_versions else ""
+
+    @property
+    def truncated(self) -> bool:
+        """Whether the model was cut off rather than choosing to stop.
+
+        Gemini 3.x spends output tokens on thinking before it emits text or a
+        function call, so a turn that runs out mid-thought yields neither. That
+        is a budget problem and reads nothing like an agent that declined to
+        answer, so the two must not be reported as the same thing.
+        """
+        return self.finish_reason.upper() in {"MAX_TOKENS", "FINISH_REASON_MAX_TOKENS"}
 
     @property
     def resumable(self) -> bool:
@@ -375,6 +392,7 @@ async def _drive(
     long_running_tool: str | None = None
     pending_call_id = ""
     invocation_id = ""
+    finish_reason = ""
     seen_calls: set[str] = set()
     try:
         # `run_live` is bidirectional audio/video. The worklog surface is
@@ -398,6 +416,8 @@ async def _drive(
             if event.error_message:
                 errors.append(f"{event.error_code}: {event.error_message}")
                 trace.emit(f"  ERROR {event.error_code}: {event.error_message}")
+            if getattr(event, "finish_reason", None):
+                finish_reason = str(event.finish_reason)
             pending_ids = getattr(event, "long_running_tool_ids", None) or ()
             if pending_ids:
                 paused = True
@@ -423,7 +443,17 @@ async def _drive(
                     if paused and str(response.name) == (
                         long_running_tool or str(ToolName.REQUEST_RUNTIME_CREDENTIALS)
                     ):
-                        stop = True
+                        # ADK flags a long-running call the moment the model
+                        # emits it, before a guardrail has had a say. A refused
+                        # one is not a hold: parking on it left the run waiting
+                        # for an operator who had nothing to supply.
+                        if is_refusal(getattr(response, "response", None)):
+                            paused = False
+                            long_running_tool = None
+                            pending_call_id = ""
+                            trace.emit(f"  {response.name} refused — not a hold")
+                        else:
+                            stop = True
                 if getattr(part, "text", None) and getattr(part, "thought", False):
                     trace.thought(part.text, agent=agent.name)
                     continue
@@ -450,6 +480,7 @@ async def _drive(
         session_id=session.id,
         pending_call_id=pending_call_id,
         invocation_id=invocation_id,
+        finish_reason=finish_reason,
     )
 
 

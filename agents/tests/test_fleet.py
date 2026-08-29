@@ -11,6 +11,7 @@ import pytest
 from agents.adk import PREAMBLE, adk_unavailable_reason
 from agents.config import (
     DETERMINISTIC_STAGES,
+    MODEL_TEMPERATURE,
     REASONING_MODEL,
     SPECIALISTS,
     AgentId,
@@ -80,7 +81,8 @@ def test_request_runtime_credentials_is_a_long_running_tool(fleet):
         )
         assert getattr(tool, "is_long_running", False) is True
     change_names = {
-        getattr(item, "__name__", None) or item.name for item in fleet[AgentId.CHANGE_INTELLIGENCE].tools
+        getattr(item, "__name__", None) or item.name
+        for item in fleet[AgentId.CHANGE_INTELLIGENCE].tools
     }
     assert str(ToolName.REQUEST_RUNTIME_CREDENTIALS) not in change_names
 
@@ -115,14 +117,32 @@ def test_the_patch_prompt_ends_on_its_constraints(fleet):
     assert "Never report a check you did not run" in tail
 
 
+def test_a_web_search_does_not_end_the_turn_that_asked_for_it():
+    """ADK treats a `skip_summarization` response as the agent's final response.
+
+    With it on, the corroboration never reached the model that asked and the
+    caller's remaining obligation went unrecorded: the Verification agent
+    searched, its turn ended there, and no VerificationReport was ever written.
+    """
+    from google.adk.events.event import Event
+    from google.adk.events.event_actions import EventActions
+
+    from agents.adk import _search_web_tool
+
+    assert _search_web_tool().skip_summarization is False
+    # Why it has to stay false, asserted against ADK rather than described.
+    ended = Event(author="patch", actions=EventActions(skip_summarization=True))
+    assert ended.is_final_response()
+
+
 def test_the_prompt_version_is_visible_on_the_agent(fleet):
     for agent_id, agent in fleet.items():
         assert f"prompt v{prompt_version(agent_id)}" in agent.description
 
 
-def test_decoding_is_deterministic(fleet):
+def test_every_agent_decodes_at_the_pinned_temperature(fleet):
     for agent in fleet.values():
-        assert agent.generate_content_config.temperature == 0.0
+        assert agent.generate_content_config.temperature == MODEL_TEMPERATURE
 
 
 def test_the_orchestrator_starts_in_received(run_context, trace):

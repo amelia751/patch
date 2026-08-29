@@ -430,8 +430,11 @@ class Orchestrator:
         )
         output = self._context.output(STAGE_CONTRACTS[agent])
         if output is None:
-            # Gemini often treats the search child as the end of the turn.
-            # Same ADK session: continue, do not search again.
+            # A stage that read everything and recorded nothing gets one nudge
+            # in the same ADK session, so the evidence it already gathered is
+            # still in context. This was routine while the search child ended
+            # the turn that called it; it stays as a net for a model that
+            # simply forgets the obligation.
             turn = await run_turn(
                 self.agent(agent),
                 (
@@ -1109,13 +1112,25 @@ class Orchestrator:
             # left nothing to act on. HUMAN_REQUIRED is the honest ending: the
             # diff and the sandbox logs are in the console, and the judgment the
             # verifier owed is the one thing missing.
+            #
+            # The turn's closing text is carried through because it is the only
+            # account of why the judgement is missing. Without it the operator
+            # and the log both see a verifier that stopped for no stated reason.
+            said = (turn.final_text or "").strip() if turn is not None else ""
+            if turn is not None and turn.truncated:
+                because = (
+                    " The verifier ran out of output budget mid-judgement "
+                    f"({turn.finish_reason}), so it emitted neither a report nor a reason."
+                )
+            else:
+                because = f" The verifier said: {said[:400]}" if said else ""
             self._advance(RunState.HUMAN_REQUIRED)
             return self._stage(
                 agent,
                 turn,
                 None,
                 "the verifier ended its turn without recording a report, so nothing "
-                "has graded this patch; the evidence is in the worklog for review",
+                f"has graded this patch; the evidence is in the worklog for review.{because}",
             )
         if str(report.verdict) == "fail":
             return self._fail(agent, report.notes or "verification failed", turn)
