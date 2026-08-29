@@ -8,6 +8,9 @@ as a suffix of an allowed command.
 
 `cat` / `ls` / `grep` are omitted on purpose. `read_file` and `list_dir` cover
 inspection without giving the model a second, less-bounded read path.
+
+`git` is absent for a different reason, and `match_command` says so rather than
+refusing generically: the sandbox has no repository to run it against.
 """
 
 from dataclasses import dataclass
@@ -139,6 +142,18 @@ def match_command(argv: list[str]) -> AllowedCommand:
             argv=tuple(argv),
             timeout_seconds=300,
             reason="run one unittest module in the workspace",
+        )
+
+    if argv[0] == "git":
+        # `checkout.stage` leaves `.git` out on purpose, so the sandbox cannot
+        # fetch, push, or read a remote URL. Every git command therefore fails
+        # on "not a git repository" rather than on policy, and an agent told
+        # only "not on the allowlist" reaches for the next git spelling. Say
+        # what is actually true and name the read path that works.
+        raise CommandNotAllowedError(
+            "this workspace has no git repository — `.git` is not staged, so the "
+            "sandbox cannot reach a remote. Use read_file to see the file you "
+            "edited; the unified diff of your changes is computed for you."
         )
 
     raise CommandNotAllowedError(f"command {argv!r} is not on the Patch agent allowlist")

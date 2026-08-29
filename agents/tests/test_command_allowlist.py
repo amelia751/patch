@@ -57,3 +57,15 @@ def test_the_existing_egaki_shapes_still_match():
     assert match_command(["pnpm", "--dir", "cli", "build"]).argv[-1] == "build"
     assert match_command(["python3", "--version"]).timeout_seconds == 10
     assert match_command(["python", "--version"]).timeout_seconds == 10
+
+
+def test_git_is_refused_with_the_reason_it_cannot_work():
+    """A generic refusal made the agent try the next git spelling.
+
+    `checkout.stage` leaves `.git` out so the sandbox cannot reach a remote, so
+    no wording of a git command will ever run here.
+    """
+    with pytest.raises(CommandNotAllowedError) as raised:
+        match_command(["git", "diff"])
+    assert "no git repository" in str(raised.value)
+    assert "read_file" in str(raised.value)
