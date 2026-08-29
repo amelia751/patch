@@ -2,14 +2,20 @@
 # pnpm install dominate end-to-end latency, so the demo path allocates from a
 # pool that is already scheduled on a gVisor node.
 #
-# Two replicas, not one. One run needs two sandboxes in quick succession: it
-# allocates when it starts, releases at the operator hold, and allocates again
-# when the operator answers. At one replica the second allocation arrives before
-# the controller has replaced the first, so the resume waits for a cold pod —
-# which is the wait the pool exists to remove, moved rather than removed. A warm
-# sandbox holds its CPU and memory reservation for as long as it exists, so this
-# is two idle sandboxes' worth of the node, and no more: the deployment performs
-# one remediation at a time.
+# Sized at two per concurrent remediation. One run needs two sandboxes in quick
+# succession: it allocates when it starts, releases at the operator hold, and
+# allocates again when the operator answers. Without a spare, that second
+# allocation arrives before the controller has replaced the first and the resume
+# waits for a cold pod — the wait this pool exists to remove, moved rather than
+# removed.
+#
+# Four, because the remediation worker pool runs two instances and therefore
+# performs two remediations at once. The two numbers are one decision: raise
+# `PATCHAPI_REMEDIATION_WORKER_INSTANCES` without raising this and the extra
+# worker's runs allocate cold, which looks like the warm pool not working.
+#
+# A warm sandbox holds its CPU and memory reservation for as long as it exists,
+# so this is four idle sandboxes' worth of the node and no more.
 apiVersion: extensions.agents.x-k8s.io/v1alpha1
 kind: SandboxWarmPool
 metadata:
@@ -19,7 +25,7 @@ metadata:
     app.kubernetes.io/part-of: patchapi
     app.kubernetes.io/component: agent-sandbox
 spec:
-  replicas: 2
+  replicas: 4
   # A pooled sandbox inherits the full template posture; warming changes when a
   # sandbox is created, never what it is allowed to do.
   sandboxTemplateRef:

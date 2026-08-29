@@ -36,12 +36,21 @@ DATABASE_URL="$(tr -d '\n' <"$DSN_FILE")"
 # `PATCHAPI_REMEDIATION_LOCAL=1` still forces a subprocess per run, and
 # `PATCHAPI_REMEDIATION_JOB` still names the deployed job; either overrides this
 # by being set before this script runs.
+#
+# Two of them, matching the deployed pool's instance count, because a worker
+# performs one run at a time. With one, starting a second remediation queued it
+# behind the first — which is legitimate, but locally it also meant concurrency
+# was never exercised until the deployment hit it.
 if [[ -z "${PATCHAPI_REMEDIATION_LOCAL:-}" && -z "${PATCHAPI_REMEDIATION_JOB:-}" ]]; then
   export PATCHAPI_REMEDIATION_WORKER_POOL="${PATCHAPI_REMEDIATION_WORKER_POOL:-local}"
+  WORKERS="${PATCHAPI_REMEDIATION_WORKER_INSTANCES:-2}"
   if [[ "$PATCHAPI_REMEDIATION_WORKER_POOL" == "local" ]] \
      && ! pgrep -f 'patchapi-remediation-worker' >/dev/null 2>&1; then
-    printf 'starting the local remediation worker (log: /tmp/patchapi-worker.log)\n'
-    "$ROOT/scripts/serve_remediation_worker.sh" >/tmp/patchapi-worker.log 2>&1 &
+    for i in $(seq 1 "$WORKERS"); do
+      printf 'starting local remediation worker %d/%d (log: /tmp/patchapi-worker-%d.log)\n' \
+        "$i" "$WORKERS" "$i"
+      "$ROOT/scripts/serve_remediation_worker.sh" >"/tmp/patchapi-worker-$i.log" 2>&1 &
+    done
   fi
 fi
 

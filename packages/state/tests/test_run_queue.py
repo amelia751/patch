@@ -85,6 +85,39 @@ async def owned(lane: str) -> Any:
         await connection.close()
 
 
+@pytest.fixture
+async def two_owned(lane: str) -> Any:
+    """Two RECEIVED runs in this test's lane, on different repositories."""
+    connection = await _connect()
+    owner = await connection.fetchval(
+        "INSERT INTO users (email, display_name) VALUES ($1, 'Lease Test') RETURNING id",
+        f"lease-{uuid4().hex}@example.test",
+    )
+    project = await connection.fetchval(
+        "INSERT INTO projects (owner_id, name) VALUES ($1, $2) RETURNING id",
+        owner,
+        f"lease-{uuid4().hex[:8]}",
+    )
+    change = await write_manifest(connection, manifest())
+    handles = [
+        await remediation.open_run(
+            connection,
+            change_event_id=change.change_event_id,
+            project_id=str(project),
+            repository=f"{REPO}-{index}",
+            base_sha="b" * 40,
+            lane=lane,
+        )
+        for index in (1, 2)
+    ]
+    try:
+        yield connection, [handle.run_id for handle in handles]
+    finally:
+        await connection.execute("DELETE FROM projects WHERE id = $1", project)
+        await connection.execute("DELETE FROM users WHERE id = $1", owner)
+        await connection.close()
+
+
 async def _leased_by(connection: Any, run_id: str) -> str:
     return await connection.fetchval(
         "SELECT leased_by FROM remediation_runs WHERE id = $1::uuid", run_id
@@ -116,6 +149,33 @@ async def test_two_workers_racing_do_not_both_get_the_same_run(owned: Any, lane:
         await held.commit()
         assert first == run_id
         assert second is None
+    finally:
+        await rival.close()
+
+
+async def test_two_workers_take_one_run_each_when_two_are_waiting(
+    two_owned: Any, lane: str
+) -> None:
+    """The other half of the lease: exclusion must not cost parallelism.
+
+    Two instances is how concurrency is added — a worker performs one run at a
+    time — so two waiting runs have to become two runs in progress rather than a
+    queue of one behind a busy instance.
+    """
+    connection, run_ids = two_owned
+    rival = await _connect()
+    try:
+        held = connection.transaction()
+        await held.start()
+        first = await run_queue.claim(connection, "worker-a", lane=lane)
+
+        # Polling inside `worker-a`'s open transaction is the worst case: the row
+        # it took is locked and uncommitted.
+        second = await run_queue.claim(rival, "worker-b", lane=lane)
+
+        await held.commit()
+        assert {first, second} == set(run_ids)
+        assert first != second
     finally:
         await rival.close()
 

@@ -40,6 +40,14 @@ env:
   # Cloud Run to find capacity and paid it again on Continue; a warm instance
   # claims the run on its next poll.
   REMEDIATION_WORKER_POOL: patchapi-remediate-worker
+  # How many remediations the deployment performs at once. A worker performs one
+  # run at a time and worker pools do not autoscale, so this number is the
+  # concurrency. Set on every deploy rather than only at bootstrap: it is a
+  # property of the code being deployed, and leaving it to whatever created the
+  # pool is how the deployment sat at one instance while the console reported the
+  # second of two runs as having nobody to claim it. Raised together with
+  # `replicas` in sandbox/gke/warm-pool.yaml, which is two per concurrent run.
+  REMEDIATION_WORKER_INSTANCES: 2
   # Created by scripts/bootstrap_remediation_job.sh. Narrower than
   # roles/run.developer, which is the only predefined role carrying the
   # `runWithOverrides` permission a run id needs.
@@ -371,6 +379,7 @@ jobs:
               --project="${PROJECT_ID}" \
               --region="${REGION}" \
               --image="${IMAGE}" \
+              --scaling="${REMEDIATION_WORKER_INSTANCES}" \
               --quiet
           elif printf '%s' "${reason}" | grep -qiE 'NOT_FOUND|could not be found|does not exist'; then
             echo "worker pool ${REMEDIATION_WORKER_POOL} does not exist yet;" \

@@ -42,11 +42,19 @@ GITHUB_TOOLS_SERVICE="${PATCHAPI_GITHUB_TOOLS_SERVICE:-patchapi-github-tools}"
 EVIDENCE_BASE_URL="${PATCHAPI_EVIDENCE_BASE_URL:-https://patchapi-api-913371146929.us-central1.run.app}"
 KEY_FILE="${GOOGLE_APPLICATION_CREDENTIALS:-$ROOT/.secrets/gcp-service-account.json}"
 
-# One instance. A remediation holds a sandbox and drives one run row, and the
-# worker performs one at a time, so this is also the number of concurrent
-# remediations the deployment supports. Raise it and the lease is what keeps two
-# instances off one run.
-INSTANCES="${PATCHAPI_REMEDIATION_WORKER_INSTANCES:-1}"
+# How many remediations this deployment can perform at once, because a worker
+# performs one at a time and worker pools do not autoscale. A remediation holds a
+# sandbox, drives one run row, and spends most of its life waiting on a model or
+# on `kubectl`, so instances are the unit of concurrency here rather than threads
+# inside one.
+#
+# Two, not one. One instance made every second run wait for the first to finish,
+# with nothing in the console distinguishing that from a worker that had died —
+# and an operator who starts a remediation on one deprecation and then another is
+# the ordinary case, not a stress test. Kept small deliberately: each concurrent
+# run wants a warm sandbox from the pool in `sandbox/gke/warm-pool.yaml`, so the
+# two numbers are raised together or the extra instance waits on a cold sandbox.
+INSTANCES="${PATCHAPI_REMEDIATION_WORKER_INSTANCES:-2}"
 
 if [[ -f "$KEY_FILE" ]]; then
   export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="$KEY_FILE"
