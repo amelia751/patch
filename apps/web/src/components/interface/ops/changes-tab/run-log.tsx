@@ -30,7 +30,6 @@ import { DiffBlock } from "@/components/chat/code-block/diff-block";
 import { TerminalBlock } from "@/components/chat/code-block/terminal-block";
 import {
   buildTimeline,
-  humanMs,
   type IconName,
   type Phase,
   type RunFixture,
@@ -104,14 +103,6 @@ const PROSE_ICONS = new Set<IconName>([
   "skill",
 ]);
 
-function Duration({ ms }: { ms: number }) {
-  return (
-    <span className="shrink-0 tabular-nums text-[10.5px] text-[var(--text-tertiary)]/70">
-      {humanMs(ms)}
-    </span>
-  );
-}
-
 function StepRow({ step, running }: { step: Step; running: boolean }) {
   const [open, setOpen] = useState(false);
   const Icon = ICONS[step.icon];
@@ -164,10 +155,6 @@ function StepRow({ step, running }: { step: Step; running: boolean }) {
             )}
           />
         )}
-
-        <span className="ml-auto flex shrink-0 items-center">
-          <Duration ms={step.durationMs} />
-        </span>
       </div>
 
       {open && step.folded && (
@@ -248,15 +235,6 @@ function PhaseBlock({
             open && "rotate-90",
           )}
         />
-
-        <span className="ml-auto flex shrink-0 items-center gap-2">
-          {!open && (
-            <span className="tabular-nums text-[10.5px] text-[var(--text-tertiary)]/60">
-              {phase.steps.length} step{phase.steps.length === 1 ? "" : "s"}
-            </span>
-          )}
-          <Duration ms={phase.durationMs} />
-        </span>
       </button>
 
       {open && (
@@ -288,12 +266,6 @@ export function RunLog({ source, live = false }: { source: RunFixture; live?: bo
         <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
           Log
         </h3>
-        <span className="tabular-nums text-[11px] text-[var(--text-tertiary)]">
-          {timeline.steps} steps
-        </span>
-        <span className="tabular-nums text-[11px] text-[var(--text-secondary)]">
-          {humanMs(timeline.totalMs)}
-        </span>
       </header>
 
       <div className="mt-2 flex min-w-0 flex-col gap-1">
@@ -318,9 +290,6 @@ export function RunLog({ source, live = false }: { source: RunFixture; live?: bo
               verification <span className="text-emerald-500">{timeline.verdict}</span>
             </span>
           )}
-          <span className="ml-auto tabular-nums text-[var(--text-tertiary)]/70">
-            {humanMs(timeline.totalMs)} · {timeline.steps} steps
-          </span>
         </footer>
       )}
     </section>
