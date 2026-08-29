@@ -3,8 +3,8 @@
 /**
  * The run log, drawn as a run rather than as a transcript.
  *
- * Used only for the throwaway demo runs on the Changes → Runs tab. Live runs
- * still go through `AgentLog`.
+ * Live runs pass `follow` so rows appear as the job writes them. The demo
+ * fixtures omit `follow` and replay on the captured clock.
  *
  * What this replaces, for reference — six consecutive paragraphs, one weight,
  * source order, two of them nearly identical:
@@ -236,15 +236,17 @@ function PhaseBlock({
   phase,
   elapsed,
   isLast,
+  live = false,
 }: {
   phase: Phase;
   elapsed: number;
   isLast: boolean;
+  live?: boolean;
 }) {
   const visible = phase.steps.filter((step) => step.at <= elapsed);
   const reached = elapsed >= phase.at;
   const finished = elapsed >= phase.at + phase.durationMs;
-  const active = reached && !finished;
+  const active = live || (reached && !finished);
 
   // Open while it is happening, then fall back to whatever the phase asked for.
   // Watching a run means watching the current phase; reviewing one means seeing
@@ -254,7 +256,7 @@ function PhaseBlock({
 
   if (!reached) return null;
 
-  const running = active && !isLast ? false : active;
+  const running = live || (active && isLast);
 
   return (
     <div className="min-w-0">
@@ -310,7 +312,7 @@ function PhaseBlock({
             <StepRow
               key={step.id}
               step={step}
-              running={active && index === visible.length - 1}
+              running={running && index === visible.length - 1}
             />
           ))}
         </div>
@@ -367,17 +369,28 @@ function Controls({ replay }: { replay: Replay }) {
   );
 }
 
-export function RunLog({ fixture }: { fixture: RunFixture }) {
+export function RunLog({
+  fixture,
+  follow = false,
+  live = false,
+}: {
+  fixture: RunFixture;
+  /** Show every row that exists so far. A live run grows; it is not replayed. */
+  follow?: boolean;
+  live?: boolean;
+}) {
   const timeline = useMemo(() => buildTimeline(fixture), [fixture]);
   const beats = useMemo(
     () => timeline.phases.flatMap((phase) => phase.steps.map((step) => step.at)),
     [timeline],
   );
-  const replay = useReplay(timeline.totalMs, beats);
+  const replay = useReplay(follow ? 0 : timeline.totalMs, follow ? [] : beats);
+  const elapsed = follow ? timeline.totalMs : replay.elapsed;
+  const done = follow ? !live : replay.done;
 
-  const shown = timeline.phases.filter((phase) => phase.at <= replay.elapsed);
+  const shown = timeline.phases.filter((phase) => phase.at <= elapsed);
   const stepsShown = shown.reduce(
-    (sum, phase) => sum + phase.steps.filter((step) => step.at <= replay.elapsed).length,
+    (sum, phase) => sum + phase.steps.filter((step) => step.at <= elapsed).length,
     0,
   );
 
@@ -388,21 +401,27 @@ export function RunLog({ fixture }: { fixture: RunFixture }) {
           Log
         </h3>
         <span className="tabular-nums text-[11px] text-[var(--text-tertiary)]">
-          {stepsShown}/{timeline.steps}
+          {follow ? `${timeline.steps} steps` : `${stepsShown}/${timeline.steps}`}
         </span>
         <span className="tabular-nums text-[11px] text-[var(--text-secondary)]">
-          {humanMs(replay.elapsed)}
-          <span className="text-[var(--text-tertiary)]/60"> / {humanMs(timeline.totalMs)}</span>
+          {humanMs(elapsed)}
+          {!follow && (
+            <span className="text-[var(--text-tertiary)]/60"> / {humanMs(timeline.totalMs)}</span>
+          )}
         </span>
-        <div className="ml-auto">
-          <Controls replay={replay} />
-        </div>
-        <div className="h-[2px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
-          <div
-            className="h-full rounded-full bg-primary transition-[width] duration-100 ease-linear"
-            style={{ width: `${replay.progress * 100}%` }}
-          />
-        </div>
+        {!follow && (
+          <div className="ml-auto">
+            <Controls replay={replay} />
+          </div>
+        )}
+        {!follow && (
+          <div className="h-[2px] w-full overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-100 ease-linear"
+              style={{ width: `${replay.progress * 100}%` }}
+            />
+          </div>
+        )}
       </header>
 
       <div className="mt-2 flex min-w-0 flex-col gap-1">
@@ -410,17 +429,18 @@ export function RunLog({ fixture }: { fixture: RunFixture }) {
           <PhaseBlock
             key={phase.id}
             phase={phase}
-            elapsed={replay.elapsed}
+            elapsed={elapsed}
             isLast={index === shown.length - 1}
+            live={live && index === shown.length - 1}
           />
         ))}
       </div>
 
-      {replay.done && (
+      {done && timeline.prNumber != null && (
         <footer className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--border-color)] pt-2 text-[11px]">
           <span className="flex items-center gap-1.5 text-emerald-500">
             <GitPullRequest className="h-3 w-3" />
-            {timeline.prNumber ? `#${timeline.prNumber} opened` : "pull request opened"}
+            #{timeline.prNumber} opened
           </span>
           {timeline.verdict && (
             <span className="text-[var(--text-secondary)]">
@@ -436,7 +456,6 @@ export function RunLog({ fixture }: { fixture: RunFixture }) {
   );
 }
 
-/** The Log section of a demo run. Live runs keep `AgentLog`. */
 export function DemoLog({ run }: { run: MockRun }) {
   const fixture = fixtureFor(run);
   if (!fixture) return null;

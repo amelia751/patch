@@ -1,14 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ActivitySpinner, WorklogView } from "@/components/console/worklog-view";
-import { collapseWorklogEntries, pairActionResults } from "@/components/console/thread-worklog";
 import { DiffBlock } from "@/components/chat/code-block/diff-block";
 import { TerminalBlock } from "@/components/chat/code-block/terminal-block";
-import type { WorklogEntry } from "@/components/console/thread-types";
 import {
   ArrowRight,
   ChevronDown,
@@ -26,7 +23,7 @@ import { AddSecretDialog, type SecretRepoOption, type SecretWorkspaceOption } fr
 import { GCPConnectMethodDialog } from "@/components/interface/ops/configure-tab/gcp-connect-method-dialog";
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
 import { DEMO_REPO, isDemoRun } from "./mock-log/demo-runs";
-import { DemoLog } from "./mock-log/run-log";
+import { DemoLog, RunLog } from "./mock-log/run-log";
 import {
   HUMAN_REQUIRED_PAUSE,
   HUMAN_REQUIRED_SECRET_NAME,
@@ -35,8 +32,6 @@ import {
   proposedPending,
   treeAvailable,
   treeForMachine,
-  visibleLog,
-  type AgentLogLine,
   type DiffFile,
   type MockRun,
   type RunBucket,
@@ -610,84 +605,15 @@ function unifiedFrom(file: DiffFile): string {
   return lines.join("\n");
 }
 
-const VERB_TOOL: Record<string, string> = {
-  Read: "Read",
-  Apply: "Edit",
-  Write: "Write",
-  Run: "Bash",
-  Normalize: "Normalize",
-  Evaluate: "Evaluate",
-  Verify: "Verify",
-  List: "List",
-  Request: "Request",
-};
-
-function toWorklog(lines: AgentLogLine[]): WorklogEntry[] {
-  return lines.map((line) => {
-    const toolType = line.toolType ?? (line.verb ? VERB_TOOL[line.verb] : undefined);
-    if (line.kind === "thought") {
-      return { kind: "thinking", text: line.text };
-    }
-    if (line.kind === "action") {
-      return {
-        kind: "action",
-        text: line.text,
-        toolType,
-        toolUseId: line.toolUseId,
-        filePath: line.filePath,
-      };
-    }
-    if (line.kind === "result") {
-      return {
-        kind: "result",
-        text: line.text,
-        toolType,
-        toolUseId: line.toolUseId,
-      };
-    }
-    if (line.kind === "block") {
-      return { kind: "block", text: line.text };
-    }
-    return { kind: "narration", text: line.text };
-  });
-}
-
 function AgentLog({ run }: { run: MockRun }) {
   if (isDemoRun(run)) return <DemoLog run={run} />;
-  const lines = visibleLog(run);
-  const entries = collapseWorklogEntries(pairActionResults(toWorklog(lines)));
-  const endRef = useRef<HTMLDivElement>(null);
-  const live = run.bucket === "active";
-  const last = lines[lines.length - 1];
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [run.revealed, run.machine]);
-
+  if (!run.logSource) return null;
   return (
-    <section>
-      <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-        Log
-      </h3>
-      <div className="mt-2">
-        <WorklogView entries={entries} idPrefix={run.id} />
-        {live && last && (
-          <ActivitySpinner
-            activeTool={{
-              verb:
-                last.kind === "thought"
-                  ? "Thinking"
-                  : last.kind === "action"
-                    ? (last.verb ?? "Running")
-                    : "Working",
-              detail: last.kind === "action" ? last.text : undefined,
-              startedAt: run.lineStartedAt,
-            }}
-          />
-        )}
-        <div ref={endRef} />
-      </div>
-    </section>
+    <RunLog
+      fixture={run.logSource}
+      follow
+      live={run.bucket === "active"}
+    />
   );
 }
 

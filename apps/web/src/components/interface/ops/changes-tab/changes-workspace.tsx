@@ -50,6 +50,7 @@ function sameRuns(previous: MockRun[], next: MockRun[]): boolean {
       run.id === other.id &&
       run.machine === other.machine &&
       run.log.length === other.log.length &&
+      (run.logSource?.trace.length ?? 0) === (other.logSource?.trace.length ?? 0) &&
       run.diffs.length === other.diffs.length &&
       run.commands.length === other.commands.length &&
       run.checks.length === other.checks.length &&

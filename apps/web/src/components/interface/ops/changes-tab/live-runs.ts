@@ -19,6 +19,7 @@
 
 import type { ChangeActionId } from "./actions";
 import { runKey, type FileHit, type ProjectChange } from "./data";
+import type { RunFixture } from "./mock-log/timeline";
 import {
   HUMAN_REQUIRED_PAUSE,
   failureCopy,
@@ -882,6 +883,30 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
     prNumber: pullRequest && pullRequest.number != null ? Number(pullRequest.number) : undefined,
     prTitle: pullRequest ? String(pullRequest.title ?? "") || undefined : undefined,
     traceId: detail.run_id,
+    logSource: fixtureFrom(detail),
+  };
+}
+
+/** The job's own rows, in the shape the phase log already reads. */
+export function fixtureFrom(detail: RunDetail): RunFixture {
+  return {
+    run_id: detail.run_id,
+    state: detail.state,
+    repository: detail.repository,
+    change_id: detail.change_id,
+    base_sha: detail.base_sha,
+    started_at: detail.started_at,
+    ended_at: detail.ended_at,
+    pull_request_url: detail.pull_request_url,
+    pull_request_number: detail.pull_request_number,
+    trace: detail.trace,
+    artifacts: detail.artifacts.map((artifact) => ({
+      kind: artifact.kind,
+      body: artifact.body,
+      media_type: artifact.media_type,
+    })),
+    verification: detail.verification,
+    pull_request: detail.pull_request,
   };
 }
 
@@ -899,8 +924,10 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
  * says only that the run is waiting to be claimed.
  */
 export function pendingRun(change: ProjectChange, index: number): MockRun {
+  const started = new Date().toISOString();
+  const id = `pending:${runKey(change)}`;
   return {
-    id: `pending:${runKey(change)}`,
+    id,
     code: `R-${String(index + 1).padStart(3, "0")}`,
     changeId: change.id,
     title: change.title,
@@ -932,6 +959,33 @@ export function pendingRun(change: ProjectChange, index: number): MockRun {
     revealed: 1,
     lineStartedAt: Date.now(),
     traceId: "",
+    logSource: {
+      run_id: id,
+      state: "RECEIVED",
+      repository: change.repo ?? "",
+      change_id: change.id,
+      base_sha: change.baseSha ?? "",
+      started_at: started,
+      ended_at: null,
+      pull_request_url: null,
+      pull_request_number: null,
+      trace: [
+        {
+          sequence: 1,
+          state: "RECEIVED",
+          kind: "narration",
+          verb: "",
+          body: "Dispatched to remediator. Waiting for the remediator to claim this run.",
+          tool_type: "",
+          tool_use_id: "",
+          file_path: "",
+          occurred_at: started,
+        },
+      ],
+      artifacts: [],
+      verification: null,
+      pull_request: null,
+    },
   };
 }
 

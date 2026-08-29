@@ -15,6 +15,7 @@ import {
   type FileHit,
   type ProjectChange,
 } from "./data";
+import type { RunFixture } from "./mock-log/timeline";
 
 export type RunBucket =
   | "active"
@@ -130,6 +131,8 @@ export interface MockRun {
   prNumber?: number;
   prTitle?: string;
   traceId: string;
+  /** Raw job trace for the phase log. Absent only on the optimistic pending card if omitted. */
+  logSource?: RunFixture;
 }
 
 export const MACHINE_LABEL: Record<MachineState, string> = {
