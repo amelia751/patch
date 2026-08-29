@@ -25,7 +25,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 from sandbox.credentials import LIVE_VERIFICATION_CREDENTIALS
 
@@ -95,6 +95,26 @@ class SandboxSession(Protocol):
 
     def close(self) -> None:
         """Destroy the environment. Safe to call twice."""
+
+
+# How `git apply` is asked, in order, until one attempt applies the diff.
+#
+# A language model writes the body of a hunk far more reliably than it counts
+# the lines in the `@@` header, and plain `git apply` refuses the whole patch
+# over a miscount with "corrupt patch at line N". On one Imagen run nine of the
+# Patch agent's forty tool calls were diffs rejected that way, which spent the
+# turn's budget on arithmetic rather than on the migration.
+#
+# `--recount` is git's own answer: infer the counts from the hunk instead of
+# trusting the header. It changes nothing when the header is already right.
+# `-C1` then relaxes context matching to a single line, which recovers a diff
+# whose surrounding context drifted, and is still anchored enough that it
+# cannot land in the wrong place. Neither weakens the forbidden-path check —
+# that runs on the paths the diff names, before any of this.
+GIT_APPLY_LADDER: Final[tuple[tuple[str, ...], ...]] = (
+    ("--recount",),
+    ("--recount", "-C1"),
+)
 
 
 def resolve_within(root: PurePath, relpath: str) -> PurePath:
@@ -243,25 +263,30 @@ class LocalSession:
             shutil.copy2(tree / relpath, destination)
 
     def apply_unified_diff(self, diff: str, timeout_seconds: float = 30) -> ExecutionResult:
-        try:
-            completed = subprocess.run(
-                ["git", "apply", "-p1", "--whitespace=nowarn", "-"],
-                cwd=self._workspace,
-                input=diff,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout_seconds,
+        result = ExecutionResult(exit_code=1, stderr="no git apply attempt was made")
+        for extra in GIT_APPLY_LADDER:
+            try:
+                completed = subprocess.run(
+                    ["git", "apply", "-p1", "--whitespace=nowarn", *extra, "-"],
+                    cwd=self._workspace,
+                    input=diff,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=timeout_seconds,
+                )
+            except subprocess.TimeoutExpired:
+                return ExecutionResult(exit_code=-1, timed_out=True)
+            except OSError as exc:
+                return ExecutionResult(exit_code=127, stderr=str(exc))
+            result = ExecutionResult(
+                exit_code=completed.returncode,
+                stdout=completed.stdout or "",
+                stderr=completed.stderr or "",
             )
-        except subprocess.TimeoutExpired:
-            return ExecutionResult(exit_code=-1, timed_out=True)
-        except OSError as exc:
-            return ExecutionResult(exit_code=127, stderr=str(exc))
-        return ExecutionResult(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
-        )
+            if result.exit_code == 0:
+                return result
+        return result
 
     def close(self) -> None:
         if self._closed:

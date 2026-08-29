@@ -135,6 +135,49 @@ def test_apply_unified_diff_reports_a_patch_that_does_not_apply(session):
     assert result.stderr != ""
 
 
+def test_a_hunk_header_that_miscounts_still_applies(session):
+    """The commonest way a model's diff is thrown out is arithmetic, not content.
+
+    Plain `git apply` reads the `@@` counts as authoritative and refuses the
+    whole patch with "corrupt patch at line N" when they disagree with the hunk
+    body. The body here is correct and unambiguous; only the numbers are wrong.
+    """
+    session.write_file("greeting.txt", "hello\nimagen-4\nbye\n")
+    miscounted = (
+        "--- a/greeting.txt\n"
+        "+++ b/greeting.txt\n"
+        "@@ -1,9 +1,9 @@\n"
+        " hello\n"
+        "-imagen-4\n"
+        "+gemini-3.1-flash-image\n"
+        " bye\n"
+    )
+
+    result = session.apply_unified_diff(miscounted)
+
+    assert result.exit_code == 0, result.stderr
+    assert session.read_file("greeting.txt") == "hello\ngemini-3.1-flash-image\nbye\n"
+
+
+def test_a_diff_whose_content_is_wrong_is_still_refused(session):
+    """Recounting fixes arithmetic. It must not make a wrong edit land."""
+    session.write_file("greeting.txt", "hello\nsomething-else\nbye\n")
+    miscounted = (
+        "--- a/greeting.txt\n"
+        "+++ b/greeting.txt\n"
+        "@@ -1,9 +1,9 @@\n"
+        " hello\n"
+        "-imagen-4\n"
+        "+gemini-3.1-flash-image\n"
+        " bye\n"
+    )
+
+    result = session.apply_unified_diff(miscounted)
+
+    assert result.exit_code != 0
+    assert session.read_file("greeting.txt") == "hello\nsomething-else\nbye\n"
+
+
 def test_write_tree_puts_a_whole_checkout_in(session, tmp_path):
     source = tmp_path / "checkout"
     (source / "lib").mkdir(parents=True)

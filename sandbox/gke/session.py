@@ -37,6 +37,7 @@ from pathlib import Path, PurePosixPath
 
 from ..credentials import LIVE_VERIFICATION_CREDENTIALS
 from ..session import (
+    GIT_APPLY_LADDER,
     ExecutionResult,
     SandboxError,
     SandboxPathError,
@@ -547,18 +548,23 @@ class GkeSession:
         staged = self._exec_python(_WRITE_PROGRAM, str(diff_path), stdin=diff)
         if staged.exit_code != 0:
             return staged
-        result = self.execute(
-            [
-                "git",
-                "-C",
-                str(_POD_WORKSPACE),
-                "apply",
-                "-p1",
-                "--whitespace=nowarn",
-                str(diff_path),
-            ],
-            timeout_seconds=timeout_seconds,
-        )
+        result = ExecutionResult(exit_code=1, stderr="no git apply attempt was made")
+        for extra in GIT_APPLY_LADDER:
+            result = self.execute(
+                [
+                    "git",
+                    "-C",
+                    str(_POD_WORKSPACE),
+                    "apply",
+                    "-p1",
+                    "--whitespace=nowarn",
+                    *extra,
+                    str(diff_path),
+                ],
+                timeout_seconds=timeout_seconds,
+            )
+            if result.exit_code == 0:
+                break
         # The diff is evidence of what was attempted, but it belongs beside the
         # run record on the orchestrator, not in a sandbox that outlives it.
         self.execute(["rm", "-f", str(diff_path)], timeout_seconds=30)
