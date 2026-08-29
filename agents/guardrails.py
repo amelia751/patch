@@ -16,11 +16,19 @@ dashboard renders and the audit reads comes from these two callbacks, which
 means a tool cannot run untraced.
 """
 
+import json
 from collections.abc import Callable
 from time import perf_counter
 from typing import Any, Final
 
-from agents.config import MAX_TOOL_CALLS_PER_TURN, AgentId, tool_allowlist
+from agents.config import (
+    MAX_IDENTICAL_CALLS,
+    MAX_TOOL_CALLS_PER_TURN,
+    REPEATED_CALL_IS_A_LOOP,
+    TURN_ENDING_TOOLS,
+    AgentId,
+    tool_allowlist,
+)
 from agents.tools.results import ReasonCode, is_refusal, refusal
 from agents.trace import ToolStatus, ToolTrace, command_detail, summarise
 
@@ -28,6 +36,20 @@ from agents.trace import ToolStatus, ToolTrace, command_detail, summarise
 # `name` attribute of the tool object, so this module stays importable — and
 # unit-testable — without google-adk present.
 _TOOL_NAME_ATTR: Final[str] = "name"
+
+_TURN_ENDING: Final[frozenset[str]] = frozenset(str(name) for name in TURN_ENDING_TOOLS)
+
+_REPEAT_IS_A_LOOP: Final[frozenset[str]] = frozenset(
+    str(name) for name in REPEATED_CALL_IS_A_LOOP
+)
+
+
+def _canonical(args: dict[str, Any]) -> str:
+    """A stable key for one set of tool arguments."""
+    try:
+        return json.dumps(args, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(sorted(args.items(), key=lambda item: item[0]))
 
 
 def _tool_name(tool: Any) -> str:
@@ -39,11 +61,13 @@ def build_tool_guardrails(
     trace: ToolTrace,
     *,
     max_calls: int = MAX_TOOL_CALLS_PER_TURN,
+    max_identical: int = MAX_IDENTICAL_CALLS,
 ) -> tuple[Callable[..., Any], Callable[..., Any]]:
     """Return `(before_tool, after_tool)` callbacks bound to `agent` and `trace`."""
     allowed = {str(name) for name in tool_allowlist(agent)}
     started: dict[int, float] = {}
     calls = {"count": 0}
+    repeats: dict[str, int] = {}
 
     def _record(
         tool: Any,
@@ -85,7 +109,7 @@ def build_tool_guardrails(
             return denial
 
         calls["count"] += 1
-        if calls["count"] > max_calls:
+        if calls["count"] > max_calls and name not in _TURN_ENDING:
             stopped = refusal(
                 ReasonCode.STAGE_NOT_READY,
                 f"this turn has used its budget of {max_calls} tool calls without "
@@ -93,6 +117,21 @@ def build_tool_guardrails(
             )
             _record(tool, args, ToolStatus.ERROR, stopped, 0.0, detail="tool-call budget exhausted")
             return stopped
+
+        if name in _REPEAT_IS_A_LOOP:
+            fingerprint = f"{name}:{_canonical(args)}"
+            repeats[fingerprint] = repeats.get(fingerprint, 0) + 1
+            if repeats[fingerprint] > max_identical:
+                looping = refusal(
+                    ReasonCode.STAGE_NOT_READY,
+                    f"{name} has already answered these exact arguments "
+                    f"{max_identical} times in this turn; the answer will not "
+                    "change. Use what you have, or record what is missing.",
+                )
+                _record(
+                    tool, args, ToolStatus.ERROR, looping, 0.0, detail="identical call repeated"
+                )
+                return looping
 
         started[id(args)] = perf_counter()
         shown = ", ".join(f"{key}={summarise(value)}" for key, value in sorted(args.items()))

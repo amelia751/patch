@@ -109,6 +109,39 @@ class ToolName(StrEnum):
 # CLAUDE.md constraint 10: stopping is always an available structured action.
 SHARED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.RECORD_HUMAN_REQUIRED})
 
+# The tool-call budget bounds work; it must never bound an ending. Refusing
+# these alongside the rest told an exhausted agent to record HUMAN_REQUIRED and
+# then refused that call too, so the turn could only die without a verdict.
+TURN_ENDING_TOOLS: Final[frozenset[ToolName]] = frozenset(
+    {
+        ToolName.RECORD_HUMAN_REQUIRED,
+        ToolName.RECORD_CHANGE_MANIFEST,
+        ToolName.RECORD_IMPACT_REPORT,
+        ToolName.RECORD_POLICY_DECISION,
+        ToolName.RECORD_PATCH_PLAN,
+        ToolName.RECORD_VERIFICATION_REPORT,
+    }
+)
+
+# Tools whose answer cannot change during a turn, so repeating the same
+# arguments cannot tell the agent anything it does not already have. Asking
+# twice is a retry; asking a third time is a loop, and one Patch turn spent
+# minutes re-issuing an identical search before its budget ran out.
+#
+# Deliberately narrow. `run_command` and `read_file` are how the Patch loop
+# sees the effect of an edit, so an identical call there is the point.
+REPEATED_CALL_IS_A_LOOP: Final[frozenset[ToolName]] = frozenset(
+    {
+        ToolName.SEARCH_WEB,
+        ToolName.LOAD_MIGRATION_SKILL,
+        ToolName.LIST_VERIFICATION_EVIDENCE,
+        ToolName.LIST_RUNTIME_CREDENTIALS,
+    }
+)
+
+# How many identical calls to one of those tools a turn may make.
+MAX_IDENTICAL_CALLS: Final[int] = 2
+
 # Agent -> the tools it may call, beyond `SHARED_TOOLS`. The orchestrator holds
 # none: it sequences specialists deterministically (roadmap §9) and is not an
 # LLM that decides who does what.
@@ -189,9 +222,13 @@ PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
 # so PatchAPI cannot drift from the generation the rules require.
 REASONING_MODEL: Final[str] = require_supported_reasoning_model(DEFAULT_REASONING_MODEL)
 
-# Deterministic decoding. These agents confirm and record structured facts; a
-# sampled answer would make an audit trail irreproducible.
-MODEL_TEMPERATURE: Final[float] = 0.0
+# Google's documented setting for this generation. Greedy decoding is what makes
+# Gemini 3 repeat itself: at 0.0 a Patch turn re-issued one identical web search
+# a dozen times until its budget ran out. It bought no reproducibility either —
+# what a run can be audited from is the trace and the evidence, and those depend
+# on the sandbox, the provider, and the search index, none of which are fixed.
+# https://ai.google.dev/gemini-api/docs/prompting-strategies
+MODEL_TEMPERATURE: Final[float] = 1.0
 
 # Gemini 3.x spends output tokens on thinking before it emits text or a function
 # call, so a small cap yields an empty turn rather than a short one.
@@ -199,8 +236,11 @@ MAX_OUTPUT_TOKENS: Final[int] = 4096
 
 # A turn that has not converged by here is stuck. The orchestrator fails closed
 # rather than letting an agent loop on a tool it cannot satisfy. The Patch
-# debug loop (inspect → edit → run) needs more than a single-shot confirm.
-MAX_TOOL_CALLS_PER_TURN: Final[int] = 24
+# debug loop (inspect → edit → run) needs more than a single-shot confirm, and a
+# multi-file semantic migration spends most of this on reading before it edits:
+# a Patch turn that loads a skill, reads a dozen files, searches, runs a
+# baseline, patches, and re-runs is working, not looping.
+MAX_TOOL_CALLS_PER_TURN: Final[int] = 40
 
 # Longest untrusted provider excerpt handed to a model in one tool result.
 # Provider text is data; a whole changelog in a prompt is an injection surface,

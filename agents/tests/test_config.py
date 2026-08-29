@@ -29,8 +29,13 @@ def test_reasoning_model_meets_the_pinned_generation():
     assert parse_gemini_generation(REASONING_MODEL) >= MINIMUM_REASONING_GENERATION
 
 
-def test_decoding_is_deterministic():
-    assert MODEL_TEMPERATURE == 0.0
+def test_decoding_follows_googles_setting_for_this_generation():
+    """Gemini 3 is documented at temperature 1.0; lower values make it repeat.
+
+    Pinned as a test because the tempting change is downwards, and greedy
+    decoding here cost a Patch turn its whole budget on one repeated search.
+    """
+    assert MODEL_TEMPERATURE == 1.0
     assert MAX_TOOL_CALLS_PER_TURN > 0
 
 

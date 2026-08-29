@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from agents.config import AgentId, ToolName, tool_allowlist
 from agents.guardrails import build_tool_guardrails
+from agents.tools.results import is_refusal
 from agents.trace import ToolStatus, ToolTrace, digest
 
 
@@ -59,6 +60,57 @@ def test_the_tool_call_budget_stops_a_looping_turn(trace):
     stopped = before(tool=tool, args={"path": "src/3.ts"})
     assert stopped["status"] == "refused"
     assert "budget" in stopped["message"]
+
+
+def test_an_exhausted_turn_can_still_record_an_ending(trace):
+    """The budget bounds work, not endings.
+
+    The refusal above tells the agent to record HUMAN_REQUIRED. While that call
+    was refused too, a Patch turn that spent its budget on a failed diff had no
+    way to say so: it parked the run on a credential it already had, because
+    asking was the only call left that did anything.
+    """
+    before, after = build_tool_guardrails(AgentId.IMPACT, trace, max_calls=1)
+    work = FakeTool(str(ToolName.CLASSIFY_REPOSITORY_PATH))
+    args = {"path": "src/0.ts"}
+    assert before(tool=work, args=args) is None
+    after(tool=work, args=args, tool_response={"status": "ok"})
+
+    stopped = before(tool=work, args={"path": "src/1.ts"})
+    assert stopped["status"] == "refused"
+    # `agents.adk._drive` reads this shape to tell a refused long-running call
+    # from a real operator hold. A refusal that stopped looking like one would
+    # park the run again, silently.
+    assert is_refusal(stopped)
+    for ending in (ToolName.RECORD_HUMAN_REQUIRED, ToolName.RECORD_IMPACT_REPORT):
+        assert before(tool=FakeTool(str(ending)), args={"reason": "stuck"}) is None
+
+
+def test_repeating_a_search_that_already_answered_is_refused(trace):
+    """A search whose arguments have not changed cannot return anything new.
+
+    One Patch turn issued the same query twelve times at roughly 25s each.
+    Two are allowed so a transient failure can be retried.
+    """
+    before, _ = build_tool_guardrails(AgentId.CHANGE_INTELLIGENCE, trace, max_identical=2)
+    tool = FakeTool(str(ToolName.SEARCH_WEB))
+    args = {"request": "gemini-3.1-flash-image"}
+
+    assert before(tool=tool, args=dict(args)) is None
+    assert before(tool=tool, args=dict(args)) is None
+    looping = before(tool=tool, args=dict(args))
+    assert looping["status"] == "refused"
+    assert "will not change" in looping["message"]
+    # A different question is still a different question.
+    assert before(tool=tool, args={"request": "imagen-4.0-generate-001"}) is None
+
+
+def test_rerunning_a_command_after_an_edit_is_not_a_loop(trace):
+    """The Patch loop is edit, re-run, compare. Identical args are the point."""
+    before, _ = build_tool_guardrails(AgentId.PATCH, trace, max_identical=2)
+    tool = FakeTool(str(ToolName.RUN_COMMAND))
+    for _ in range(5):
+        assert before(tool=tool, args={"command": "python3 generate.py"}) is None
 
 
 def test_a_completed_call_is_traced_with_a_result_digest(trace):
