@@ -11,7 +11,6 @@ import { TerminalBlock } from "@/components/chat/code-block/terminal-block";
 import type { WorklogEntry } from "@/components/console/thread-types";
 import {
   ArrowRight,
-  Check,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -19,7 +18,6 @@ import {
   GitBranch,
   Github,
   GitPullRequest,
-  Lock,
   Radio,
   Search,
   X,
@@ -578,42 +576,8 @@ function SandboxTree({ run }: { run: MockRun }) {
 }
 
 function ProposedTree({ run }: { run: MockRun }) {
-  const verified = run.machine === "PR_CREATED" || run.machine === "VERIFYING";
-  const failed = run.machine === "FAILED";
-
   return (
     <div className="space-y-4">
-      <section>
-        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-          Independent verification
-        </h3>
-        <div className="mt-1.5 border border-[var(--border-color)] rounded-md px-3 py-2.5">
-          {(failed || !verified) && (
-            <p className="text-[12px] text-[var(--text-primary)]">
-              {failed
-                ? run.pauseReason
-                  ? failureCopy(run.pauseReason)
-                  : "Nothing has graded this run. Fail closed. No pull request."
-                : "Nothing has graded this run."}
-            </p>
-          )}
-          <ul className={failed || !verified ? "mt-2 space-y-1" : "space-y-1"}>
-            {run.checks.map((check) => (
-              <li key={check.name} className="flex items-start gap-2 text-[11px]">
-                {check.passed && (verified || failed) ? (
-                  <Check className="h-3 w-3 mt-0.5 text-emerald-500 shrink-0" />
-                ) : failed && !check.passed ? (
-                  <X className="h-3 w-3 mt-0.5 text-red-500 shrink-0" />
-                ) : (
-                  <Lock className="h-3 w-3 mt-0.5 text-[var(--text-secondary)] shrink-0" />
-                )}
-                <span className="text-[var(--text-secondary)]">{check.name}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
       {run.diffs.length > 0 && (
         <section>
           <h3 className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
