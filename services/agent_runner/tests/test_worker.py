@@ -26,13 +26,15 @@ from patchapi_agent_runner.remediation import worker
 
 
 class _Pool:
-    """Enough of an asyncpg pool for `async with pool.acquire()`."""
+    """Enough of an asyncpg pool for `async with pool.acquire(timeout=...)`."""
 
     def __init__(self) -> None:
         self.connection = object()
+        self.timeouts: list[float | None] = []
 
-    def acquire(self) -> Any:
+    def acquire(self, *, timeout: float | None = None) -> Any:
         connection = self.connection
+        self.timeouts.append(timeout)
 
         class _Ctx:
             async def __aenter__(self) -> object:
@@ -44,10 +46,35 @@ class _Pool:
         return _Ctx()
 
 
+class _DeadPool:
+    """A pool whose every connection is gone, which is how the incident began.
+
+    Cloud SQL dropped the worker's idle sockets and asyncpg kept them, so
+    `acquire()` waited for one to come free and none ever did. This is that pool:
+    it honours the timeout it is given and refuses, which is the only reason the
+    loop gets a chance to log, back off and try again.
+    """
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    def acquire(self, *, timeout: float | None = None) -> Any:
+        self.attempts += 1
+
+        class _Ctx:
+            async def __aenter__(self) -> object:
+                raise TimeoutError("no connection became free")
+
+            async def __aexit__(self, *exc: object) -> bool:
+                return False
+
+        return _Ctx()
+
+
 @pytest.fixture
 def queue(monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Records claims and releases in the order the worker made them."""
-    from packages.state import run_queue
+    """Records claims, releases and heartbeats in the order the worker made them."""
+    from packages.state import run_queue, worker_registry
 
     calls: list[tuple[str, str]] = []
     pending: list[str | None] = []
@@ -60,8 +87,18 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> Any:
     async def release(connection: object, run_id: str, name: str) -> None:
         calls.append(("release", run_id))
 
+    async def beat(
+        connection: object, name: str, *, lane: str, run_id: str | None = None
+    ) -> None:
+        calls.append(("beat", run_id or ""))
+
+    async def forget(connection: object, name: str) -> None:
+        calls.append(("forget", name))
+
     monkeypatch.setattr(run_queue, "claim", claim)
     monkeypatch.setattr(run_queue, "release", release)
+    monkeypatch.setattr(worker_registry, "beat", beat)
+    monkeypatch.setattr(worker_registry, "forget", forget)
     return calls, pending
 
 
@@ -151,7 +188,7 @@ async def test_one_bad_run_does_not_end_the_instance(
 
 @pytest.mark.asyncio
 async def test_an_unreachable_queue_backs_off_instead_of_spinning(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, queue: Any
 ) -> None:
     from packages.state import run_queue
 
@@ -174,6 +211,162 @@ async def test_an_unreachable_queue_backs_off_instead_of_spinning(
 
     # Backing off, not spinning: without the wait this would be thousands.
     assert 1 <= len(attempts) <= 6
+
+
+@pytest.mark.asyncio
+async def test_a_pool_with_no_live_connection_keeps_polling(
+    monkeypatch: pytest.MonkeyPatch, queue: Any
+) -> None:
+    """The incident, as a test.
+
+    Every pooled connection had been dropped by Cloud SQL for idleness. With an
+    unbounded `acquire()` this loop stopped inside it — no exception, no log, no
+    claim — and stayed there for four hours while two runs waited. It has to come
+    back round instead, so that a pool which recovers is picked straight back up.
+    """
+    monkeypatch.setattr(worker, "ERROR_BACKOFF_SECONDS", 0.02)
+    dead = _DeadPool()
+    stopping = asyncio.Event()
+
+    async def stop_soon() -> None:
+        await asyncio.sleep(0.1)
+        stopping.set()
+
+    await asyncio.gather(worker.serve(dead, "worker-a", stopping, in_lane="test"), stop_soon())
+
+    assert dead.attempts > 1
+
+
+@pytest.mark.asyncio
+async def test_a_poll_that_hangs_is_given_up_on(
+    monkeypatch: pytest.MonkeyPatch, queue: Any
+) -> None:
+    """The incident's real shape, and why `command_timeout` was not enough.
+
+    The worker's sockets to Cloud SQL were gone without an RST, so each poll
+    blocked in the kernel until TCP gave up — fifteen minutes, four hours of them,
+    below the level at which asyncpg can cancel anything, because cancelling means
+    sending on the same dead connection. The ceiling therefore has to sit outside
+    the attempt.
+    """
+    from packages.state import run_queue
+
+    attempts: list[int] = []
+
+    async def never_answers(
+        connection: object, name: str, *, lane: str, **kwargs: object
+    ) -> str | None:
+        attempts.append(1)
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(run_queue, "claim", never_answers)
+    monkeypatch.setattr(worker, "POLL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(worker, "ERROR_BACKOFF_SECONDS", 0.01)
+
+    stopping = asyncio.Event()
+
+    async def stop_soon() -> None:
+        await asyncio.sleep(0.3)
+        stopping.set()
+
+    await asyncio.gather(worker.serve(_Pool(), "worker-a", stopping, in_lane="test"), stop_soon())
+
+    # Came back round instead of waiting out the hang. Before this, one.
+    assert len(attempts) > 1
+
+
+@pytest.mark.asyncio
+async def test_every_poll_is_bounded(monkeypatch: pytest.MonkeyPatch, queue: Any) -> None:
+    """A poll that waits without limit is a worker that can stop without saying so."""
+    calls, _ = queue
+    monkeypatch.setattr(worker, "poll_seconds", lambda: 0.01)
+    pool = _Pool()
+    stopping = asyncio.Event()
+
+    async def stop_once_idle() -> None:
+        while ("claim", "") not in calls:
+            await asyncio.sleep(0.01)
+        stopping.set()
+
+    await asyncio.gather(worker.serve(pool, "worker-a", stopping, in_lane="test"), stop_once_idle())
+
+    assert pool.timeouts
+    assert all(timeout is not None and timeout > 0 for timeout in pool.timeouts)
+
+
+@pytest.mark.asyncio
+async def test_a_busy_worker_keeps_saying_it_is_alive(
+    monkeypatch: pytest.MonkeyPatch, queue: Any
+) -> None:
+    """A remediation does not poll while it runs, and runs outlive one beat.
+
+    So the beat cannot only happen at the run's edges. Without this, the last
+    thing a busy worker said was "idle", it aged past the liveness window while
+    working, and the console reported a worker mid-migration as absent — the
+    wrong half of the distinction the heartbeat exists to draw.
+    """
+    from patchapi_agent_runner.remediation import job
+
+    calls, pending = queue
+    pending.append("run-1")
+
+    async def execute(pool: object, run_id: str) -> int:
+        # Several heartbeat intervals, as a real remediation is.
+        await asyncio.sleep(0.12)
+        return job.EXIT_OK
+
+    monkeypatch.setattr(job, "execute", execute)
+    monkeypatch.setattr(worker, "poll_seconds", lambda: 0.01)
+    monkeypatch.setattr(worker, "HEARTBEAT_SECONDS", 0.02)
+
+    stopping = asyncio.Event()
+
+    async def stop_once_idle() -> None:
+        while ("claim", "") not in calls:
+            await asyncio.sleep(0.01)
+        stopping.set()
+
+    await asyncio.gather(
+        worker.serve(_Pool(), "worker-a", stopping, in_lane="test"), stop_once_idle()
+    )
+
+    on_this_run = [call for call in calls if call == ("beat", "run-1")]
+    assert len(on_this_run) > 1
+    # The first beat lands before the run finishes, not after it.
+    assert calls.index(("beat", "run-1")) < calls.index(("release", "run-1"))
+
+
+@pytest.mark.asyncio
+async def test_the_heartbeat_stops_when_the_run_does(
+    monkeypatch: pytest.MonkeyPatch, queue: Any
+) -> None:
+    """A finished run must not go on being reported as this worker's current one."""
+    from patchapi_agent_runner.remediation import job
+
+    calls, pending = queue
+    pending.append("run-1")
+
+    async def execute(pool: object, run_id: str) -> int:
+        return job.EXIT_OK
+
+    monkeypatch.setattr(job, "execute", execute)
+    monkeypatch.setattr(worker, "poll_seconds", lambda: 0.01)
+    monkeypatch.setattr(worker, "HEARTBEAT_SECONDS", 0.01)
+
+    stopping = asyncio.Event()
+
+    async def stop_once_idle() -> None:
+        while ("claim", "") not in calls:
+            await asyncio.sleep(0.01)
+        stopping.set()
+
+    await asyncio.gather(
+        worker.serve(_Pool(), "worker-a", stopping, in_lane="test"), stop_once_idle()
+    )
+    released = calls.index(("release", "run-1"))
+
+    assert ("beat", "run-1") not in calls[released:]
 
 
 def test_each_instance_leases_under_its_own_name() -> None:

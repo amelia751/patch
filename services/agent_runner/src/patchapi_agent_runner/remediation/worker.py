@@ -40,7 +40,7 @@ import signal
 import socket
 import sys
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -60,6 +60,27 @@ POLL_SECONDS: Final[float] = 1.0
 # tight loop against it, and an instance that backs off here still has its lease
 # on nothing, so no run is held up by the wait.
 ERROR_BACKOFF_SECONDS: Final[float] = 5.0
+
+# The hard ceiling on one poll, covering both getting a connection and using it.
+#
+# Not redundant with the pool's `command_timeout`, which is what the evidence
+# says. A worker's connections to Cloud SQL were silently dead — the sockets were
+# gone without an RST, so writes went into the void — and this loop retried every
+# fifteen minutes rather than every five seconds. Fifteen minutes is the operating
+# system's TCP retransmit ceiling: each poll blocked in the kernel, below the
+# level asyncpg's own timeout can reach, because cancelling a statement means
+# sending on a connection that is equally gone.
+#
+# So the timeout has to be outside the whole attempt. A poll cannot be worth more
+# than a few seconds — it is one indexed lookup — and one that takes longer has
+# already failed whether or not anything told us.
+POLL_TIMEOUT_SECONDS: Final[float] = 15.0
+
+# How often a worker mid-remediation says it is still there. The poll loop's own
+# heartbeat stops for the length of a run, which is minutes, so this is what
+# stands in for it. Comfortably inside `worker_registry.ALIVE_SECONDS`, which
+# leaves room for a couple of these to fail without the worker being called dead.
+HEARTBEAT_SECONDS: Final[float] = 20.0
 
 POLL_ENV_VAR: Final[str] = "PATCHAPI_WORKER_POLL_SECONDS"
 # Deliberately the same variable the control plane reads to decide it has a warm
@@ -135,14 +156,21 @@ async def serve(pool: asyncpg.Pool, worker: str, stopping: asyncio.Event, *, in_
     interrupted halfway leaves a sandbox allocated and a half-written worklog, and
     Cloud Run's shutdown grace is far shorter than a migration; letting the
     current run finish is the only ending that keeps the record true.
-    """
-    from packages.state import run_queue
 
+    Every poll is bounded and writes a heartbeat. Both exist because of the same
+    incident: the worker's connections to Cloud SQL died silently, each poll
+    blocked in the kernel for the TCP retransmit ceiling, and this loop went four
+    hours between attempts while runs it should have claimed waited. A bounded
+    poll turns that into the error the `except` below already knew how to
+    survive, and the heartbeat is what lets anything outside this process tell a
+    busy worker from an absent one.
+    """
     delay = poll_seconds()
     while not stopping.is_set():
         try:
-            async with pool.acquire() as connection:
-                run_id = await run_queue.claim(connection, worker, lane=in_lane)
+            run_id = await asyncio.wait_for(
+                _poll(pool, worker, in_lane), timeout=POLL_TIMEOUT_SECONDS
+            )
         except Exception as exc:
             log.warning("worker %s could not reach the run queue: %s", worker, exc)
             await _wait(stopping, ERROR_BACKOFF_SECONDS)
@@ -152,7 +180,60 @@ async def serve(pool: asyncpg.Pool, worker: str, stopping: asyncio.Event, *, in_
             await _wait(stopping, delay)
             continue
 
-        await perform(pool, run_id, worker)
+        async with _beating(pool, worker, in_lane, run_id):
+            await perform(pool, run_id, worker)
+
+
+async def _poll(pool: asyncpg.Pool, worker: str, in_lane: str) -> str | None:
+    """One heartbeat and one claim, on one connection. Returns a run or None."""
+    from packages.state import run_queue, worker_registry
+    from packages.state.pool import acquire
+
+    async with acquire(pool) as connection:
+        await worker_registry.beat(connection, worker, lane=in_lane)
+        return await run_queue.claim(connection, worker, lane=in_lane)
+
+
+@contextlib.asynccontextmanager
+async def _beating(
+    pool: asyncpg.Pool, worker: str, in_lane: str, run_id: str
+) -> AsyncIterator[None]:
+    """Keep saying this worker is alive and on `run_id` for as long as it is.
+
+    A remediation does not poll while it runs, so the loop's own heartbeat stops
+    for the duration. Without this the last thing a busy worker said was "idle",
+    and a run of ordinary length outlived the liveness window — so a worker
+    patiently working would be reported to the operator as absent, which is
+    exactly the wrong half of the distinction this was added to draw.
+    """
+    beat = asyncio.create_task(_beat_until_cancelled(pool, worker, in_lane, run_id))
+    try:
+        yield
+    finally:
+        beat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await beat
+
+
+async def _beat_until_cancelled(
+    pool: asyncpg.Pool, worker: str, in_lane: str, run_id: str
+) -> None:
+    while True:
+        await _announce(pool, worker, in_lane, run_id)
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+
+
+async def _announce(pool: asyncpg.Pool, worker: str, in_lane: str, run_id: str) -> None:
+    """Record that this worker is alive and spending its time on `run_id`."""
+    from packages.state import worker_registry
+    from packages.state.pool import acquire
+
+    try:
+        async with acquire(pool) as connection:
+            await worker_registry.beat(connection, worker, lane=in_lane, run_id=run_id)
+    except Exception as exc:
+        # Diagnostic only. The run is already claimed and must go ahead.
+        log.warning("worker %s could not record that it started %s: %s", worker, run_id, exc)
 
 
 async def _wait(stopping: asyncio.Event, seconds: float) -> None:
@@ -198,7 +279,20 @@ async def _main() -> int:
         await serve(pool, worker, stopping, in_lane=in_lane)
         return EXIT_OK
     finally:
+        await _stand_down(pool, worker)
         await pool.close()
+
+
+async def _stand_down(pool: asyncpg.Pool, worker: str) -> None:
+    """Drop this worker's heartbeat so a deliberate stop does not read as a fault."""
+    from packages.state import worker_registry
+    from packages.state.pool import acquire
+
+    try:
+        async with acquire(pool) as connection:
+            await worker_registry.forget(connection, worker)
+    except Exception as exc:  # pragma: no cover - shutdown is best effort
+        log.warning("worker %s could not clear its heartbeat: %s", worker, exc)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

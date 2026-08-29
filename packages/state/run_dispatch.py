@@ -47,6 +47,7 @@ from packages.state.provider_check import (
     gcp_region,
     job_path,
 )
+from packages.state.worker_registry import LaneHealth
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +78,36 @@ PROVISION_PREFIX: Final[str] = "Starting the remediator"
 
 class RemediationUnavailableError(RuntimeError):
     """Nothing could be asked to run this remediation."""
+
+
+def _warm_reason(health: LaneHealth | None) -> str:
+    """Why a warm lane has not claimed this run yet, as far as anything knows."""
+    if health is None:
+        return (
+            "a warm remediator should have claimed this within a second or two. "
+            "Check that a remediation worker is running and can reach Postgres."
+        )
+    if health.unattended:
+        silent = (
+            "no remediation worker has ever reported in on this lane"
+            if health.silent_for is None
+            else f"the last remediation worker on this lane went quiet "
+            f"{int(health.silent_for)}s ago"
+        )
+        return (
+            f"{silent}, so nothing is available to claim this run. Start a worker, "
+            "or check that the one you have can reach Postgres."
+        )
+    if health.idle:
+        return (
+            f"{health.alive} remediation worker(s) are on the air with "
+            f"{health.idle} free, so this should be claimed on the next poll."
+        )
+    return (
+        f"every remediation worker on this lane is busy — {health.busy} of "
+        f"{health.alive} performing a run. Each worker takes one run at a time, "
+        "so this one starts when one of them finishes."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,19 +378,25 @@ def provisioning_note(
     started_at: datetime | None,
     transport: str = "",
     now: datetime | None = None,
+    health: LaneHealth | None = None,
 ) -> str | None:
     """A worklog line for the wait before the remediator writes anything.
 
-    The two lanes wait for different reasons and the note does not pretend
-    otherwise. Measured on the Cloud Run task API rather than the execution API,
-    which is what makes the job lane attributable: a task that only opened
-    Postgres and read one row waited 136s for an instance and then lived 5.6s, so
-    the wait there is Cloud Run finding capacity and not our image or our
-    imports. A warm pool has already found capacity, so the same silence means
-    something has gone wrong — no instance is running, or none can reach
-    Postgres — and saying "starting a container" there would be an invention.
+    The lanes wait for different reasons and the note does not pretend otherwise.
+    Measured on the Cloud Run task API rather than the execution API, which is
+    what makes the job lane attributable: a task that only opened Postgres and
+    read one row waited 136s for an instance and then lived 5.6s, so the wait
+    there is Cloud Run finding capacity and not our image or our imports.
 
-    What both wordings share is the only claim this function can support from a
+    A warm pool has already found capacity, so the same silence has two very
+    different causes, and `health` is what tells them apart. Every worker busy is
+    ordinary queueing — one run at a time per instance is the design, so the
+    honest line is how many are ahead. No worker on the air is a fault, and the
+    console used to give that same "check that a worker is running" sentence in
+    both cases, which is advice rather than an answer. Without `health` the note
+    still cannot tell, and says so.
+
+    What every wording shares is the only claim this function can support from a
     run row: no agent has run, therefore nothing has been read or changed.
     """
     if state != "RECEIVED":
@@ -382,10 +419,8 @@ def provisioning_note(
                 return None
     if warm_transport(transport):
         return (
-            f"{PROVISION_PREFIX} ({int(elapsed)}s) — a warm remediator should have "
-            "claimed this within a second or two. Check that a remediation worker is "
-            "running and can reach Postgres. No agent has run yet, so nothing has "
-            "been read or changed."
+            f"{PROVISION_PREFIX} ({int(elapsed)}s) — {_warm_reason(health)} "
+            "No agent has run yet, so nothing has been read or changed."
         )
     return (
         f"{PROVISION_PREFIX} ({int(elapsed)}s) — waiting for Cloud Run to give this "

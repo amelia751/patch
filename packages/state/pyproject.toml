@@ -76,6 +76,7 @@ only-include = ["__init__.py"]
 "session.py" = "packages/state/session.py"
 "users.py" = "packages/state/users.py"
 "watchlist.py" = "packages/state/watchlist.py"
+"worker_registry.py" = "packages/state/worker_registry.py"
 "github_routes.py" = "packages/state/github_routes.py"
 "projects.py" = "packages/state/projects.py"
 "project_routes.py" = "packages/state/project_routes.py"

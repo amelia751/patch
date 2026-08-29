@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,7 @@ from packages.auth.github_oauth import (
     fetch_repository_tree,
 )
 from packages.schemas.run_state import RunState
+from packages.state import worker_registry
 from packages.state.codebase import (
     codebase_payload_from_repos,
     imported_repos,
@@ -100,6 +102,8 @@ from packages.state.users import read_github_connection
 if TYPE_CHECKING:
     import asyncpg
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
@@ -116,6 +120,26 @@ def _pool(request: Request) -> asyncpg.Pool:
     if pool is None:
         raise StateUnavailableError("no connection pool; the service has not completed startup")
     return pool
+
+
+async def _lane_health(
+    connection: asyncpg.Connection, runner: Any | None
+) -> worker_registry.LaneHealth | None:
+    """Who is on the air to claim runs in this run's lane, or None if unknowable.
+
+    None for a push lane, where no worker polls and the heartbeat table has
+    nothing to say, and for a heartbeat table that is not there yet — a console
+    reading an un-migrated database should say it does not know rather than
+    report every lane as unattended.
+    """
+    lane = getattr(runner, "lane", "") if runner is not None else ""
+    if not lane:
+        return None
+    try:
+        return await worker_registry.lane_health(connection, lane)
+    except Exception as exc:
+        log.warning("could not read worker health for lane %s: %s", lane, exc)
+        return None
 
 
 def _session_user_id(request: Request) -> UUID | None:
@@ -1063,6 +1087,7 @@ async def read_project_run(request: Request, project_id: UUID, run_id: str) -> J
                     traces=list(detail.get("trace") or []),
                     started_at=detail.get("started_at"),
                     transport=runner.transport if runner else "",
+                    health=await _lane_health(connection, runner),
                 )
                 if note:
                     await append_trace(

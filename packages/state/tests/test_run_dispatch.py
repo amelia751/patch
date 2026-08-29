@@ -12,6 +12,7 @@ from packages.state.run_dispatch import (
     build_dispatcher,
     provisioning_note,
 )
+from packages.state.worker_registry import LaneHealth
 
 
 def test_no_dispatcher_until_a_job_is_named() -> None:
@@ -144,8 +145,7 @@ def test_provisioning_note_stays_quiet_until_the_job_is_late() -> None:
     assert "ADK" not in note
 
 
-def test_a_silent_warm_pool_is_not_described_as_a_starting_container() -> None:
-    """Same silence, different cause. A pool has already found its capacity."""
+def _warm_note(health: LaneHealth | None) -> str:
     started = datetime(2026, 8, 27, 22, 45, tzinfo=UTC)
     note = provisioning_note(
         state="RECEIVED",
@@ -153,11 +153,46 @@ def test_a_silent_warm_pool_is_not_described_as_a_starting_container() -> None:
         started_at=started,
         transport="cloud-run-worker-pool:patchapi-remediate-worker",
         now=started + timedelta(seconds=20),
+        health=health,
     )
     assert note is not None
-    assert "a remediation worker is running" in note
-    assert "waiting for Cloud Run to give" not in note
+    # The one claim every wording shares, and the only one a run row supports.
     assert "No agent has run yet" in note
+    assert "waiting for Cloud Run to give" not in note
+    return note
+
+
+def test_a_silent_warm_pool_is_not_described_as_a_starting_container() -> None:
+    """Same silence, different cause. A pool has already found its capacity."""
+    assert "a remediation worker is running" in _warm_note(None)
+
+
+def test_an_unattended_lane_is_named_as_the_fault_it_is() -> None:
+    """What the four-hour silence should have said, instead of advice."""
+    note = _warm_note(LaneHealth(alive=0, idle=0, silent_for=240.0))
+
+    assert "went quiet 240s ago" in note
+    assert "nothing is available to claim this run" in note
+
+
+def test_a_lane_no_worker_ever_reported_into_says_so() -> None:
+    """Distinct from having gone quiet: nothing was ever deployed here."""
+    assert "has ever reported in" in _warm_note(LaneHealth())
+
+
+def test_every_worker_being_busy_is_reported_as_queueing_not_as_a_fault() -> None:
+    """One run per worker is the design, so being behind one is not a problem."""
+    note = _warm_note(LaneHealth(alive=2, idle=0, silent_for=1.0))
+
+    assert "every remediation worker on this lane is busy" in note
+    assert "2 of 2" in note
+    assert "check" not in note.lower()
+
+
+def test_a_free_worker_means_the_next_poll_takes_it() -> None:
+    note = _warm_note(LaneHealth(alive=3, idle=2, silent_for=1.0))
+
+    assert "3 remediation worker(s) are on the air with 2 free" in note
 
 
 def test_provisioning_note_does_not_repeat_itself_on_every_poll() -> None:

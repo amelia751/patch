@@ -88,4 +88,19 @@ export PYTHONUNBUFFERED=1
 # cluster access, and it is a weaker boundary — set it deliberately or not at all.
 printf 'sandbox: %s\n' "${PATCHAPI_SANDBOX:-gke}"
 
-exec uv run --package patchapi-agent-runner patchapi-remediation-worker
+# Restarted rather than exec'd, because a worker that dies locally leaves no
+# trace of having existed: the console goes on counting upwards on a run nothing
+# will claim, and the operator is told to check for a worker that was there when
+# they last looked. Cloud Run restarts a worker pool instance for us; on a laptop
+# this loop is that. A clean exit — the process was asked to stop — is honoured.
+while true; do
+  set +e
+  uv run --package patchapi-agent-runner patchapi-remediation-worker
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
+    exit 0
+  fi
+  printf 'remediation worker exited %d; restarting in 2s\n' "$status" >&2
+  sleep 2
+done
