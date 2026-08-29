@@ -1,21 +1,8 @@
 /**
- * A run's trace, turned into something worth looking at.
+ * A run's trace, grouped into phases with durations.
  *
- * This is a UI prototype. It reads a captured run and renders it; it never talks
- * to the control plane, and the fixtures it reads name a repository that does not
- * exist. Nothing here is on the live path.
- *
- * The problem it exists to solve: the console renders every `narration` row as a
- * paragraph of the sentence the backend happened to write, at one visual weight,
- * in source order. Six rows of setup become six sentences, two of which say
- * almost the same thing, and an operator hold reads as more prose. The trace
- * already carries what a run view needs — a phase per row, a timestamp per row,
- * and a tool name per action — and none of it was being used.
- *
- * So: group rows into the phases the state machine already names, keep the real
- * timestamps as durations, collapse runs of the same tool, and let the prose be
- * a short label instead of the whole sentence. The backend is not changed; the
- * same rows are simply read for the structure they have always had.
+ * Each row already has a state, a timestamp and a tool name. This reads those
+ * instead of rendering every narration sentence as a paragraph.
  */
 
 export interface TraceRow {

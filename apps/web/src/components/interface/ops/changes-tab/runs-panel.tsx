@@ -22,8 +22,7 @@ import {
 import { AddSecretDialog, type SecretRepoOption, type SecretWorkspaceOption } from "@/components/interface/secret-managers";
 import { GCPConnectMethodDialog } from "@/components/interface/ops/configure-tab/gcp-connect-method-dialog";
 import { UNSCOPED_REPO, repoOf, repoTitle } from "./data";
-import { DEMO_REPO, isDemoRun } from "./mock-log/demo-runs";
-import { DemoLog, RunLog } from "./mock-log/run-log";
+import { RunLog } from "./run-log";
 import {
   HUMAN_REQUIRED_PAUSE,
   HUMAN_REQUIRED_SECRET_NAME,
@@ -275,11 +274,6 @@ function RunsList({
                   <Github className="h-3.5 w-3.5 shrink-0" />
                 )}
                 <span className="truncate">{repoTitle(repo)}</span>
-                {repo === DEMO_REPO && (
-                  <span className="rounded px-1 py-px text-[9px] font-medium normal-case tracking-normal text-[var(--text-tertiary)]">
-                    demo
-                  </span>
-                )}
                 <span className="ml-auto flex items-center gap-1.5 shrink-0">
                   {attention > 0 && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
                   <span className="text-[9px] tabular-nums normal-case tracking-normal">{items.length}</span>
@@ -606,15 +600,8 @@ function unifiedFrom(file: DiffFile): string {
 }
 
 function AgentLog({ run }: { run: MockRun }) {
-  if (isDemoRun(run)) return <DemoLog run={run} />;
   if (!run.logSource) return null;
-  return (
-    <RunLog
-      fixture={run.logSource}
-      follow
-      live={run.bucket === "active"}
-    />
-  );
+  return <RunLog source={run.logSource} live={run.bucket === "active"} />;
 }
 
 function PullRequestCard({ run }: { run: MockRun }) {

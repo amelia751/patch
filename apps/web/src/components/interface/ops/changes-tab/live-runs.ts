@@ -1,25 +1,13 @@
 /**
- * Real runs, in the shape the runs panel already draws.
- *
- * The panel was built against `run-scripts`, a fixture that walked a scripted
- * ladder on a timer. Everything it renders — the three trees, the worklog, the
- * sandbox commands, the verification checks — now exists for real: the
- * remediation job writes each of them to Postgres as it happens, and the run
- * API serves them. What was missing was the translation, so this is only that.
- *
- * Keeping `MockRun` as the target type is deliberate. The panel's vocabulary is
- * good and the alternative — reshaping several hundred lines of rendering to
- * match the wire format — would risk the UI to gain nothing a mapper does not.
+ * Control-API runs, mapped into the shape the panel draws.
  *
  * Nothing here invents a value. A run with no diff yet has no diff; a check
- * that has not run is absent rather than pending-and-green. The panel is
- * showing evidence, and an empty section is the honest rendering of a stage the
- * run has not reached.
+ * that has not run is absent rather than pending-and-green.
  */
 
 import type { ChangeActionId } from "./actions";
 import { runKey, type FileHit, type ProjectChange } from "./data";
-import type { RunFixture } from "./mock-log/timeline";
+import type { RunFixture } from "./run-timeline";
 import {
   HUMAN_REQUIRED_PAUSE,
   failureCopy,
@@ -873,8 +861,7 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
     checks: checksFrom(detail.verification),
     log,
     // The worklog is already history by the time it is read, so all of it is
-    // visible. The fixture revealed lines on a timer to imitate a run in
-    // progress; a real run supplies its own pacing by growing.
+    // visible. A live run supplies its own pacing by growing.
     revealed: log.length,
     lineStartedAt: Date.now(),
     prBranch: pullRequest ? String(pullRequest.head_branch ?? "") : undefined,
@@ -883,12 +870,12 @@ export function toRun(detail: RunDetail, index: number, change?: ProjectChange):
     prNumber: pullRequest && pullRequest.number != null ? Number(pullRequest.number) : undefined,
     prTitle: pullRequest ? String(pullRequest.title ?? "") || undefined : undefined,
     traceId: detail.run_id,
-    logSource: fixtureFrom(detail),
+    logSource: logSourceFrom(detail),
   };
 }
 
 /** The job's own rows, in the shape the phase log already reads. */
-export function fixtureFrom(detail: RunDetail): RunFixture {
+export function logSourceFrom(detail: RunDetail): RunFixture {
   return {
     run_id: detail.run_id,
     state: detail.state,
