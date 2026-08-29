@@ -10,6 +10,7 @@ import pytest
 
 from packages.state.gcp_connections import (
     GcpConnectionError,
+    delete_connection,
     parse_service_account_json,
     reveal_latest_connection,
     upsert_connection,
@@ -74,6 +75,7 @@ class RecordingConnection:
         self.inserted: dict[str, Any] | None = None
         self.workspace_ok = True
         self.default_workspace: UUID | None = None
+        self.statements: list[str] = []
 
     async def fetchval(self, query: str, *args: Any) -> Any:
         if "FROM projects" in query:
@@ -112,6 +114,7 @@ class RecordingConnection:
         return [] if row is None else [row]
 
     async def execute(self, query: str, *args: Any) -> str:
+        self.statements.append(" ".join(query.split()))
         if query.strip().startswith("INSERT"):
             self.inserted = {
                 "id": args[0],
@@ -186,3 +189,27 @@ async def test_reveal_latest_returns_the_stored_json() -> None:
     assert payload == _SA_JSON
     assert meta["gcp_project_id"] == "artful-journey-486915-a8"
     assert meta["default_region"] == "us-central1"
+
+@pytest.mark.asyncio
+async def test_disconnecting_the_last_connection_un_chooses_gcp() -> None:
+    """Connecting sets `projects.cloud_provider`; disconnecting has to clear it.
+
+    Without the mirror the console kept offering a connected GCP account for a
+    project whose connection had been deleted.
+    """
+    row_id = uuid4()
+    connection = RecordingConnection(
+        owner=True, existing={"id": row_id, "secret_arn": "projects/test/secrets/patchapi-gcp-x"}
+    )
+    deleted = await delete_connection(
+        RecordingPool(connection),  # type: ignore[arg-type]
+        uuid4(),
+        uuid4(),
+        row_id,
+        MemoryVault(),
+    )
+
+    assert deleted is True
+    release = [item for item in connection.statements if "cloud_provider = NULL" in item]
+    assert len(release) == 1
+    assert "NOT EXISTS ( SELECT 1 FROM gcp_connections" in release[0]

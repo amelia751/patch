@@ -273,6 +273,32 @@ async def _adopt_gcp_provider(pool: asyncpg.Pool, project_id: UUID) -> None:
         return
 
 
+async def _release_gcp_provider(pool: asyncpg.Pool, project_id: UUID) -> None:
+    """Disconnecting the last connection un-chooses GCP, as connecting chose it.
+
+    Without the mirror of `_adopt_gcp_provider` a project kept claiming a
+    provider it had no connection for, so the console offered a connected GCP
+    account that was not there.
+    """
+    try:
+        async with pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE projects
+                SET cloud_provider = NULL, updated_at = now()
+                WHERE id = $1
+                  AND cloud_provider = 'gcp'::cloud_provider
+                  AND NOT EXISTS (
+                      SELECT 1 FROM gcp_connections WHERE project_id = $1
+                  )
+                """,
+                project_id,
+            )
+    except Exception:
+        # The connection rows are the record that matters; the column is display.
+        return
+
+
 async def _touch(
     pool: asyncpg.Pool,
     project_id: UUID,
@@ -406,6 +432,7 @@ async def delete_connection(
             )
     except Exception as exc:
         raise StateUnavailableError(f"could not delete gcp connection: {type(exc).__name__}") from exc
+    await _release_gcp_provider(pool, project_id)
     resource = record["secret_arn"]
     if resource and is_managed_resource(resource):
         try:
