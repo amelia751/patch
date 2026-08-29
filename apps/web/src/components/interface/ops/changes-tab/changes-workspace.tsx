@@ -12,6 +12,7 @@ import { dismissProjectChange, fetchProjectChanges, reopenProjectChange } from "
 import { runKey, type ProjectChange } from "./data";
 import { RunsPanel, bucketNeedsYou } from "./runs-panel";
 import { fetchRun, fetchRuns, isLive, pendingRun, startRemediation, toRun } from "./live-runs";
+import { DEMO_RUNS, isDemoRun } from "./mock-log/demo-runs";
 import { inboxProgressFor, type MockRun } from "./run-scripts";
 
 type Section = "releases" | "runs";
@@ -83,16 +84,21 @@ export function ChangesTab({
   onGcpConnected?: () => void;
 }) {
   const [section, setSection] = useState<Section>("releases");
+  // Bumping this remounts the Runs panel, which restarts the demo replay.
+  // Clicking Runs again is the refresh the mock is for; live runs keep their
+  // selection because that state lives here, not in the panel.
+  const [runsVisit, setRunsVisit] = useState(0);
   // Held with the project they belong to, so switching projects shows nothing
   // rather than the previous project's runs until the first poll lands.
   const [loaded, setLoaded] = useState<{ projectId: string; runs: MockRun[] }>({
     projectId: "",
     runs: [],
   });
-  const runs = useMemo(
+  const liveRuns = useMemo(
     () => (loaded.projectId === projectId ? loaded.runs : EMPTY_RUNS),
     [loaded, projectId],
   );
+  const runs = useMemo(() => [...DEMO_RUNS, ...liveRuns], [liveRuns]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, RunProgress>>({});
   const [changes, setChanges] = useState<ProjectChange[]>([]);
@@ -210,9 +216,11 @@ export function ChangesTab({
         prev.projectId === id && sameRuns(prev.runs, mapped) ? prev : { projectId: id, runs: mapped },
       );
       syncProgress(mapped);
-      setSelectedRunId((prev) =>
-        prev && mapped.some((run) => run.id === prev) ? prev : (mapped[0]?.id ?? null),
-      );
+      setSelectedRunId((prev) => {
+        if (prev && isDemoRun({ id: prev })) return prev;
+        if (prev && mapped.some((run) => run.id === prev)) return prev;
+        return mapped[0]?.id ?? DEMO_RUNS[0]?.id ?? null;
+      });
       return summaries.some((summary) => isLive(summary.state));
     },
     [syncProgress],
@@ -257,7 +265,7 @@ export function ChangesTab({
     // Draw the card's own inventory now. Opening the panel on a no-runs empty
     // state while the row is being created reads as "nothing found", which is
     // the opposite of what the join already knows.
-    const placeholder = pendingRun(change, runs.length);
+    const placeholder = pendingRun(change, liveRuns.length);
     setLoaded((prev) =>
       prev.projectId === projectId &&
       prev.runs.some((item) => runKey({ id: item.changeId, repo: item.repo }) === runKey(change))
@@ -277,7 +285,7 @@ export function ChangesTab({
 
   const onOpenRun = (change: ProjectChange) => {
     const key = runKey(change);
-    const run = runs.find((item) => runKey({ id: item.changeId, repo: item.repo }) === key);
+    const run = liveRuns.find((item) => runKey({ id: item.changeId, repo: item.repo }) === key);
     if (run) setSelectedRunId(run.id);
     setSection("runs");
   };
@@ -286,8 +294,8 @@ export function ChangesTab({
   // worklog; the remediator loads the credentials just stored and, when a
   // diff already exists, skips a second patch loop.
   const onContinue = (id: string) => {
-    const run = runs.find((item) => item.id === id);
-    if (!projectId || !run) return;
+    const run = liveRuns.find((item) => item.id === id);
+    if (!projectId || !run || isDemoRun(run)) return;
     onGcpConnected?.();
     void startRemediation(projectId, run.changeId, run.repo)
       .then(() => loadRuns(projectId))
@@ -308,7 +316,10 @@ export function ChangesTab({
           icon={Radio}
           label="Runs"
           count={activeCount > 0 ? (attention > 0 ? attention : activeCount) : undefined}
-          onClick={() => setSection("runs")}
+          onClick={() => {
+            setSection("runs");
+            setRunsVisit((n) => n + 1);
+          }}
         />
       </SectionRail>
 
@@ -352,6 +363,7 @@ export function ChangesTab({
           />
         ) : (
           <RunsPanel
+            key={runsVisit}
             runs={runs}
             selectedId={selectedRunId}
             onSelect={setSelectedRunId}
