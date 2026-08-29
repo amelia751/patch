@@ -595,33 +595,6 @@ export function buildTimeline(fixture: RunFixture): Timeline {
     const drawn = row.kind === "narration" ? fromNarration(row) : fromAction(row);
     if (!drawn) return;
 
-    const tool = row.kind === "action" ? parseCall(row.body).name : "";
-    const repoName = fixture.repository.split("/").pop() ?? fixture.repository;
-    const sha = fixture.base_sha.slice(0, 7);
-    const framing: Record<string, string> = {
-      seed_static_manifest: "Provider text is untrusted. Screen it before anything joins inventory.",
-      scan_repository: `Join this change against ${repoName} @ ${sha}, not HEAD.`,
-      read_file: "Read the binding at the pinned SHA before rewriting.",
-      list_verification_evidence: "Grade the diff and the clean logs. Do not read the patch author’s plan.",
-    };
-    const frame = framing[tool];
-    if (frame && !said.has(`thought|${frame}`)) {
-      said.add(`thought|${frame}`);
-      built.push({
-        phase: phaseOf(row),
-        step: {
-          id: `t${row.sequence}`,
-          label: "Thought",
-          detail: clip(frame, 88),
-          tone: "think",
-          icon: "think",
-          at,
-          durationMs: 0,
-          body: frame,
-        },
-      });
-    }
-
     // Resuming replays the setup narration and the deterministic slices, so this
     // run's rows 14-24 repeat rows 3-11. It is the same run, so the second telling
     // is dropped rather than drawn under a second Set up and a second Decide.
