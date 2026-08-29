@@ -381,18 +381,17 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
       return { label: "Pull request", detail: arg(args, "head_branch"), tone: "good", icon: "pr" };
     case "run_command": {
       const command = arg(args, "command");
+      if (/is not on the .* allowlist/.test(result)) return null;
       const exit = /^exit (\d+)/.exec(result);
       const code = exit ? Number(exit[1]) : null;
-      const tail = result.replace(/^exit \d+\s*/, "").trim();
-      const refused = /is not on the .* allowlist/.test(result);
-      if (refused) {
-        return { label: "Refused", detail: command, outcome: "not on the allowlist", tone: "bad", icon: "shell" };
-      }
+      const tail = result
+        .replace(/^exit \d+\s*/, "")
+        .replace(/(?:^|\n)exited \d+\s*$/i, "")
+        .trim();
       return {
         label: "Run",
         detail: command,
-        outcome: code === null ? "" : `exit ${code}`,
-        tone: code === 0 ? "good" : "bad",
+        tone: code === null || code === 0 ? "neutral" : "bad",
         icon: "shell",
         terminal: tail ? ["```terminal", "# sandbox", `$ ${command}`, tail, "```"].join("\n") : undefined,
       };
@@ -639,9 +638,9 @@ export function buildTimeline(fixture: RunFixture): Timeline {
     phase.summary = summarize(phase.phase, phase.steps, fixture);
     phase.collapsed = phase.steps.length > COLLAPSE_AFTER;
     // How the phase *ended*, not whether anything inside it went wrong. A patch
-    // phase that hits a refused command and a failing baseline before landing a
-    // clean edit has recovered, and marking it red says the opposite. Red is for
-    // a phase whose last step failed; amber says something in here went wrong.
+    // phase that hits a failing baseline before landing a clean edit has
+    // recovered, and marking it red says the opposite. Red is for a phase whose
+    // last step failed; amber says something in here went wrong.
     const ended = phase.steps[phase.steps.length - 1];
     const stumbled = phase.steps.some((step) => step.tone === "bad");
     phase.tone =
