@@ -34,6 +34,31 @@ MAX_POOL_SIZE: Final[int] = max(_pool_size("PATCHAPI_DB_POOL_MAX", 3), 1)
 # than as a page that hangs.
 COMMAND_TIMEOUT_SECONDS: Final[float] = 10.0
 
+# How long a pooled connection may sit unused before the pool closes it.
+#
+# Cloud SQL, the auth proxy, and the NAT in between all drop idle TCP sockets,
+# and asyncpg does not notice: the pool keeps the dead connection and hands it to
+# the next caller, which fails with "connection was closed in the middle of
+# operation". A request-driven service hides this — it fails one request and the
+# pool replaces the connection — but a warm worker polling one query is idle by
+# design, and this is what took a remediation worker off the air for four hours
+# while runs it should have claimed sat waiting.
+#
+# Recycling below every idle timeout in the path is the standard answer
+# (`pool_recycle` in SQLAlchemy's vocabulary). Five minutes is far under Cloud
+# SQL's hour, and reconnecting costs one handshake on a connection that by
+# definition nothing was waiting for.
+IDLE_CONNECTION_SECONDS: Final[float] = 300.0
+
+# How long to wait for a free connection before giving up on this attempt.
+#
+# `Pool.acquire()` waits forever by default. When every pooled connection is
+# dead, forever is what a poll loop gets: no exception to log, no backoff to
+# take, no run ever claimed. A bounded wait turns that into an error the caller
+# can retry, which is the difference between a worker that limps and one that
+# stops.
+ACQUIRE_TIMEOUT_SECONDS: Final[float] = 10.0
+
 # Origins permitted to call the control plane from a browser. Comma-separated;
 # empty means no cross-origin access at all.
 CORS_ORIGINS_VAR: Final[str] = "PATCHAPI_CORS_ORIGINS"
