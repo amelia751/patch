@@ -508,6 +508,14 @@ Each fleet task prompt will include: owned paths, forbidden paths, verify comman
 
 ## 8. Live API probe results (2026-08-11, project `patch-505223`)
 
+> **Historical record.** This table is what the project looked like on
+> 2026-08-11. Current deployment status lives in [`README.md`](./README.md) and
+> [`docs/architecture.md`](./docs/architecture.md#google-platform-integration);
+> the current provisioning summary is in
+> [`docs/operations.md`](./docs/operations.md#cloud-provisioning). Do not read a
+> row below as today's status. Two rows were also wrong about *why*, and are
+> corrected in place.
+
 Credentials: `.secrets/gcp-service-account.json` (Owner) + optional `.secrets/gemini_api_key.txt` (AI Studio). Both gitignored.
 
 | Probe | Result | Notes |
@@ -520,12 +528,12 @@ Credentials: `.secrets/gcp-service-account.json` (Owner) + optional `.secrets/ge
 | AI Studio Generative Language API key | **BLOCKED (429)** | “prepayment credits are depleted” — Vertex path is fine without this |
 | GCS / Pub/Sub / Secret Manager | **PASS** | Created smoke bucket/topic/secret |
 | Cloud Run / GKE clusters | **empty** | APIs on; no services/clusters yet — **GKE live is in this setup batch** |
-| Model Armor `us-central1` list | **FAIL (403)** | Use **`global`** instead (works, 0 templates) |
-| Model Armor `global` list | **PASS** | Empty templates OK |
+| Model Armor `us-central1` list | **FAIL (403)** | ~~Use `global` instead~~ — **wrong diagnosis.** The probe called the global host `modelarmor.googleapis.com` for a regional collection. Templates are served only from `modelarmor.LOCATION.rep.googleapis.com`; the global host carries floor settings and answers a template call with a permission error that reads like IAM and is not. Pinned in `packages/policy/config.py` as `ARMOR_ENDPOINT_HOST`. |
+| Model Armor `global` list | **PASS** | Empty because floor settings, not templates, live there. Template `patchapi-untrusted-intake` now exists on the `us-central1` regional host. |
 | Demo fork | **PASS** | Real fork [`amelia751/egaki`](https://github.com/amelia751/egaki) @ `c09e1a44200ff5e951746e013035e68aeb3a14b1` — Imagen 4 IDs present. Recorded in `demo/egaki/baseline.json` |
-| Agent Runtime (`reasoningEngines`) | **PASS** | List API 200; empty then created instance |
+| Agent Runtime (`reasoningEngines`) | **PASS** | List API 200; empty then created instance. Not used for agent *execution* — PatchAPI runs its own Cloud Run worker pool. The one Agent Engine on this project is the Memory Bank. |
 | Agent Registry API | **PASS** | `agentregistry.googleapis.com` enabled; `.../services` list 200 |
-| Memory Bank | **PASS** | Created via Agent Platform SDK `client.agent_engines.create` → resource in `.secrets/memory_bank_name.txt` |
+| Memory Bank | **PASS** | Created via Agent Platform SDK `client.agent_engines.create`. The engine is now configured through `PATCHAPI_MEMORY_BANK_ENGINE` / `PATCHAPI_MEMORY_BANK_LOCATION`; nothing reads `.secrets/memory_bank_name.txt`. |
 | GitHub App | **deferred** | Per decision — later phase |
 | GKE Agent Sandbox cluster | **not yet** | In scope for this setup batch (will provision) |
 
