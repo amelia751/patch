@@ -62,4 +62,10 @@ Pinned in `config.py`; no project, region, or URL is inlined at a call site.
 The cards themselves are derived from `agents/config.py` by `agents/catalog.py`,
 so an agent's published version and skills cannot drift from its tool grants.
 
-Verified by `uv run pytest packages/platform/tests agents/tests/test_catalog.py`.
+Verified by:
+
+```bash
+uv run --all-packages pytest packages/platform/tests agents/tests/test_catalog.py
+./scripts/register_agent_registry.sh --dry-run     # cards, no writes
+./scripts/register_agent_registry.sh --verify-only # read the live catalog back
+```
