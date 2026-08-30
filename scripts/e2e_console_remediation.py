@@ -40,9 +40,25 @@ from uuid import UUID
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+# After the path insert, because this runs as a script from anywhere. The span
+# names come from the registry rather than being retyped here: a check that
+# spelled them itself would keep passing after a rename and stop meaning
+# anything.
+from packages.observability.config import (  # noqa: E402
+    SPAN_CHANGE_INTELLIGENCE,
+    SPAN_IMPACT,
+    SPAN_PATCH,
+    SPAN_POLICY,
+    SPAN_PULL_REQUEST,
+    SPAN_RUN,
+    SPAN_SANDBOX,
+    SPAN_VERIFICATION,
+)
+
 DEFAULT_API: Final[str] = "https://patchapi-api-uhkx74fgmq-uc.a.run.app"
 DEFAULT_CHANGE: Final[str] = "chg_flash_image_preview"
 TRACE_PROJECT: Final[str] = "patch-505223"
+TRACE_REGION: Final[str] = "us-central1"
 
 # A hosted run calls the model several times per stage and waits on a sandbox,
 # so minutes are normal and a fixed sleep would either flake or crawl. These
@@ -50,6 +66,9 @@ TRACE_PROJECT: Final[str] = "patch-505223"
 POLL_SECONDS: Final[float] = 5.0
 CREDENTIAL_HOLD_TIMEOUT: Final[float] = 420.0
 COMPLETION_TIMEOUT: Final[float] = 1500.0
+# Spans leave in batches, so the last stage of a run reaches the backend after
+# the run does. This bounds how long the report waits for ingestion to catch up.
+TRACE_SETTLE_TIMEOUT: Final[float] = 90.0
 
 TERMINAL_OK: Final[frozenset[str]] = frozenset({"PR_CREATED"})
 TERMINAL_BAD: Final[frozenset[str]] = frozenset({"FAILED", "BLOCKED", "ABANDONED"})
@@ -303,6 +322,10 @@ def cloud_trace_spans(run_id: str, since: str) -> list[str]:
     from an earlier pass cannot be mistaken for this one's. Read from the
     backend rather than from the exporter's own report, because "the client says
     it exported" and "the backend stored it" have already diverged once here.
+
+    `endTime` is explicit: the v1 API rejects a window it has to complete
+    itself, and reading a run's own trace the moment the run ends is exactly
+    when that happens.
     """
     try:
         import google.auth
@@ -317,6 +340,7 @@ def cloud_trace_spans(run_id: str, since: str) -> list[str]:
             {
                 "filter": f"+patchapi.run_id:{run_id}",
                 "startTime": since,
+                "endTime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "view": "COMPLETE",
                 "pageSize": "100",
             }
@@ -338,16 +362,92 @@ def cloud_trace_spans(run_id: str, since: str) -> list[str]:
     return sorted(names)
 
 
+def deployed_memory_bank() -> dict[str, str]:
+    """The Memory Bank configuration the remediation job actually runs with.
+
+    Asked of Cloud Run rather than hardcoded, so this cannot drift from the
+    deploy and quietly judge a different bank than the one the run wrote to.
+    """
+    out = subprocess.run(
+        [
+            "gcloud",
+            "run",
+            "jobs",
+            "describe",
+            "patchapi-remediate",
+            f"--region={TRACE_REGION}",
+            f"--project={TRACE_PROJECT}",
+            "--format=json",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    environment = {"GCP_PROJECT": TRACE_PROJECT}
+    if out.returncode != 0:
+        return environment
+    spec = json.loads(out.stdout or "{}")
+    containers = (
+        spec.get("spec", {})
+        .get("template", {})
+        .get("spec", {})
+        .get("template", {})
+        .get("spec", {})
+        .get("containers", [])
+    )
+    for variable in containers[0].get("env", []) if containers else []:
+        name = str(variable.get("name") or "")
+        if name.startswith("PATCHAPI_MEMORY_BANK_") and variable.get("value"):
+            environment[name] = str(variable["value"])
+    return environment
+
+
+def settled_trace(run_id: str, since: str) -> list[str]:
+    """The run's stage spans once ingestion has caught up.
+
+    A trace read the instant a run ends is short by whatever the batch processor
+    exported last — on the first green pass, `verification` and `pull_request`
+    were missing at read time and present a moment later. Reporting that as a
+    gap would teach an operator to distrust a working control, so this waits for
+    the eight it expects rather than for a fixed delay.
+    """
+    expected = {
+        SPAN_RUN,
+        SPAN_CHANGE_INTELLIGENCE,
+        SPAN_IMPACT,
+        SPAN_POLICY,
+        SPAN_PATCH,
+        SPAN_SANDBOX,
+        SPAN_VERIFICATION,
+        SPAN_PULL_REQUEST,
+    }
+    deadline = time.monotonic() + TRACE_SETTLE_TIMEOUT
+    found: list[str] = []
+    while True:
+        found = [name for name in cloud_trace_spans(run_id, since) if name.startswith("patchapi.")]
+        if expected.issubset(found) or time.monotonic() >= deadline:
+            break
+        time.sleep(POLL_SECONDS)
+    if missing := sorted(expected - set(found)):
+        print(f"    WARN trace is missing {', '.join(missing)}", flush=True)
+    return found
+
+
 def memory_recollections(repo: str) -> int:
     """How many migration memories the Memory Bank holds for this repository.
 
     A run that recorded its outcome leaves this higher than it found it, which
     is the only externally checkable evidence that context survives the run.
+
+    Reads the engine the *deployment* is configured with rather than whatever
+    the operator's shell happens to export. Taking it from the environment made
+    this report "memory bank is not set" from a laptop while the run it was
+    judging wrote to the bank perfectly well.
     """
     try:
         from packages.memory.vertex import VertexMemoryBank
 
-        return len(VertexMemoryBank.from_env().recall_migrations(repo))
+        return len(VertexMemoryBank.from_env(deployed_memory_bank()).recall_migrations(repo))
     except Exception as exc:
         print(f"    (memory bank unreadable: {exc})", flush=True)
         return -1
@@ -417,10 +517,8 @@ def main() -> int:
         # against our own logs. Reported but not fatal: a trace that has not
         # been ingested yet is a lag, not a broken remediation, and the whole
         # design says observability must not be able to fail a run.
-        spans = [
-            name for name in cloud_trace_spans(attempt.run_id, opened) if "patchapi" in name.lower()
-        ]
-        print(f"    cloud trace: {len(spans)} patchapi spans {spans[:6]}", flush=True)
+        spans = settled_trace(attempt.run_id, opened)
+        print(f"    cloud trace: {len(spans)} stage spans for this run", flush=True)
         memories_after = memory_recollections(repository)
         print(f"    memory bank: {memories_before} -> {memories_after} recollections", flush=True)
         if memories_after >= 0 and memories_before >= 0 and memories_after <= memories_before:
