@@ -1,11 +1,14 @@
 # Security model
 
-**Status:** Scaffold (2026-08-11) — states the controls PatchAPI is built
-around and marks which ones are enforced in code today versus designed. Threat
+**Status:** Revised 2026-08-30 — states the controls PatchAPI is built around
+and marks which ones are enforced in code today versus designed. Threat
 enumeration lives in [`threat-model.md`](./threat-model.md). Authoritative
 sources: [`roadmap.md` §14](../roadmap.md#14-github-security-model),
 [`roadmap.md` §13](../roadmap.md#13-gke-agent-sandbox-design), and
-[`CLAUDE.md`](../CLAUDE.md).
+[`CLAUDE.md`](../CLAUDE.md). The roadmap plans Agent Identity and Agent Gateway
+as security controls; they are not available to this deployment and are not
+part of the hierarchy below — see
+[`architecture.md`](./architecture.md#google-platform-integration).
 
 ---
 
@@ -30,16 +33,31 @@ Hard controls must not depend solely on an LLM
 ([`roadmap.md` §8.3](../roadmap.md#8-agent-responsibilities-and-contracts)).
 Ordered strongest to weakest:
 
-1. GitHub App permissions — the capability simply does not exist
-2. Agent Identity / IAM
-3. Agent Gateway allow policies
-4. deterministic path and action allowlists in the policy package
-5. sandbox network restrictions (default deny)
-6. Semantic Governance and Model Armor as an additional dynamic layer
+1. **GitHub App permissions** — the capability simply does not exist
+2. **The tool service's own surface** — `services/github_tools/` implements no
+   merge, administration, secret, or branch-protection operation, so there is
+   nothing to authorize
+3. **Cloud Run IAM plus Google-signed ID tokens** — the tool service is private
+   and answers only named service accounts
+4. **Deterministic path, command, and injection rules** in `packages/policy/` —
+   forbidden globs, the command allowlist, and `contains_injection`
+5. **Sandbox network restrictions** (default deny)
+6. **Model Armor** as an additional dynamic layer
 
-Layers 1–5 are deterministic. Layer 6 is probabilistic and is defense in depth
-only; Google's own documentation notes that LLM-based policy verdicts are
-probabilistic, so no security claim in this project rests on layer 6 alone.
+Layers 1–5 are deterministic. Layer 6 is probabilistic *and fails open*, which
+is a stronger reason to distrust it than probabilism alone: Google documents
+that Model Armor's Vertex integration lets a prompt proceed unscreened when the
+service errors. No security claim in this project rests on layer 6, and
+`packages/policy/armor.py` composes the two gates so that Model Armor can only
+add a refusal, never withdraw one.
+
+Layers 2 and 3 are what PatchAPI has instead of Agent Identity and Agent
+Gateway. They are weaker in one specific way and the difference is worth
+stating: there is no SPIFFE attestation of which agent is calling the tool
+service, and no network-layer refusal of a tool by name. The caller's agent name
+travels in an `X-PatchAPI-Agent` header, and a header is a scoping hint, not an
+attestation. The guarantee that PatchAPI cannot merge does not depend on it —
+that comes from layers 1 and 2, where the operation does not exist.
 
 ## Credential boundary
 
@@ -101,11 +119,21 @@ forbidden globs — enforced in the policy package before any diff is applied, n
 by asking a model nicely:
 
 ```text
-.github/workflows/**
-infra/**
-terraform/**
-.env*
+.github/workflows/**      CI definitions decide which checks grade a patch
+**/CODEOWNERS             review ownership is the human control PatchAPI stops at
+.secrets/**, **/*.pem     credential material is never read, written, or rotated
+infra/**, terraform/**    infrastructure changes the blast radius of a deploy
+**/iam/**, **/rbac/**     an API migration never needs more privilege
+packages/policy/**        PatchAPI does not edit the rules that constrain PatchAPI
 ```
+
+One pattern per rule above; `FORBIDDEN_PATH_RULES` in
+`packages/policy/config.py` is the complete list and `POLICY_VERSION` is
+recorded on every evaluation so an old decision can be explained by the rules
+that were in force when it was made. A second, weaker table escalates lockfiles,
+dependency manifests, and container definitions to `HUMAN_REQUIRED` rather than
+blocking, because refusing those outright would make ordinary
+dependency-bearing migrations impossible.
 
 An instruction inside provider text or repository content that asks for an edit
 outside this boundary is refused by the path check, which is exactly the
@@ -124,15 +152,47 @@ contacted, which verifier approved, and which identity opened the PR
 ([`roadmap.md` §18](../roadmap.md#18-observability-and-audit-design)). Storage
 shape: [`data-model.md`](./data-model.md).
 
+## Traces leave the trust boundary
+
+Spans are exported over OTLP to Google's Telemetry API and read by people who
+are not reviewing this repository, so what may travel on one is restricted in
+two independent places.
+
+**PatchAPI's own spans.** `StageSpan.set` in `agents/observe.py` accepts only
+the keys pinned in `packages/observability/config.py`, and only values shaped
+like an identifier — no whitespace, one line, bounded length. Every untrusted
+document this product handles is prose, and prose does not survive that pattern.
+Span events carry a name and no payload.
+
+**ADK's spans.** `google-adk` 2.1.0 writes the whole prompt and the whole
+response onto its `call_llm` spans as JSON, and it does so *by default*:
+`ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` defaults to `true`. A PatchAPI prompt
+carries provider release notes and the customer's own source, so leaving that
+default would export untrusted third-party text and private code to a trace
+backend the moment tracing was switched on — the exact opposite of what the
+intake gate exists for.
+
+`services/agent_runner/src/patchapi_agent_runner/telemetry.py` sets it to
+`false` in code, before the tracer provider exists so no span can be built under
+the default. It is set in the process rather than in the deployment on purpose:
+the safe posture is then a property of the code and not of a flag someone can
+forget. `setdefault`, so an operator debugging one run can still opt in
+deliberately, and the process logs a warning when they have.
+`services/agent_runner/tests/test_telemetry.py` is the regression test.
+
 ## Enforced today versus designed
 
 | Control | Today |
 |---|---|
-| No-merge boundary | designed; enforced by construction once the GitHub tool service ships — **the GitHub App is deferred, so there is no write path at all right now** |
-| Deterministic forbidden-path policy | landing with the policy package in the setup batch |
-| Independent verification | designed; part of the Phase 1 vertical slice |
-| Isolated execution | **local temp workspace only.** GKE Agent Sandbox is not yet provisioned, so gVisor and network-policy claims above are design, not deployment |
-| Model Armor / Semantic Governance | API access confirmed on the `global` location; **zero templates configured** |
+| No-merge boundary | **enforced by construction.** The GitHub App is installed and the write path is live; the tool service implements no merge, admin, secret, or branch-protection operation |
+| Deterministic forbidden-path policy | **enforced** in `packages/policy/` (`FORBIDDEN_PATH_RULES`, `POLICY_VERSION` recorded on every evaluation) |
+| Deterministic injection gate on untrusted text | **enforced** in `packages/policy/injection.py`, and applied to recalled Memory Bank text as well as provider text |
+| Independent verification | **enforced.** A separate Verification Agent must pass before a PR, and it is never shown institutional memory |
+| Isolated execution | **partial.** The GKE cluster exists and `./scripts/verify_sandbox_gke.sh` claims and destroys a live sandbox, but the backend is per-run. A run on the local temp workspace is not sandboxed execution and the gVisor and network-policy claims above do not describe it |
+| Model Armor | template and project floor settings configured; the intake `sanitizeUserPrompt` call is **opt-in via `PATCHAPI_MODEL_ARMOR_ENABLED`, which the deploy workflow does not set**, so a deployed run screens with the deterministic gate alone and reports it. Verified live by `PATCHAPI_MODEL_ARMOR_LIVE=1 ./scripts/verify_policy_model_armor.sh` |
+| Semantic Governance | not wired. `RuleTier.SEMANTIC_GOVERNANCE` is the tier Model Armor findings carry, not a separate Google service |
+| Prompt and model output kept off exported spans | **enforced** in the agent-lane entry point; see [Traces leave the trust boundary](#traces-leave-the-trust-boundary) |
+| Per-agent SPIFFE identity / network-layer tool denial | **not available.** Agent Identity and Agent Gateway do not support Cloud Run deployments |
 | Secrets kept out of git | enforced now via `.gitignore` and `.secrets/` |
 
 Do not cite this document as evidence that a control is live. Cite the

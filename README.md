@@ -9,7 +9,11 @@ Built for the [All Things Agentic Hackathon](https://allthingsagentichackathon.d
 
 ## Status
 
-Early scaffold. Authoritative plan: [`roadmap.md`](./roadmap.md).
+The console, control plane, agent lane, and GitHub write path are deployed on
+Google Cloud and have produced pull requests from end-to-end runs. Authoritative
+plan: [`roadmap.md`](./roadmap.md) — read it as the design of record, not as a
+description of what is running; the tables below and in
+[`docs/architecture.md`](./docs/architecture.md) are the deployment reality.
 
 Flagship demo target: pinned fork of [`remorses/egaki`](https://github.com/remorses/egaki),
 migrating Google Imagen 4 → Gemini 3.1 Flash Image. Second demo:
@@ -108,9 +112,26 @@ target: **Imagen 4 → Gemini 3.1 Flash Image**.
 | Google OAuth | Web client in APIs & Services → Credentials. Continue with Google; origins/redirects below. |
 | IAM + Workload Identity Federation | Pool `github-actions` / provider `github`. GitHub Actions impersonates `patchapi-github-deploy@…` — no JSON key in CI. Workload SAs: `patchapi-web@…`, `patchapi-api@…`, `patchapi-indexer@…`. Pub/Sub push uses `patchapi-pubsub-push@…`. |
 | Vertex AI / Gemini Enterprise Agent Platform | `aiplatform.googleapis.com`. `gemini-3.5-flash` (agent reasoning) and `gemini-3.1-flash-image` (demo image path). |
-| Memory Bank | Agent Engine resource created; name in `.secrets/memory_bank_name.txt`. Institutional context, not run state. |
+| Memory Bank | Vertex AI Agent Engine `6770363244553961472` (`us-central1`), reached over the Agent Engine REST surface by [`packages/memory/vertex.py`](./packages/memory/vertex.py). Institutional context, not run state. `PATCHAPI_MEMORY_BANK_ENGINE` / `PATCHAPI_MEMORY_BANK_LOCATION` are set on the agent lane by the deploy workflow; unset, the lane falls back to a local file. |
+| Agent Registry | `agentregistry.googleapis.com` (`us-central1`). All seven agents publish an A2A card whose version and skills are derived from the `agents/config.py` grants, so the catalog cannot drift from the code. `services/github_tools` is a separate `McpServer` entry. See [`packages/platform/`](./packages/platform/README.md) and `./scripts/register_agent_registry.sh`. |
+| Cloud Trace / Telemetry API | OpenTelemetry spans export over OTLP to `telemetry.googleapis.com`. One trace per remediation run: `patchapi.run` plus seven stage spans, with ADK's own model and tool spans nested underneath. See [`packages/observability/`](./packages/observability/README.md). |
+| Model Armor | Project floor settings enforce `INSPECT_ONLY` with Cloud Logging, integrated inline with Vertex AI, so every model call on this project is inspected. Template `patchapi-untrusted-intake` (`us-central1`) additionally serves the intake screen — see the caveat below. |
 | Cloud Logging | Cloud Run service accounts write logs. |
 | Pub/Sub | Topics `patchapi-dev-{repo-push,project-repo-added,project-repo-removed,index-updated}`. Push subscriptions `*-sub` deliver to the indexer. |
+
+**Model Armor caveat.** The intake `sanitizeUserPrompt` call in
+[`packages/policy/armor.py`](./packages/policy/armor.py) is opt-in via
+`PATCHAPI_MODEL_ARMOR_ENABLED`, and the deploy workflow does not set it. A
+deployed run therefore reports `screened_by: [deterministic_injection_rules]`
+and a Model Armor state of `not_consulted`. The deterministic gate in
+`packages/policy/injection.py` is the authoritative check either way, because
+Model Armor's Vertex integration fails open. Exercise the live template with
+`PATCHAPI_MODEL_ARMOR_LIVE=1 ./scripts/verify_policy_model_armor.sh`.
+
+Model Armor templates are served only from the **regional** host
+(`modelarmor.us-central1.rep.googleapis.com`); the global
+`modelarmor.googleapis.com` host carries floor settings and answers a template
+call with a permission error that reads like an IAM problem and is not.
 
 ### Enabled, not on the request path yet
 
@@ -118,13 +139,17 @@ APIs are on in the project. These are not serving console traffic today.
 
 | Service | Role when wired |
 |---|---|
-| GKE Agent Sandbox | Isolated patch execution (gVisor). Local temp workspace stands in until then. |
 | Cloud Storage | Run evidence bucket. |
-| Model Armor | Sanitize untrusted provider text. |
-| Agent Registry / Agent Gateway / Agent Identity | Fleet discovery, egress deny-by-tool, SPIFFE per agent. |
-| Cloud Trace | One OTLP trace per remediation run. |
 | Cloud Scheduler | Provider-check polling. |
 | Cloud Build | Optional; GitHub Actions builds images today. |
+
+### Not available for this architecture
+
+| Service | Why not |
+|---|---|
+| Agent Identity | Per-agent SPIFFE identity requires Agent Runtime; it is not offered to Cloud Run deployments. PatchAPI uses Google-signed ID tokens between private Cloud Run services instead. |
+| Agent Gateway | Network-layer deny-by-tool-name is likewise unavailable to a Cloud Run deployment. The equivalent guarantee here is structural: `services/github_tools/` is the only path to a GitHub write and has no merge, admin, secret, or branch-protection operation on its surface. |
+| Agent Runtime (`reasoningEngines`) execution | Deliberately not used. PatchAPI runs its own Cloud Run worker pool with lanes, leases, heartbeats, and `agent_hold` resume. The Agent Engine is used for Memory Bank only. |
 
 Terraform for the same surface: [`infra/terraform/README.md`](./infra/terraform/README.md)
 (`dev` plans clean; gated GKE / SQL / Run modules are off there because those
