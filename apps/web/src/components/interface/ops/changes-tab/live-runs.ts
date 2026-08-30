@@ -323,6 +323,8 @@ const HIDDEN_TOOLS = new Set([
   "list_verification_evidence",
   "list_dir",
   "record_patch_plan",
+  // The intake gate. Already narrated where it happens, below.
+  "screen_untrusted_text",
 ]);
 
 const NOISE_COMMANDS = /^(git status|npm run build|pnpm (?:install|run build))\b/;

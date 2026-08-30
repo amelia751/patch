@@ -344,6 +344,14 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
       // evaluate_policy already said allow or deny. Recording it is a second
       // row that only restates the same fact in louder words.
       return null;
+    case "screen_untrusted_text":
+      // The gate that clears provider text before anything acts on it, and the
+      // only reason it is not drawn is that a passing gate is not news: the log
+      // already opens by saying provider text is untrusted and screened. A
+      // refusal ends the run BLOCKED, which the run's own state reports. The
+      // verdict, the gates that reached it, and what matched live in the audit
+      // record either way, which is where an auditor looks rather than here.
+      return null;
     case "load_migration_skill":
       return { label: "Skill", detail: humanSkill(arg(args, "skill_id")), tone: "neutral", icon: "skill" };
     case "read_file":
