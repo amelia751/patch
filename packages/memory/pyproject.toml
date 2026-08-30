@@ -4,10 +4,13 @@ version = "0.1.0"
 description = "Memory Bank client interface and a local file-backed fake for offline runs."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-# Standard library only. The Google Agent Platform SDK belongs to the adapter
-# that implements this interface against a real Memory Bank, not to the
-# interface itself — tests and offline runs must not need credentials.
-dependencies = []
+# `google-auth` only, and imported lazily inside the transport. The interface,
+# the local fake, and every test stay importable without credentials; the Vertex
+# adapter speaks the Agent Engine REST surface over the standard library rather
+# than pulling the full aiplatform SDK into the agent lane.
+dependencies = [
+    "google-auth>=2.35,<3",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -19,5 +22,7 @@ only-include = ["__init__.py"]
 [tool.hatch.build.targets.wheel.force-include]
 "__init__.py" = "packages/memory/__init__.py"
 "client.py" = "packages/memory/client.py"
+"config.py" = "packages/memory/config.py"
 "local.py" = "packages/memory/local.py"
 "profile.py" = "packages/memory/profile.py"
+"vertex.py" = "packages/memory/vertex.py"

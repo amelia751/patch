@@ -8,6 +8,7 @@ run status, idempotency, or audit; those live in Postgres (§10.1).
 from packages.memory.client import MemoryBankClient, MemoryUnavailableError
 from packages.memory.local import LocalMemoryBank
 from packages.memory.profile import PreviousMigration, RepositoryProfile
+from packages.memory.vertex import VertexMemoryBank, memory_bank_unavailable_reason
 
 __all__ = [
     "LocalMemoryBank",
@@ -15,4 +16,6 @@ __all__ = [
     "MemoryUnavailableError",
     "PreviousMigration",
     "RepositoryProfile",
+    "VertexMemoryBank",
+    "memory_bank_unavailable_reason",
 ]
