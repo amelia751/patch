@@ -29,12 +29,12 @@ from opentelemetry.sdk.trace.export import (
 
 from packages.observability.config import (
     ATTR_GCP_PROJECT,
-    ENV_CLOUD_PROJECT,
     ENV_TRACE_EXPORTER,
     EXPORTER_AUTO,
     EXPORTER_CLOUD,
     EXPORTER_CONSOLE,
     EXPORTER_NONE,
+    PROJECT_VARS,
     TELEMETRY_ENDPOINT,
     TRACE_FLUSH_TIMEOUT_MS,
     TRACING_SCHEMA_VERSION,
@@ -63,11 +63,20 @@ def configured_mode(env: dict[str, str] | None = None) -> str:
     return mode
 
 
+def cloud_project(env: dict[str, str] | None = None) -> str:
+    """The project spans are routed to, from either accepted variable."""
+    environ = env if env is not None else dict(os.environ)
+    for name in PROJECT_VARS:
+        value = environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def cloud_trace_unavailable_reason(env: dict[str, str] | None = None) -> str | None:
     """Return `None` when spans can reach Cloud Trace, else why they cannot."""
-    environ = env if env is not None else dict(os.environ)
-    if not environ.get(ENV_CLOUD_PROJECT, "").strip():
-        return f"{ENV_CLOUD_PROJECT} is not set"
+    if not cloud_project(env):
+        return f"none of {', '.join(PROJECT_VARS)} is set"
     try:
         import grpc  # noqa: F401
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: F401
@@ -103,12 +112,11 @@ def build_resource(service_name: str, env: dict[str, str] | None = None) -> Reso
     the detector supplies it, but a local run against a real project has no
     metadata server, and the Telemetry API rejects a span that cannot be routed.
     """
-    environ = env if env is not None else dict(os.environ)
     attributes: dict[str, Any] = {
         SERVICE_NAME: service_name,
         SERVICE_VERSION: TRACING_SCHEMA_VERSION,
     }
-    project = environ.get(ENV_CLOUD_PROJECT, "").strip()
+    project = cloud_project(env)
     if project:
         attributes[ATTR_GCP_PROJECT] = project
     resource = Resource.create(attributes)

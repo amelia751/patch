@@ -5,21 +5,23 @@ import io
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 
 from packages.observability.config import (
-    ENV_CLOUD_PROJECT,
+    ATTR_GCP_PROJECT,
     ENV_TRACE_EXPORTER,
     EXPORTER_AUTO,
     EXPORTER_CLOUD,
     EXPORTER_CONSOLE,
     EXPORTER_NONE,
+    PROJECT_VARS,
 )
 from packages.observability.export import (
     build_processor,
     build_resource,
+    cloud_project,
     cloud_trace_unavailable_reason,
     configured_mode,
 )
 
-CLOUD_ENV = {ENV_CLOUD_PROJECT: "patch-test"}
+CLOUD_ENV = {"GCP_PROJECT": "patch-test"}
 
 
 def test_mode_defaults_to_auto():
@@ -37,7 +39,22 @@ def test_mode_is_read_case_insensitively():
 def test_cloud_is_unavailable_without_a_project():
     reason = cloud_trace_unavailable_reason({})
     assert reason is not None
-    assert ENV_CLOUD_PROJECT in reason
+    for name in PROJECT_VARS:
+        assert name in reason
+
+
+def test_either_project_variable_is_accepted():
+    """The deployment sets `GCP_PROJECT` and the Google SDKs read
+    `GOOGLE_CLOUD_PROJECT`; honouring one only traced to the console in
+    production while reporting itself configured."""
+    for name in PROJECT_VARS:
+        assert cloud_project({name: "patch-test"}) == "patch-test"
+        assert cloud_trace_unavailable_reason({name: "patch-test"}) != f"{name} is not set"
+
+
+def test_the_project_is_attached_so_the_telemetry_api_can_route_the_span():
+    resource = build_resource("patchapi-agents", CLOUD_ENV)
+    assert resource.attributes[ATTR_GCP_PROJECT] == "patch-test"
 
 
 def test_none_disables_tracing_entirely():

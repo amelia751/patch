@@ -11,11 +11,11 @@ import pytest
 
 from packages.memory import MemoryUnavailableError, PreviousMigration, RepositoryProfile
 from packages.memory.config import (
-    ENV_CLOUD_PROJECT,
     ENV_MEMORY_BANK_ENGINE,
     KIND_MIGRATION,
     KIND_PROFILE,
     PROFILE_MARKER,
+    PROJECT_VARS,
     SCOPE_KIND,
     SCOPE_REPO,
 )
@@ -158,11 +158,14 @@ def test_from_env_reports_what_is_missing():
     assert memory_bank_unavailable_reason({}) is not None
     assert ENV_MEMORY_BANK_ENGINE in memory_bank_unavailable_reason({})
     bare = {ENV_MEMORY_BANK_ENGINE: "123"}
-    assert ENV_CLOUD_PROJECT in memory_bank_unavailable_reason(bare)
+    reason = memory_bank_unavailable_reason(bare)
+    assert reason is not None
+    for name in PROJECT_VARS:
+        assert name in reason
     with pytest.raises(MemoryUnavailableError):
         VertexMemoryBank.from_env({})
 
 
 def test_a_bare_engine_id_resolves_against_the_configured_project():
-    bank = VertexMemoryBank.from_env({ENV_MEMORY_BANK_ENGINE: "123", ENV_CLOUD_PROJECT: "p"})
+    bank = VertexMemoryBank.from_env({ENV_MEMORY_BANK_ENGINE: "123", "GCP_PROJECT": "p"})
     assert bank._engine == ENGINE

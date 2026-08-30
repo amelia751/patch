@@ -22,7 +22,11 @@ EXPORTER_CLOUD: Final[str] = "cloud"
 EXPORTER_CONSOLE: Final[str] = "console"
 EXPORTER_NONE: Final[str] = "none"
 
-ENV_CLOUD_PROJECT: Final[str] = "GOOGLE_CLOUD_PROJECT"
+# Both names, in this order, matching `packages/state/provider_check.py`. The
+# deployment sets `GCP_PROJECT`; the Google SDKs read `GOOGLE_CLOUD_PROJECT`.
+# Accepting one only would have traced to the console in production while
+# reporting itself as configured.
+PROJECT_VARS: Final[tuple[str, ...]] = ("GCP_PROJECT", "GOOGLE_CLOUD_PROJECT")
 
 # Cloud Trace ingests OTLP natively through the Telemetry API, and the older
 # `CloudTraceSpanExporter` is deprecated. Exporting OTLP also means the spans are

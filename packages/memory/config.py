@@ -13,7 +13,9 @@ from typing import Final
 # `projects/.../reasoningEngines/...` resource name.
 ENV_MEMORY_BANK_ENGINE: Final[str] = "PATCHAPI_MEMORY_BANK_ENGINE"
 ENV_MEMORY_BANK_LOCATION: Final[str] = "PATCHAPI_MEMORY_BANK_LOCATION"
-ENV_CLOUD_PROJECT: Final[str] = "GOOGLE_CLOUD_PROJECT"
+# Both names, in this order, matching `packages/state/provider_check.py`. The
+# deployment sets `GCP_PROJECT`; the Google SDKs read `GOOGLE_CLOUD_PROJECT`.
+PROJECT_VARS: Final[tuple[str, ...]] = ("GCP_PROJECT", "GOOGLE_CLOUD_PROJECT")
 
 DEFAULT_LOCATION: Final[str] = "us-central1"
 
@@ -42,12 +44,12 @@ REQUEST_TIMEOUT_SECONDS: Final[float] = 10.0
 
 __all__ = [
     "DEFAULT_LOCATION",
-    "ENV_CLOUD_PROJECT",
     "ENV_MEMORY_BANK_ENGINE",
     "ENV_MEMORY_BANK_LOCATION",
     "KIND_MIGRATION",
     "KIND_PROFILE",
     "PROFILE_MARKER",
+    "PROJECT_VARS",
     "REQUEST_TIMEOUT_SECONDS",
     "RETRIEVE_TOP_K",
     "SCOPE_KIND",

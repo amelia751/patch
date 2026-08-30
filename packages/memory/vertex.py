@@ -29,12 +29,12 @@ from typing import Any, Final, Self
 from packages.memory.client import MemoryUnavailableError
 from packages.memory.config import (
     DEFAULT_LOCATION,
-    ENV_CLOUD_PROJECT,
     ENV_MEMORY_BANK_ENGINE,
     ENV_MEMORY_BANK_LOCATION,
     KIND_MIGRATION,
     KIND_PROFILE,
     PROFILE_MARKER,
+    PROJECT_VARS,
     REQUEST_TIMEOUT_SECONDS,
     RETRIEVE_TOP_K,
     SCOPE_KIND,
@@ -47,14 +47,24 @@ log = logging.getLogger(__name__)
 _SCOPES: Final[tuple[str, ...]] = ("https://www.googleapis.com/auth/cloud-platform",)
 
 
+def cloud_project(env: dict[str, str] | None = None) -> str:
+    """The project a bare engine id is resolved against."""
+    environ = env if env is not None else dict(os.environ)
+    for name in PROJECT_VARS:
+        value = environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def memory_bank_unavailable_reason(env: dict[str, str] | None = None) -> str | None:
     """Return `None` when a Memory Bank is configured and reachable in principle."""
     environ = env if env is not None else dict(os.environ)
     engine = environ.get(ENV_MEMORY_BANK_ENGINE, "").strip()
     if not engine:
         return f"{ENV_MEMORY_BANK_ENGINE} is not set"
-    if not engine.startswith("projects/") and not environ.get(ENV_CLOUD_PROJECT, "").strip():
-        return f"{ENV_CLOUD_PROJECT} is required to resolve a bare engine id"
+    if not engine.startswith("projects/") and not cloud_project(environ):
+        return f"one of {', '.join(PROJECT_VARS)} is required to resolve a bare engine id"
     try:
         import google.auth  # noqa: F401
     except ImportError as exc:
@@ -231,7 +241,7 @@ def _resolve_engine(env: dict[str, str]) -> str:
     engine = env[ENV_MEMORY_BANK_ENGINE].strip()
     if engine.startswith("projects/"):
         return engine
-    project = env[ENV_CLOUD_PROJECT].strip()
+    project = cloud_project(env)
     location = env.get(ENV_MEMORY_BANK_LOCATION, "").strip() or DEFAULT_LOCATION
     return f"projects/{project}/locations/{location}/reasoningEngines/{engine}"
 
