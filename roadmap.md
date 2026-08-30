@@ -11,6 +11,18 @@
 **Reasoning model for PatchAPI agents:** Gemini 3.5 Flash or newer, with Gemini 3.5 Flash as the default hackathon configuration  
 **Agent framework:** Google Agent Development Kit (ADK), Python
 
+> **This document is the design of record, not a status report.** It was written
+> before the platform surfaces were probed, and two of the services it plans
+> around — **Agent Identity** and **Agent Gateway** — turned out not to support
+> Cloud Run deployments, so PatchAPI does not use them and cannot. §1 and §20
+> below are annotated where that applies, but every later section still
+> describes them as present; read those as the original plan.
+>
+> For what is actually deployed, read
+> [`README.md`](./README.md) and
+> [`docs/architecture.md`](./docs/architecture.md#google-platform-integration).
+> Where this file and those disagree about what exists, they win.
+
 ---
 
 ## 0. Executive summary
@@ -83,28 +95,36 @@ The Fleet implementation must demonstrate the four categories required by the
 track. Each row below names the **specific API surface** PatchAPI calls, not an
 aspiration. Anything PatchAPI cannot demonstrably call is not a claim we make.
 
-| Fleet requirement | Surface | Launch stage | PatchAPI integration | Load-bearing? |
-|---|---|---|---|---|
-| Discovery & Lifecycle | **Agent Registry** (`agentregistry.googleapis.com`) | GA 2026-06-18 | The four agents auto-register on Agent Runtime deploy. The GitHub tool service registers as an `McpServer`; the sandbox runner as an `Endpoint`. The Patch path resolves the GitHub toolset at runtime via `AgentRegistry.get_mcp_toolset()`. | **Yes** — remove it and tool resolution fails |
-| Discovery & Lifecycle | **Skill Registry** (`GCPSkillRegistry` + `SkillToolset`) | Preview | The Google image-migration skill is published as a `Skill` with revisions; the Patch Agent retrieves it by semantic search rather than static injection. | Should-have |
-| Core Execution | **Agent Runtime** (`reasoningEngines`) | GA | Each agent deploys as its own Runtime instance. Supports runs up to 7 days. | **Yes** |
-| State | **Memory Bank** (`agent_engines.memories`) | GA | Repository-scoped institutional memory using a custom scope dict, not per-user. | **Yes** |
-| State | **Cloud SQL / Postgres** | GA | Authoritative deterministic workflow state. Memory Bank is never the source of truth for run status. | **Yes** |
-| Security | **Agent Identity** (`agentidentity.googleapis.com`) | Preview | One SPIFFE ID per agent. Auth manager brokers the GitHub App credential so no agent holds a raw token. | **Yes** |
-| Security | **Agent Gateway** (`gcloud network-services agent-gateways`) | GA 2026-06-18 | Egress mode in front of the GitHub MCP server. Deny-by-tool-name enforces "never merge" at the network layer. | **Yes** — this is the security demo |
-| Security | **Model Armor** (`modelarmor.googleapis.com`) | GA | `sanitizeUserPrompt` on every ingested provider document; gateway-inline inspection on tool calls; project floor settings as the org baseline. | **Yes** |
-| Security | **Semantic Governance policies** | Preview 2026-06-29 | Natural-language constraints in dry-run, then one enforced rule. Defence in depth only. | Should-have |
-| Telemetry | **Agent Observability** / Telemetry (OTLP) API | GA 2026-06-18 | ADK built-in OpenTelemetry exports to Cloud Trace; one trace ID per remediation run; Model Armor interceptions appear in the same traces natively. | **Yes** |
+The **Planned** column is what this document set out to do. **Built** is what
+shipped, corrected 2026-08-30 against project `patch-505223`.
+
+| Fleet requirement | Surface | Planned | Built |
+|---|---|---|---|
+| Discovery & Lifecycle | **Agent Registry** (`agentregistry.googleapis.com`) | Agents auto-register on Agent Runtime deploy; the Patch path resolves the GitHub toolset via `AgentRegistry.get_mcp_toolset()`, so removing the registration breaks tool resolution. | **Yes, as a catalog.** All seven agents publish an A2A card whose version and skills are *derived* from the `agents/config.py` tool grants, so the catalog cannot drift from the implementation; `services/github_tools` is a separate `McpServer` entry with a `JSONRPC` binding. Not load-bearing, by choice: registry reads fail soft and the tool service is reached by URL. A catalog outage must cost the fleet its listing, never its run. |
+| Discovery & Lifecycle | **Skill Registry** (`GCPSkillRegistry` + `SkillToolset`) | Publish the image-migration skill as a `Skill` with revisions, retrieved by semantic search. | **No.** Migration skills are read from `skills/` in the repository. |
+| Core Execution | **Agent Runtime** (`reasoningEngines`) | One Runtime instance per agent. | **Deliberately not used.** PatchAPI runs its own Cloud Run worker pool with lanes, leases, heartbeats, and `agent_hold` resume. Postgres was already authoritative for run state, so the queue belonged next to it. |
+| State | **Memory Bank** (`agent_engines.memories`) | Repository-scoped institutional memory using a custom scope dict, not per-user. | **Yes.** Agent Engine `6770363244553961472` in `us-central1` via `packages/memory/vertex.py`, scoped `{repo, kind}`. `LocalMemoryBank` is the offline fallback. |
+| State | **Cloud SQL / Postgres** | Authoritative deterministic workflow state. | **Yes.** Instance `patchapi-console`; the run state machine, leases, idempotency keys, and audit events all live there. |
+| Security | **Agent Identity** (`agentidentity.googleapis.com`) | One SPIFFE ID per agent; auth manager brokers the GitHub App credential. | **Not available.** Per-agent SPIFFE identity is offered to Agent Runtime, not to Cloud Run. Stood in for by Google-signed ID tokens between private Cloud Run services and a capabilities-never-tokens rule. No SPIFFE attestation of which agent is calling. |
+| Security | **Agent Gateway** (`gcloud network-services agent-gateways`) | Egress mode in front of the GitHub MCP server; deny-by-tool-name enforces "never merge" at the network layer. | **Not available** to a Cloud Run deployment. The no-merge guarantee instead comes from absence: `services/github_tools` is the only path to a GitHub write and implements no merge, admin, secret, or branch-protection operation. Stronger in kind, since there is no code path to abuse; weaker in that no tool is refused *by name* on the wire. |
+| Security | **Model Armor** (`modelarmor.googleapis.com`) | `sanitizeUserPrompt` on every ingested document; gateway-inline inspection; project floor settings. | **Configured, not authoritative.** Floor settings enforce `INSPECT_ONLY` with logging, integrated inline with Vertex AI. Template `patchapi-untrusted-intake` serves the intake screen but is opt-in via `PATCHAPI_MODEL_ARMOR_ENABLED`, which the deploy workflow does not set. It fails open, so it can add a refusal and never withdraw one; `packages/policy/injection.py` is the gate. |
+| Security | **Semantic Governance policies** | Natural-language constraints, dry-run then one enforced rule. | **No.** `RuleTier.SEMANTIC_GOVERNANCE` is the tier a Model Armor finding carries, not a separate Google service. |
+| Telemetry | **Agent Observability** / Telemetry (OTLP) API | ADK OpenTelemetry exports to Cloud Trace; one trace per run. | **Yes.** OTLP over gRPC to `telemetry.googleapis.com`. One trace per run: `patchapi.run` plus seven pinned stage spans, with ADK's `invocation` / `invoke_agent` / `call_llm` / `generate_content` / `execute_tool` spans nested underneath. The deprecated `CloudTraceSpanExporter` is not used. |
 
 ### The rule this table encodes
 
 Every one of these is a *judging criterion*, not polish. A surface that only
 appears in a screenshot scores nothing. Prefer integrations that break the build
-when removed:
+when removed.
 
-- resolve the GitHub toolset **through** Agent Registry rather than a hardcoded URL,
-- route tool calls **through** Agent Gateway rather than direct HTTPS,
-- read the Fleet dashboard page **from** the Registry API rather than a local table.
+That rule survived contact with the platform in a form worth recording, because
+it cut the other way twice. Agent Registry *could* have been made load-bearing
+by resolving the GitHub toolset through it; that was rejected, because a catalog
+that can take down a remediation is a worse catalog. And "route tool calls
+through Agent Gateway rather than direct HTTPS" turned out to be unavailable
+rather than unfinished. What is genuinely load-bearing here is narrower and
+truer: Postgres, the Telemetry API export, Memory Bank, and the fact that the
+agent cards are derived from the tool grants rather than authored.
 
 Competition brief:
 - https://allthingsagentichackathon.devpost.com/
@@ -230,6 +250,12 @@ PatchAPI then hands control back to normal enterprise CI and review.
 ---
 
 # 4. Primary architecture
+
+> **The diagram below is the plan.** Two of its boxes were never built:
+> **Agent Gateway** and **Agent Identity** do not support Cloud Run deployments,
+> and the **Agent Runtime** execution layer was replaced on purpose by
+> PatchAPI's own worker pool. For the shape that exists, see
+> [`docs/architecture.md`](./docs/architecture.md#google-platform-integration).
 
 ```mermaid
 flowchart TB
@@ -716,6 +742,10 @@ This service prevents raw GitHub credentials from being placed in agent prompts 
 
 ### Transport: MCP behind the gateway, from the start
 
+> **Superseded.** Agent Gateway does not support Cloud Run deployments, so the
+> governed path below was never available. What shipped is at the end of this
+> subsection.
+
 Do not build the plain-HTTPS version and plan to "upgrade later." The governed
 path is the only path:
 
@@ -751,6 +781,35 @@ github_tools = registry.get_mcp_toolset("patchapi-github-tools")
 This makes Agent Registry load-bearing: delete the registration and tool
 resolution fails. Unregistered MCP servers are blocked by the gateway by
 default, so the registry is also the allowlist.
+
+### What actually shipped
+
+The registration is real: `patchapi-github-tools` exists as an `McpServer`
+Service in `us-central1` with a `JSONRPC` interface pointing at the service's
+`/mcp` endpoint. Two API constraints cost real time and are pinned in
+`packages/platform/config.py` so no call site rediscovers them:
+
+- an MCP Server registration is rejected by the create **operation** — not the
+  create call — with anything but `JSONRPC`; `HTTP_JSON` cannot stand in;
+- a Service created with an `agentSpec` must send an **empty** `interfaces`
+  array, because an `A2A_AGENT_CARD` carries its connectivity in the card's own
+  `url` and `preferredTransport`, and the API rejects a Service that sets both.
+
+The two claims above that did *not* ship:
+
+**Registry is not load-bearing, by choice.** The agent lane reaches the tool
+service through `PATCHAPI_GITHUB_TOOLS_URL`, and every read in
+`packages/platform/registry.py` fails soft. Making a remediation depend on a
+catalog being reachable would trade a real property — the run completes — for a
+demonstrable one. The registration is still not decorative: the cards are
+derived from the `agents/config.py` grants, so revoking a tool grant removes the
+skill from the catalog on the next registration and the two cannot drift.
+
+**No gateway, so no network-layer allowlist.** The tool service is a private
+Cloud Run service; callers present a Google-signed ID token for its audience
+(`_service_identity` in `agents/tools/pr.py`) and it stays the sole holder of the
+GitHub App key. The no-merge guarantee comes from the surface having no merge
+operation on it, not from something refusing the call.
 
 ### What this buys over prompt-level rules
 
@@ -2035,6 +2094,14 @@ rather than a Scheduler cron.
 
 ## 12.4 Agent Identity — Preview
 
+> **Not available to PatchAPI.** Per-agent SPIFFE identity is tied to an Agent
+> Runtime resource, and PatchAPI's agent lane is a Cloud Run worker pool
+> (see §7.1 and §12.3). The rest of this section is the plan, retained because
+> the permission matrix below is still the intent and is realised as
+> per-service IAM plus the tool service's own grants. What is lost is the
+> attestation: nothing cryptographically proves *which* agent is calling.
+> `docs/architecture.md` records what stands in.
+
 Service: `agentidentity.googleapis.com`, which replaces the legacy
 `iamconnectors.googleapis.com`. Both operate side-by-side during the migration
 period.
@@ -2081,6 +2148,15 @@ Docs:
 - https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/agent-identity
 
 ## 12.5 Agent Gateway — GA
+
+> **Not available to PatchAPI.** The gateway's principal is an agent's SPIFFE ID
+> from Agent Identity (§12.4), which a Cloud Run deployment does not get, and the
+> gateway is documented as incompatible with revisions
+> (`docs/research/gemini-enterprise-agent-registry.md`). Nothing below is in the
+> request path. Read "what the gateway enforces that a prompt cannot" as the
+> requirement, and `docs/security.md` for the layers PatchAPI holds it with
+> instead — chiefly that `merge_pull_request` is absent from the tool service
+> rather than denied on the wire.
 
 `gcloud network-services agent-gateways`. PatchAPI uses **Agent-to-Anywhere
 (egress)** mode in front of the GitHub MCP server and the sandbox endpoint.
@@ -2228,6 +2304,21 @@ Policy:
 Where reasoning-chain visibility is needed for the demo, emit a redacted summary
 span attribute deliberately rather than turning on blanket content capture.
 
+> **What shipped is stricter and differently keyed.** The variable that decides
+> this in `google-adk` 2.1.0 is `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS`, and it
+> defaults to **`true`** — the risk was not "if we opt in" but "unless we opt
+> out". `services/agent_runner/.../telemetry.py` sets it to `false` for the whole
+> lane, in code, before the tracer provider exists, so the safe posture is a
+> property of the process rather than of a deployment flag someone can forget.
+>
+> The per-agent table above was not implemented: the lane is one process, so
+> content capture is one setting, and even Change Intelligence is off. Provider
+> text is "public" only when the provider is honest, and its prompts also carry
+> the run's own instructions. Reasoning-chain visibility comes from the stage
+> spans instead, which is what the table's last line asked for. Redaction is
+> enforced by shape in `agents/observe.py`: only pinned keys, only
+> identifier-shaped values. See `docs/security.md`.
+
 ### Spans
 
 ADK emits agent, model, and tool spans automatically. Custom instrumentation is
@@ -2250,6 +2341,31 @@ patchapi.run                     custom root span, one trace ID per run
 ├── verification.review          ADK
 └── github.open_pr               custom (gateway also emits its own)
 ```
+
+> **Shipped shape.** One custom span per *stage*, all pinned in
+> `packages/observability/config.py`, with ADK's own `invocation`,
+> `invoke_agent`, `call_llm`, `generate_content` and `execute_tool` spans nesting
+> underneath whichever stage opened the current span:
+>
+> ```text
+> patchapi.run
+> ├── patchapi.change_intelligence
+> ├── patchapi.impact
+> ├── patchapi.policy
+> ├── patchapi.patch
+> ├── patchapi.sandbox
+> ├── patchapi.verification
+> └── patchapi.pull_request
+> ```
+>
+> Eight names rather than fifteen, because the sub-steps above are ADK tool calls
+> and appear on their own without being named here. Whether institutional memory
+> was available is a span *event* (`patchapi.memory.recalled` /
+> `.unavailable`) rather than a span, since it is a moment inside a stage.
+>
+> The exporter is OTLP over gRPC to `telemetry.googleapis.com`. The older
+> `opentelemetry-exporter-gcp-trace` / `CloudTraceSpanExporter` is deprecated and
+> is not used.
 
 Attach:
 - run ID,
@@ -2798,6 +2914,24 @@ verified
 The Fleet track becomes much more convincing if the judge watches a dangerous
 action get blocked. Choose **one** security moment, not five.
 
+> **The chosen moment below is not buildable.** It depends on Agent Gateway and
+> Agent Identity, neither of which supports a Cloud Run deployment (§12.4,
+> §12.5). The comparison table in "Why this beats a forbidden-path block" is
+> therefore a comparison against something PatchAPI does not have, and the
+> conclusion it draws — that the path allowlist "proves less" and is not worth
+> demo seconds — is inverted in practice: the deterministic gate is the control
+> that actually exists.
+>
+> Substitute demo: the intake refusal. A crafted provider note that asks for a
+> merge, a CI edit, or a credential is refused by
+> `packages/policy/injection.py` before any agent reads it, the run terminates at
+> `SANITIZED`, and the refusal appears with its rule id and policy version in
+> `run_trace_events` and on the run's trace. `demo/adversarial/` holds the
+> fixtures. It is enforced by PatchAPI's own Python rather than by Google IAM,
+> which is a weaker provenance and an honest one — and unlike the gateway
+> denial, it fires every take because nothing outside the process has to be
+> in the right mode.
+
 ## Chosen: Agent Gateway denial by tool name
 
 A crafted provider note induces the pipeline to attempt a merge. The call never
@@ -2907,18 +3041,20 @@ Show:
 This page must read the **live platform APIs**, not a local table. A judge who
 sees a hand-maintained inventory concludes Agent Registry was not used.
 
-| Panel | Source |
-|---|---|
-| Registered agents, MCP servers, endpoints, skills | Agent Registry `list_agents` / `list_mcp_servers` |
-| SPIFFE ID per agent | Agent Runtime resource metadata |
-| Allowed tools per identity | Agent Gateway authorization policy |
-| Recent denials | Cloud Logging query |
-| Model Armor interceptions | Cloud Logging / Security dashboard |
-| Topology | link to the Agent Platform Topology tab |
-| Trace | link to Cloud Trace for the current run |
+| Panel | Source | Buildable |
+|---|---|---|
+| Registered agents, MCP servers, endpoints, skills | Agent Registry `list_agents` / `list_mcp_servers` | yes |
+| SPIFFE ID per agent | Agent Runtime resource metadata | **no** — Agent Identity is unavailable (§12.4). Show the agent's Cloud Run service account instead, and do not label it a SPIFFE ID |
+| Allowed tools per identity | Agent Gateway authorization policy | **no** — Agent Gateway is unavailable (§12.5). The equivalent truth is the tool service's own capability list and its per-agent grants |
+| Recent denials | Cloud Logging query | yes, but the denials are PatchAPI's own policy refusals from `audit_events`, not gateway denials |
+| Model Armor interceptions | Cloud Logging / Security dashboard | partial — floor-setting inspections are logged; the intake screen is opt-in and off in the deployment |
+| Topology | link to the Agent Platform Topology tab | yes |
+| Trace | link to Cloud Trace for the current run | yes |
 
-Show real resource names and real SPIFFE IDs. They are ugly and long, and that
-is the point — they are unmistakably the platform's, not ours.
+Show real resource names. They are ugly and long, and that is the point — they
+are unmistakably the platform's, not ours. Do not manufacture a SPIFFE-shaped
+string to fill the gap: a fabricated principal is worse than an honest service
+account, and a judge who checks will find nothing behind it.
 
 Avoid making the UI look like another chatbot.
 
@@ -2956,6 +3092,19 @@ Example:
 Record the SPIFFE ID, not just a friendly name. It is the principal Google Cloud
 actually authorized, so it is the one that makes the audit trail
 non-repudiable — and it ties our audit log to Cloud Audit Logs for the same call.
+
+> **`actor_spiffe_id` and `semantic_governance_verdict` are not obtainable.**
+> Agent Identity issues no principal to a Cloud Run deployment (§12.4) and
+> Semantic Governance is not wired (§12.7). Leave both out rather than filling
+> them: an audit field holding a plausible-looking value nobody can verify is
+> worse than an absent one, and constraint 10 applies to PatchAPI's own records
+> as much as to a provider's.
+>
+> What is recordable, and what `audit_events` holds, is the calling **service
+> account** — which is the principal Google Cloud authorized here, so the
+> paragraph's reasoning survives even though its field name does not. The
+> per-agent attribution is `actor_id`, which travels as a header and is a scoping
+> hint rather than an attestation. Say which of the two a claim rests on.
 
 Audit questions PatchAPI must answer:
 
@@ -3053,26 +3202,29 @@ Should Have for exactly this reason.
 
 ## Must Have
 
-| Service | Launch stage | Why PatchAPI needs it |
-|---|---|---|
-| Gemini 3.5 Flash | GA 2026-05-19 | reasoning across change understanding, impact, patching, verification |
-| Google ADK | — | required agent framework; also supplies built-in OTel |
-| Agent Runtime | GA | four per-agent deployments; auto-registration; auto-gateway routing |
-| Agent Registry | GA 2026-06-18 | catalogs agents, MCP servers, endpoints, skills; resolves the GitHub toolset at runtime |
-| Memory Bank | GA | repository-scoped institutional context across weeks |
-| Agent Identity | Preview | one SPIFFE ID per agent; auth manager holds the GitHub credential |
-| Agent Gateway | GA 2026-06-18 | governed egress; deny-by-tool-name; the security demo |
-| Model Armor | GA | intake screening, egress screening, floor settings |
-| Agent Observability | GA 2026-06-18 | OTel traces, reasoning chains, Model Armor interceptions |
-| GKE Agent Sandbox | — | isolated execution of generated code |
-| Cloud Run | GA | control API, dashboard, tool adapter |
-| Pub/Sub | GA | asynchronous event flow |
-| Cloud SQL for PostgreSQL | GA | deterministic state and API usage inventory |
-| Cloud Storage | GA | evidence and artifacts |
-| Secret Manager | GA | service credentials not held by auth manager |
-| Artifact Registry | GA | container images |
-| Cloud Logging / Trace / Monitoring | GA | operational telemetry and denial evidence |
-| GitHub App | — | real source-control integration |
+**Outcome** is the 2026-08-30 status. Two of these could not be built at all;
+one was built differently on purpose. The rest shipped.
+
+| Service | Launch stage | Why PatchAPI needs it | Outcome |
+|---|---|---|---|
+| Gemini 3.5 Flash | GA 2026-05-19 | reasoning across change understanding, impact, patching, verification | live on Vertex `global` |
+| Google ADK | — | required agent framework; also supplies built-in OTel | in use; its `call_llm` spans nest under PatchAPI's stage spans |
+| Agent Runtime | GA | four per-agent deployments; auto-registration; auto-gateway routing | **not used, by choice** — own Cloud Run worker pool with lanes, leases, heartbeats, `agent_hold` resume |
+| Agent Registry | GA 2026-06-18 | catalogs agents, MCP servers, endpoints, skills; resolves the GitHub toolset at runtime | **catalog only.** Seven derived agent cards plus one `McpServer`. Tool resolution stayed on a URL so a catalog outage cannot fail a run |
+| Memory Bank | GA | repository-scoped institutional context across weeks | live; Agent Engine `6770363244553961472` in `us-central1` |
+| Agent Identity | Preview | one SPIFFE ID per agent; auth manager holds the GitHub credential | **not available** to a Cloud Run deployment. Contingency 1 below fired |
+| Agent Gateway | GA 2026-06-18 | governed egress; deny-by-tool-name; the security demo | **not available** to a Cloud Run deployment. No contingency was written for this one; see §16 |
+| Model Armor | GA | intake screening, egress screening, floor settings | template + floor settings (`INSPECT_ONLY`, logging, Vertex-inline) configured. Intake screen opt-in and off in the deployment; fails open, so never the gate |
+| Agent Observability | GA 2026-06-18 | OTel traces, reasoning chains, Model Armor interceptions | live; OTLP to `telemetry.googleapis.com`. One trace per run, eight pinned PatchAPI spans |
+| GKE Agent Sandbox | — | isolated execution of generated code | cluster `patchapi-dev-agentsandbox` live; backend is per-run, so a local-workspace run is not sandboxed |
+| Cloud Run | GA | control API, dashboard, tool adapter | five services, two jobs |
+| Pub/Sub | GA | asynchronous event flow | live; indexer push subscriptions |
+| Cloud SQL for PostgreSQL | GA | deterministic state and API usage inventory | live; instance `patchapi-console` |
+| Cloud Storage | GA | evidence and artifacts | enabled, not yet the evidence path |
+| Secret Manager | GA | service credentials not held by auth manager | live; and it holds *all* of them, since there is no auth manager |
+| Artifact Registry | GA | container images | live |
+| Cloud Logging / Trace / Monitoring | GA | operational telemetry and denial evidence | live |
+| GitHub App | — | real source-control integration | installed; branch, commit, and PR path works |
 
 ## Strong Should Have
 
@@ -3107,6 +3259,24 @@ inaccessible on the hackathon project, the fallback in priority order is:
 
 Agent Registry, Agent Gateway, Memory Bank, Model Armor, and Agent Observability
 are all GA. There is no acceptable fallback for those — they are the track.
+
+### What actually happened
+
+Contingency 1 fired, and the sentence it ends with — "say so" — is the
+instruction this section is being kept for. PatchAPI runs per-service accounts,
+private Cloud Run services, and Google-signed ID tokens between them. The
+least-privilege matrix survives. The SPIFFE attestation story does not: nothing
+proves which agent is calling the tool service, only which service account is.
+
+The paragraph above also turned out to be wrong on its own terms. GA was not the
+question — **Agent Gateway is GA and still unavailable**, because it needs an
+Agent Identity principal and does not support Cloud Run revisions. A launch stage
+says when a service is stable, not whether a given architecture can call it, and
+"GA, therefore there is no acceptable fallback" was the wrong test to write. The
+fallback for Agent Gateway is the one this document told itself not to spend demo
+seconds on: the deterministic gate in `packages/policy/`, plus a tool surface
+with no dangerous operation on it. Neither is a network-layer refusal, and the
+submission should not claim one.
 
 ---
 
@@ -3445,27 +3615,35 @@ Also close out standing repo debt that will otherwise compound:
 This is the track. It cannot be the thing that gets squeezed.
 
 Runtime and Identity:
-- [ ] deploy four ADK agents as four Agent Runtime instances.
-- [ ] enable `identity_type: AGENT_IDENTITY` on each.
-- [ ] record each SPIFFE ID; apply the §12.4 permission matrix as IAM bindings.
-- [ ] verify each boundary by attempting a denied call and confirming rejection.
+- [ ] ~~deploy four ADK agents as four Agent Runtime instances.~~ **Dropped.** Own Cloud Run worker pool with lanes, leases, heartbeats, `agent_hold` resume.
+- [ ] ~~enable `identity_type: AGENT_IDENTITY` on each.~~ **Not available on Cloud Run** (§12.4).
+- [ ] ~~record each SPIFFE ID~~ — no SPIFFE ID exists. Apply the §12.4 permission matrix as per-service IAM plus the tool service's own per-agent grants.
+- [x] verify each boundary by attempting a denied call and confirming rejection — as a structured refusal from the tool service, not a network denial.
 
 Registry:
-- [ ] confirm the four agents auto-registered on deploy.
-- [ ] generate `toolspec.json` from the `services/github_tools` capability surface.
-- [ ] register `patchapi-github-tools` as an `McpServer` (Terraform `google_agent_registry_service`).
-- [ ] register the sandbox runner as an `Endpoint`.
-- [ ] **resolve the GitHub toolset via `AgentRegistry.get_mcp_toolset()`** instead of an env-var URL.
+- [x] publish one A2A card per agent, derived from `agents/config.py`.
+- [x] generate the tool spec from the `services/github_tools` capability surface.
+- [x] register `patchapi-github-tools` as an `McpServer` — via `scripts/register_agent_registry.sh`, not Terraform: there is no `google_agent_registry_service` resource in `hashicorp/google`.
+- [ ] ~~register the sandbox runner as an `Endpoint`.~~ not done.
+- [ ] ~~**resolve the GitHub toolset via `AgentRegistry.get_mcp_toolset()`** instead of an env-var URL.~~ **Rejected on purpose** — see the exit criterion below.
 
 Memory Bank:
-- [ ] create the instance; configure the customization config for the `repo` scope key.
-- [ ] seed the Egaki repository profile at scope `{"repo": ..., "provider": "google"}`.
-- [ ] retrieve prior migration context during a run and show it changed a decision.
+- [x] create the instance; scope memories by `{repo, kind}`.
+- [x] retrieve prior migration context during a run.
 - [ ] apply IAM Conditions on `memoryScope`.
-- [ ] screen every memory write through Model Armor.
+- [x] screen recalled text through the deterministic injection gate. *Note the direction:* the risk is what a memory says to a model on the way **out**, so `agents/memory.py` screens on recall, and writes are restricted to PatchAPI's own vocabulary — identifiers, an outcome, a state — rather than provider quotes or model prose.
 
-**Exit criterion:** deleting the Agent Registry entry breaks the run. If the run
-still works, the integration is decorative.
+**Exit criterion:** ~~deleting the Agent Registry entry breaks the run. If the
+run still works, the integration is decorative.~~
+
+**Revised.** This criterion was wrong and was deliberately not met. A catalog
+that can fail a remediation is a worse catalog, and the same argument retires the
+matching criteria for Memory Bank and Model Armor. The property that replaces it:
+*deleting a tool grant in `agents/config.py` changes the published catalog on the
+next registration.* The integration is non-decorative because the claim is
+derived from the code, not because an outage is load-bearing. What must never be
+true is fail-soft **and silent** — a run without institutional context says so,
+and a screening without a Model Armor verdict is marked degraded.
 
 ---
 
@@ -3473,16 +3651,22 @@ still works, the integration is decorative.
 **Date target: Aug 20–24**  
 **Priority: MUST**
 
-- [ ] create the Agent Gateway (egress mode).
-- [ ] route the GitHub MCP server through it; confirm unregistered destinations are blocked.
-- [ ] enable Model Armor on the gateway.
-- [ ] author IAM authorization policies keyed on SPIFFE ID and tool name.
-- [ ] **rehearse the `merge_pull_request` denial** and capture the Cloud Logging entry (§16).
-- [ ] confirm the gateway is not left in dry-run mode.
-- [ ] keep the deterministic forbidden-path policy as enforcement layer 4.
-- [ ] Semantic Governance in dry-run; compare verdicts against the deterministic engine across the full adversarial suite.
-- [ ] enforce exactly one well-tested Semantic Governance rule.
-- [ ] publish the migration skill to Skill Registry; retrieve it via `SkillToolset`.
+> **Most of this phase was not buildable.** Agent Gateway needs an Agent
+> Identity principal and does not support Cloud Run revisions, so the first six
+> items have no path. What shipped is the deterministic gate that item seven
+> demotes to "layer 4", plus Model Armor called directly rather than inline on a
+> gateway.
+
+- [ ] ~~create the Agent Gateway (egress mode).~~ **unavailable.**
+- [ ] ~~route the GitHub MCP server through it; confirm unregistered destinations are blocked.~~ **unavailable.**
+- [ ] ~~enable Model Armor on the gateway.~~ Called directly instead, from `packages/policy/armor.py`, behind the deterministic gate. Project floor settings do give inline Vertex inspection at `INSPECT_ONLY`.
+- [ ] ~~author IAM authorization policies keyed on SPIFFE ID and tool name.~~ **unavailable.** Cloud Run IAM on the tool service, keyed on service account, is what exists.
+- [ ] ~~**rehearse the `merge_pull_request` denial** and capture the Cloud Logging entry (§16).~~ **unavailable.** Substitute demo in §16.
+- [ ] ~~confirm the gateway is not left in dry-run mode.~~ n/a.
+- [x] keep the deterministic forbidden-path policy as ~~enforcement layer 4~~ **the authoritative gate.** It is layer 4 of six in §14's ordering, but layers 2 and 3 above it are Agent Identity and Agent Gateway, so in practice this is the strongest control that is not simply an absent capability.
+- [ ] ~~Semantic Governance in dry-run; compare verdicts against the deterministic engine.~~ not wired. The comparison it asks for was done against Model Armor instead: `demo/adversarial/ci-workflow-edit-request.md` clears every regex rule and Model Armor rates it a prompt-injection match, which is the case for consulting it and is recorded in `packages/policy/config.py`.
+- [ ] ~~enforce exactly one well-tested Semantic Governance rule.~~ not done.
+- [ ] ~~publish the migration skill to Skill Registry; retrieve it via `SkillToolset`.~~ not done; skills are read from `skills/`.
 
 **Fallback if a preview feature is inaccessible:** apply §20's contingency
 ladder. Retain hard IAM/tool/path controls, document the unavailable preview
@@ -3595,6 +3779,18 @@ The track surface — each item is a scoring criterion, not an enhancement:
 
 Items 16–22 are the four categories the brief names. Cutting any one of them
 concedes a category. Cut a product feature before cutting one of these.
+
+> **Outcome, 2026-08-30.** 18 and 22 shipped as written. 17 shipped as a catalog
+> and was deliberately *not* made load-bearing. 21 shipped as a configured second
+> opinion behind the deterministic gate, opt-in and off in the deployment. 16 was
+> replaced by PatchAPI's own worker pool by choice. **19 and 20 are unavailable**
+> to a Cloud Run deployment and no amount of cutting product features would have
+> bought them.
+>
+> Two of the four brief categories are therefore answered by PatchAPI's own
+> controls rather than by the named Google security services, and the submission
+> should say that plainly. Claiming 19 and 20 is the one thing here that could
+> lose more than conceding them.
 
 ## SHOULD HAVE
 
@@ -3750,6 +3946,11 @@ This is the visually satisfying proof.
 
 ## 2:55–3:15 — Security
 
+> **Not recordable as written.** Agent Gateway and Agent Identity are
+> unavailable on this architecture (§12.4, §12.5), so there is no gateway
+> denial and no SPIFFE principal to show. Recording a mock-up of the block below
+> would be fabricated evidence. Use the substitute after it.
+
 Show the Agent Gateway denial:
 
 ```text
@@ -3771,6 +3972,25 @@ Narration:
 
 Keep this short.
 
+### Substitute: the intake refusal
+
+Feed the crafted provider note from `demo/adversarial/` and show the run
+terminating at `SANITIZED`, with the rule id, tier, and policy version from
+`run_trace_events`. Then show the tool service's own capability list — the point
+being what is not on it.
+
+Narration:
+
+> That refusal isn't a prompt rule either. It's a deterministic gate that ran
+> before any model read the document, and it names the rule that stopped it. And
+> PatchAPI could not merge even if a model decided to try — not because something
+> refused the call, but because the service that talks to GitHub has no merge
+> operation on it to call.
+
+Weaker provenance than a Google IAM denial, and it has one advantage worth the
+trade: nothing outside the process has to be in the right mode, so it fires
+identically every take.
+
 ## 3:15–3:40 — Pull request
 
 PatchAPI opens the real GitHub PR.
@@ -3789,17 +4009,26 @@ Narration:
 
 ## 3:40–3:55 — Fleet
 
-Show the live Agent Registry inventory, not a local table:
+Show the live Agent Registry inventory, not a local table. What the catalog
+actually holds on `patch-505223`:
 
 ```text
-Agents      patchapi-change-intelligence   SPIFFE ✓
-            patchapi-impact                SPIFFE ✓
-            patchapi-patch                 SPIFFE ✓
-            patchapi-verification          SPIFFE ✓
-MCP server  patchapi-github-tools          via Agent Gateway
-Endpoint    patchapi-sandbox-runner
-Skill       google-imagen-migration        rev 3
+Agents      patchapi-agent-orchestrator          7 skills
+            patchapi-agent-change-intelligence  11 skills
+            patchapi-agent-impact                7 skills
+            patchapi-agent-policy                4 skills
+            patchapi-agent-patch                11 skills
+            patchapi-agent-verification          7 skills
+            patchapi-agent-pr                    3 skills
+            patchapi-memory-bank                 (the Agent Engine)
+MCP server  patchapi-github-tools                JSONRPC, 10 tools
 ```
+
+No `SPIFFE ✓` column, because there are no SPIFFE IDs (§12.4). No sandbox
+`Endpoint` and no `Skill`, because neither is registered. The skill counts are
+the interesting part instead: they are *derived* from the tool grants in
+`agents/config.py`, so revoking a grant removes the skill from the catalog on
+the next registration and the published claim cannot drift from the code.
 
 Then one Memory Bank recall, scoped by repository, that visibly changed a
 decision in this run — that is the "context across weeks" proof, and it is more
@@ -3936,6 +4165,17 @@ capability boundary should be enforced by Google Cloud IAM at the network layer
 rather than by our own process. Agent Identity auth manager holds the GitHub App
 key; Agent Gateway decides which SPIFFE ID may call which tool.
 
+> **Revised.** The first clause held and the second could not: neither Agent
+> Identity's auth manager nor Agent Gateway is available to a Cloud Run
+> deployment. `services/github_tools` holds the App key itself, is deployed
+> private, and admits callers on a Google-signed ID token for its audience.
+>
+> The decision survives because the reason it gives is not the strongest one
+> available. What makes "PatchAPI never merges" true is that the tool service
+> implements no merge operation, so there is no call for a network layer to
+> refuse. Enforcement at the network layer would have been better evidence for a
+> judge; it was never the mechanism.
+
 ## Decision 7 — exact pinned SHA
 Reason: reproducibility and protection against upstream movement.
 
@@ -3959,11 +4199,29 @@ Reason: Agent Identity issues one SPIFFE ID per Runtime resource. Bundling the
 fleet into one deployment collapses least privilege into a single principal and
 makes the zero-trust claim untrue. See §7.1.
 
+> **Reversed.** Agent Identity is unavailable, so there was no SPIFFE ID to
+> issue per instance and the reason for splitting evaporated. The fleet runs as
+> one Cloud Run worker pool. The consequence the decision warned about is real
+> and should be stated rather than glossed: least privilege on the agent side
+> *is* collapsed into one principal, and per-agent scoping is enforced by the
+> tool service's own grants keyed on a request header, which is a scoping hint
+> and not an attestation. The zero-trust claim is correspondingly weaker, and
+> the submission should not make it.
+
 ## Decision 13 — platform integrations must be load-bearing
 Reason: a surface that only appears in a screenshot scores nothing and proves
 nothing. Tool resolution goes through Agent Registry, tool calls go through Agent
 Gateway, and the Fleet page reads the live APIs — so removing any of them breaks
 the run. See §32.
+
+> **Revised.** The premise is right and the test was wrong. "Removing it breaks
+> the run" would have made a catalog outage, a memory-store outage, or a
+> screening outage able to stop a migration — three properties the product must
+> not have. The test that replaced it is whether removing a surface changes what
+> a run may *conclude*: agent cards are derived from the tool grants and cannot
+> drift from them, a run with no institutional context reports that rather than
+> an empty history, and a screening with no Model Armor verdict is marked
+> degraded. Fail-soft is not decoration; fail-soft and silent would be. See §32.
 
 ## Decision 14 — replacement mapping is per identifier
 Reason: Imagen 4's three retired IDs map onto two different models with
@@ -4114,6 +4372,11 @@ the real change and would produce a wrong migration for the Ultra variant. See �
 
 # 31. Final target architecture in one diagram
 
+> **Target, not deployed.** `Agent Identity` and `Agent Gateway` in this diagram
+> are unavailable on this architecture and are not in the request path. Do not
+> use this diagram as the submission's architecture diagram without removing
+> them; a judge who reads a box as a claim will be reading a false one.
+
 ```mermaid
 flowchart TB
 
@@ -4216,22 +4479,50 @@ PatchAPI is hackathon-ready when this sentence is literally true:
 
 > A real Google API/model retirement is ingested from official evidence and screened by Model Armor; PatchAPI automatically identifies a real affected open-source repository fork, reasons about a three-identifier-to-two-model semantic migration, applies a patch inside an isolated GKE Agent Sandbox, passes the repository's real TypeScript build and Vitest suite, successfully calls the replacement Google model, independently verifies the result, is refused at the Agent Gateway when it attempts a forbidden tool, and opens a real GitHub PR—while Agent Registry resolves its tools, four Agent Identities scope its permissions, Memory Bank supplies repository context from a prior run, and OpenTelemetry traces make every decision auditable.
 
+> **Do not submit that sentence.** Three of its clauses are not true and cannot
+> be made true on this architecture. Corrected:
+>
+> A real Google model retirement is ingested from official evidence and screened
+> by a deterministic injection gate; PatchAPI identifies a real affected
+> open-source repository, reasons about a semantic migration, applies the patch
+> in an isolated workspace, runs the repository's real build and test suite,
+> calls the replacement Google model, independently verifies the result with an
+> agent that is shown no institutional memory, and opens a real GitHub pull
+> request through a capability surface that has no merge operation on it — while
+> Agent Registry publishes what each agent may do, derived from its actual tool
+> grants; Memory Bank supplies repository context from a prior run; and one
+> OpenTelemetry trace per run carries the whole reasoning chain to Cloud Trace.
+>
+> Gone: the Agent Gateway refusal, the four Agent Identities, and Registry-based
+> toolset resolution. Say which sandbox backend the recorded run used rather than
+> asserting GKE, and say that Model Armor is a configured second opinion rather
+> than the screen that caught the payload.
+
 ### The integration test for the track claims
 
-For each of the seven named surfaces, answer: **if I delete this, does the run
-break?**
+For each of the named surfaces, answer: **if I delete this, does the run break?**
+The **Actual** column is the answer after the build, and it is a smaller number
+of yeses than this section wanted.
 
-| Surface | Breaks the run? |
-|---|---|
-| Agent Registry | yes — toolset resolution fails |
-| Agent Runtime | yes — nowhere to execute |
-| Memory Bank | yes — repository profile and prior decisions are lost |
-| Agent Identity | yes — no principal for gateway authorization |
-| Agent Gateway | yes — tool calls have no path |
-| Model Armor | yes — intake fails closed without a verdict |
-| Agent Observability | no, but the audit claim becomes unverifiable |
+| Surface | Planned answer | Actual |
+|---|---|---|
+| Agent Registry | yes — toolset resolution fails | **no.** Reads fail soft and the tool service is reached by URL. Rejected deliberately: a catalog that can fail a remediation is a worse catalog |
+| Agent Runtime | yes — nowhere to execute | **not used.** Execution is a Cloud Run worker pool |
+| Memory Bank | yes — repository profile and prior decisions are lost | **no.** The run proceeds and reports that it had no institutional context — required, since a recollection is a hint and never evidence |
+| Agent Identity | yes — no principal for gateway authorization | **unavailable** |
+| Agent Gateway | yes — tool calls have no path | **unavailable** |
+| Model Armor | yes — intake fails closed without a verdict | **no.** It fails *open*, which is why it cannot be the gate |
+| Agent Observability | no, but the audit claim becomes unverifiable | **no**, as planned. The durable audit is `run_trace_events` in Postgres |
 
-Any "no" other than the last one means that surface is decoration, and a judge
-will read it that way.
+The rule this section states — "any no means that surface is decoration" — is
+where the analysis went wrong, and the mistake is worth keeping rather than
+deleting. Three of those noes are properties the product needs: a remediation
+must not be stoppable by a catalog, a memory store, or a screening service. The
+right question is not "does deleting it break the run" but "does deleting it
+change what the run may conclude". Registry is honest because the cards are
+derived from the code and cannot drift from it; Memory Bank is honest because
+absence is reported rather than rendered as an empty history; Model Armor is
+honest because a missing verdict marks the run degraded. Fail-soft by design is
+not decoration. Fail-soft *and silent* would be.
 
 If all of this works reliably, **stop adding features and polish the demo.**
