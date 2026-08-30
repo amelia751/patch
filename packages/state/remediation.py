@@ -20,10 +20,12 @@ and only a row written *before* the GitHub call can prevent that.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 from uuid import UUID
 
 from packages.schemas.run_state import RunState, assert_transition, is_resumable, is_terminal
@@ -40,6 +42,12 @@ MAX_REASON_CHARS: Final[int] = 500
 MAX_ARTIFACT_BODY_CHARS: Final[int] = 60_000
 
 CONSOLE_ACTOR: Final[str] = "console"
+
+# `audit_events.outcome` is an `audit_outcome` enum, and `audit_events_denied`
+# indexes one literal spelling of a refusal. Named here so a caller cannot reach
+# for a synonym the column will reject.
+AUDIT_SUCCEEDED: Final[str] = "SUCCEEDED"
+AUDIT_DENIED: Final[str] = "DENIED"
 
 # The transition reason that tells the next job execution it is continuing a run
 # rather than beginning one. A Cloud Run job exits when a run parks for the
@@ -245,11 +253,16 @@ _READ_HOLD_SQL: Final[str] = """
 SELECT agent_hold FROM remediation_runs WHERE id = $1
 """
 
+# `dedupe_key` is the identity of a refusal, and `DO NOTHING` on it is what lets
+# a resumed run mirror its denials again without counting them twice. A success
+# passes NULL and always inserts, because NULLs do not conflict.
 _AUDIT_SQL: Final[str] = """
 INSERT INTO audit_events (
-    actor, action, target, outcome, reason, trace_id, run_id, project_id, repository
+    actor, action, target, outcome, reason, trace_id, run_id, project_id, repository, dedupe_key
 )
-VALUES ($1, $2, $3, $4::audit_outcome, $5, $6, $7, $8, $9)
+VALUES ($1, $2, $3, $4::audit_outcome, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
+RETURNING id
 """
 
 
@@ -604,6 +617,33 @@ async def fulfil(
     await connection.execute(_FULFIL_SQL, _uuid(run_id), action, base_sha, result)
 
 
+class DenialRecord(Protocol):
+    """What a refusal must be able to say about itself to be audited.
+
+    Structural rather than a shared base class, because the vocabulary of gates
+    and rules belongs with the code that enforces them. This module needs only
+    the four strings that make a row, and it needs them to be the product's own
+    words: an auditor reads this table, and untrusted provider prose copied into
+    it would be a second home for the material policy already bounded.
+    """
+
+    @property
+    def actor(self) -> str:
+        """The gate that refused."""
+
+    @property
+    def action(self) -> str:
+        """The act it refused."""
+
+    @property
+    def target(self) -> str:
+        """The path, command shape, or digest at issue."""
+
+    @property
+    def reason(self) -> str:
+        """The rule or reason code that fired."""
+
+
 async def audit(
     connection: asyncpg.Connection,
     *,
@@ -616,9 +656,15 @@ async def audit(
     run_id: UUID | str | None = None,
     project_id: UUID | str | None = None,
     repository: str | None = None,
-) -> None:
-    """Record a privileged act. Denials matter more than successes."""
-    await connection.execute(
+    dedupe_key: str | None = None,
+) -> bool:
+    """Record a privileged act. Denials matter more than successes.
+
+    Returns whether a row was written. `False` means `dedupe_key` names an event
+    this table already holds, which is the expected answer for a run that is
+    mirroring its refusals a second time after a resume or a restart.
+    """
+    written = await connection.fetchval(
         _AUDIT_SQL,
         actor,
         action,
@@ -629,7 +675,62 @@ async def audit(
         None if run_id is None else _uuid(run_id),
         None if project_id is None else _uuid(project_id),
         repository,
+        dedupe_key,
     )
+    return written is not None
+
+
+async def audit_denials(
+    connection: asyncpg.Connection,
+    denials: Sequence[DenialRecord],
+    *,
+    run_id: UUID | str,
+    project_id: UUID | str | None = None,
+    repository: str | None = None,
+    trace_id: str = "",
+) -> int:
+    """Mirror everything one run was refused into the audit log, once each.
+
+    The single write point for denials. They are derived from the record the run
+    already produced — refused tool calls and the policy verdict — rather than
+    reported a second time at each gate, because a refusal remembered in two
+    places is a refusal that will be missing from one of them.
+
+    Returns how many rows were new. A resumed run screens its intake and
+    evaluates policy again, so the same refusals arrive again and conflict on
+    their own identity; a return of zero on a second pass is correct, not a
+    failure.
+    """
+    identifier = _uuid(run_id)
+    written = 0
+    for denial in denials:
+        if await audit(
+            connection,
+            actor=denial.actor,
+            action=denial.action,
+            outcome=AUDIT_DENIED,
+            target=denial.target,
+            reason=denial.reason,
+            trace_id=trace_id,
+            run_id=identifier,
+            project_id=project_id,
+            repository=repository,
+            dedupe_key=denial_key(identifier, denial),
+        ):
+            written += 1
+    return written
+
+
+def denial_key(run_id: UUID | str, denial: DenialRecord) -> str:
+    """The identity of one refusal inside one run.
+
+    Hashed rather than concatenated so that a long path or a long rule list
+    cannot push the key past what the unique index will compare, and prefixed
+    with the run so a key remains attributable by eye.
+    """
+    material = "\x1f".join((denial.actor, denial.action, denial.target, denial.reason))
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
+    return f"{run_id}:{digest}"
 
 
 # ------------------------------------------------------------------- reads ---
@@ -856,17 +957,22 @@ def _uuid(value: UUID | str) -> UUID:
 
 
 __all__ = [
+    "AUDIT_DENIED",
+    "AUDIT_SUCCEEDED",
     "CONSOLE_ACTOR",
     "MAX_ARTIFACT_BODY_CHARS",
     "MAX_TRACE_BODY_CHARS",
     "RESTARTED_REASON",
     "RESUMED_REASON",
+    "DenialRecord",
     "RunHandle",
     "advance",
     "append_trace",
     "audit",
+    "audit_denials",
     "begin_attempt",
     "claim",
+    "denial_key",
     "finish_attempt",
     "fulfil",
     "list_runs",

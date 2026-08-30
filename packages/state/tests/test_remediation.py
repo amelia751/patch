@@ -10,6 +10,7 @@ connection would agree with whatever the code did.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -145,9 +146,7 @@ async def test_an_operator_hold_keeps_its_worklog_on_continue(conn: Any) -> None
     await remediation.append_trace(
         conn, first.run_id, state=RunState.WAITING_ON_OPERATOR, kind="narration", body="held"
     )
-    await remediation.record_artifact(
-        conn, first.run_id, kind="diff", body="--- a/x\n+++ b/x\n"
-    )
+    await remediation.record_artifact(conn, first.run_id, kind="diff", body="--- a/x\n+++ b/x\n")
 
     again = await remediation.open_run(
         conn, change_event_id=change, project_id=project, repository=REPO
@@ -374,6 +373,145 @@ async def test_verification_records_both_agents(conn: Any) -> None:
     assert row["verdict"] == "pass"
     assert row["verifier_agent"] != row["patch_agent"]
     assert row["checks"][0]["name"] == "clean build"
+
+
+@dataclass(frozen=True, slots=True)
+class Refused:
+    """A denial in the shape `audit_denials` asks for.
+
+    Declared here rather than imported so the test proves what the signature
+    claims: the audit writer needs four strings and does not need the module that
+    owns the vocabulary of gates.
+    """
+
+    actor: str
+    action: str
+    target: str
+    reason: str
+
+
+COMMAND_DENIAL = Refused(
+    actor="patchapi.policy.command_allowlist",
+    action="run_command",
+    target="curl",
+    reason="policy_denied",
+)
+INTAKE_DENIAL = Refused(
+    actor="patchapi.policy.untrusted_text",
+    action="screen_untrusted_text",
+    target="injected-change-manifest.json",
+    reason="injection_detected",
+)
+
+
+async def denials(conn: Any, run_id: str) -> list[dict[str, Any]]:
+    """Read the table back the way an auditor would: denials, newest first."""
+    rows = await conn.fetch(
+        """
+        SELECT actor, action, target, reason, outcome::text AS outcome
+        FROM audit_events
+        WHERE outcome = 'DENIED' AND run_id = $1
+        ORDER BY occurred_at DESC
+        """,
+        remediation._uuid(run_id),
+    )
+    return [dict(row) for row in rows]
+
+
+async def test_a_refusal_is_recorded_as_a_cross_run_denial(conn: Any) -> None:
+    """The gap this closes: a refusal that outlives its run's worklog."""
+    handle = await open_one(conn)
+    project = await conn.fetchval(
+        "SELECT project_id FROM remediation_runs WHERE id = $1",
+        remediation._uuid(handle.run_id),
+    )
+
+    written = await remediation.audit_denials(
+        conn,
+        [COMMAND_DENIAL, INTAKE_DENIAL],
+        run_id=handle.run_id,
+        project_id=project,
+        repository=REPO,
+        trace_id="0af7651916cd43dd8448eb211c80319c",
+    )
+
+    assert written == 2
+    recorded = await denials(conn, handle.run_id)
+    assert {row["actor"] for row in recorded} == {COMMAND_DENIAL.actor, INTAKE_DENIAL.actor}
+    assert all(row["outcome"] == "DENIED" for row in recorded)
+    # The worklog can be truncated; this cannot be reconstructed from it.
+    await conn.execute(
+        "DELETE FROM run_trace_events WHERE run_id = $1", remediation._uuid(handle.run_id)
+    )
+    assert len(await denials(conn, handle.run_id)) == 2
+
+
+async def test_a_resumed_run_does_not_count_its_denials_twice(conn: Any) -> None:
+    """Every execution of a run screens its intake again, so this repeats."""
+    handle = await open_one(conn)
+
+    first = await remediation.audit_denials(conn, [INTAKE_DENIAL], run_id=handle.run_id)
+    second = await remediation.audit_denials(conn, [INTAKE_DENIAL], run_id=handle.run_id)
+
+    assert (first, second) == (1, 0)
+    assert len(await denials(conn, handle.run_id)) == 1
+
+
+async def test_the_same_refusal_in_two_runs_is_two_denials(conn: Any) -> None:
+    """Deduplication is per run. A second repository refusing is a second fact."""
+    first = await open_one(conn)
+    second = await open_one(conn)
+
+    await remediation.audit_denials(conn, [COMMAND_DENIAL], run_id=first.run_id)
+    await remediation.audit_denials(conn, [COMMAND_DENIAL], run_id=second.run_id)
+
+    assert len(await denials(conn, first.run_id)) == 1
+    assert len(await denials(conn, second.run_id)) == 1
+
+
+async def test_a_denial_is_found_without_knowing_which_run_it_belongs_to(conn: Any) -> None:
+    """The question the table exists for, asked the way an auditor asks it."""
+    handle = await open_one(conn)
+    await remediation.audit_denials(
+        conn, [COMMAND_DENIAL, INTAKE_DENIAL], run_id=handle.run_id, repository=REPO
+    )
+
+    rows = await conn.fetch(
+        """
+        SELECT actor, action FROM audit_events
+        WHERE outcome = 'DENIED' AND repository = $1
+          AND occurred_at > now() - interval '1 hour'
+        ORDER BY occurred_at DESC
+        """,
+        REPO,
+    )
+
+    assert {row["actor"] for row in rows} == {COMMAND_DENIAL.actor, INTAKE_DENIAL.actor}
+    assert {row["action"] for row in rows} == {COMMAND_DENIAL.action, INTAKE_DENIAL.action}
+
+
+async def test_recording_a_permitted_act_is_unaffected_by_the_denial_key(conn: Any) -> None:
+    """The success path passes no key, and must not start conflicting."""
+    handle = await open_one(conn)
+
+    for _ in range(2):
+        assert (
+            await remediation.audit(
+                conn,
+                actor="patchapi.pr",
+                action="open_pull_request",
+                outcome=remediation.AUDIT_SUCCEEDED,
+                target=f"{REPO}#7",
+                run_id=handle.run_id,
+            )
+            is True
+        )
+
+    count = await conn.fetchval(
+        "SELECT count(*) FROM audit_events WHERE run_id = $1 AND outcome = 'SUCCEEDED'",
+        remediation._uuid(handle.run_id),
+    )
+    assert count == 2
 
 
 async def test_a_pull_request_may_not_claim_patchapi_merged_it(conn: Any) -> None:
