@@ -15,6 +15,29 @@ SEEDS = load_scripts(seeds_dir())
 # its own transaction would either nest or commit early.
 TRANSACTION_CONTROL = re.compile(r"^\s*(BEGIN|COMMIT|ROLLBACK|END)\b", re.IGNORECASE | re.MULTILINE)
 
+# Five migrations broke the rule above and were applied before anyone noticed.
+# They cannot be corrected: `migrate` treats an applied migration whose text
+# changed as a hard error, so editing one now would fail every future migration
+# run rather than fix anything. `apply_migration` appends the ledger insert to
+# the script and relies on the single transaction to make the two atomic, so in
+# these five the inner `COMMIT` lands the schema change and leaves the ledger row
+# to its own transaction. Each is written with `IF NOT EXISTS`, which is what
+# keeps a re-application from failing outright.
+#
+# Listed rather than tolerated by pattern: the rule still holds for every
+# migration after them, and a sixth has to be added here deliberately. Left
+# failing, this test reported five known defects on every run — which is how a
+# real sixth would have gone unnoticed.
+GRANDFATHERED_TRANSACTION_CONTROL = frozenset(
+    {
+        "0019_change_event_snapshots.sql",
+        "0020_agent_hold.sql",
+        "0021_run_lease.sql",
+        "0022_run_lane.sql",
+        "0023_remediation_workers.sql",
+    }
+)
+
 
 def test_migrations_exist():
     assert MIGRATIONS, "no migrations found"
@@ -27,7 +50,25 @@ def test_migration_versions_are_contiguous_from_one():
 
 @pytest.mark.parametrize("script", MIGRATIONS + SEEDS, ids=lambda s: s.name)
 def test_script_does_not_manage_its_own_transaction(script):
+    if script.name in GRANDFATHERED_TRANSACTION_CONTROL:
+        pytest.xfail(f"{script.name} was applied before the rule was enforced")
     assert TRANSACTION_CONTROL.search(script.sql) is None
+
+
+def test_every_grandfathered_script_still_breaks_the_rule():
+    """The exception list may not outlive the defects it excuses.
+
+    A name here that no longer needs excusing means either the file was edited —
+    which `migrate` will refuse — or it was renamed, and either way the list is
+    lying about the corpus.
+    """
+    corpus = {script.name: script for script in MIGRATIONS + SEEDS}
+    for name in sorted(GRANDFATHERED_TRANSACTION_CONTROL):
+        script = corpus.get(name)
+        assert script is not None, f"{name} is excused but no longer exists"
+        assert TRANSACTION_CONTROL.search(script.sql) is not None, (
+            f"{name} no longer manages its own transaction; remove it from the exception list"
+        )
 
 
 @pytest.mark.parametrize("script", MIGRATIONS, ids=lambda s: s.name)
