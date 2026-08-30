@@ -1,8 +1,8 @@
 # Agent contracts
 
-**Status:** Four reasoning agents and two Python stages (Policy, PR). The
-Pydantic models under `packages/schemas/` are authoritative; the canonical
-prose specification is
+**Status:** Revised 2026-08-30 — four reasoning agents and two Python stages
+(Policy, PR), plus the orchestrator. The Pydantic models under
+`packages/schemas/` are authoritative; the canonical prose specification is
 [`roadmap.md` §8](../roadmap.md#8-agent-responsibilities-and-contracts).
 
 ---
@@ -127,10 +127,40 @@ moved repository HEAD aborts PR creation; exhausted patch attempts mean
 `FAILED`; failing tests mean no PR; unavailable live verification means
 `INCONCLUSIVE`; verifier disagreement means no PR.
 
+## What each agent publishes about itself
+
+Every agent's Agent Registry card is *derived*, never authored: its version is
+its pinned prompt version and its skills are the tools `agents/config.py`
+actually grants it, described by the docstring the model itself is shown
+(`agents/catalog.py`). Revoking a grant removes a skill from the catalog on the
+next registration, so the published claim cannot drift from the code. The two
+Python stages, Policy and PR, hold no `LlmAgent` allowlist, so they publish the
+stage helpers the orchestrator calls on their behalf; the orchestrator's own
+allowlist is empty by design and it publishes the pipeline it sequences instead.
+
+The catalog is a claim, not a control. Nothing in a run resolves a tool through
+it — reads in `packages/platform/registry.py` fail soft, and the GitHub tool
+service is reached through `PATCHAPI_GITHUB_TOOLS_URL`.
+
+## Institutional memory is not available to every agent
+
+`MEMORY_CONTEXT_AGENTS` in `agents/orchestrator.py` is `{IMPACT, PATCH}`. The
+Verification Agent is absent and must stay absent: constraint 6 makes the
+verifier independent, and an earlier run's "this migration was fine" is exactly
+the sentence that must not reach the agent grading this one. Change
+Intelligence is absent because it reasons about a provider notice, not about
+this repository's history. Policy and PR are deterministic and read no
+recollection at all.
+
+What the two permitted agents receive is prose, injection-screened and bounded,
+quoted inside markers that name it as background. There is no typed field for a
+gate to branch on. Detail: [`threat-model.md`](./threat-model.md) T13.
+
 ## Reality check
 
-As of 2026-08-11 the ADK agent modules are being scaffolded by the setup batch
-and no end-to-end run has produced a pull request. Gemini 3.5 Flash and
-`gemini-3.1-flash-image` are confirmed reachable on the Vertex `global`
-endpoint; the GitHub write path does not exist yet because the GitHub App is
-deferred. See [`architecture.md`](./architecture.md) for the full status table.
+The ADK fleet runs and has produced pull requests end to end. Gemini 3.5 Flash
+and `gemini-3.1-flash-image` resolve on the Vertex `global` endpoint, the GitHub
+App is installed, and each run exports one trace containing `patchapi.run` plus
+the seven stage spans with ADK's own model and tool spans nested underneath. See
+[`architecture.md`](./architecture.md#deployment-reality) for the full status
+table.

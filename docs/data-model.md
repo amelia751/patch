@@ -1,11 +1,11 @@
 # Data model
 
-**Status:** Console tenancy (2026-08-12) — Postgres currently stores the
-dashboard's auth/import model. The eventual full schema — organizations, the
-provider-usage inventory, runs, policy, PRs, audit — is [`schema.md`](../schema.md).
-Workflow tables from [`roadmap.md` §10](../roadmap.md#10-state-architecture)
-return as additive migrations against `projects` / `project_repositories`, not
-as a parallel `repositories` catalog. Authoritative applied DDL:
+**Status:** Revised 2026-08-30 — Postgres stores the dashboard's auth/import
+model *and* the run state machine. The full intended schema is
+[`schema.md`](../schema.md). Workflow tables from
+[`roadmap.md` §10](../roadmap.md#10-state-architecture) landed as additive
+migrations against `projects` / `project_repositories` rather than as a parallel
+`repositories` catalog. Authoritative applied DDL:
 [`db/migrations/`](../db/migrations/).
 
 ---
@@ -17,28 +17,33 @@ style preference.
 
 | Store | Holds | Rule |
 |---|---|---|
-| **Postgres** (Cloud SQL; local Docker Postgres 16) | console tenancy (users, GitHub App connection, projects, imported repos, secret *names*) | passwords stay in Identity Platform; tokens stay at GitHub; secret values stay in Secret Manager |
-| **Memory Bank** | institutional context across weeks | never the workflow database |
+| **Postgres** (Cloud SQL; local Docker Postgres 16) | console tenancy (users, GitHub App connection, projects, imported repos, secret *names*) and the run state machine | passwords stay in Identity Platform; tokens stay at GitHub; secret values stay in Secret Manager |
+| **Memory Bank** (Vertex AI Agent Engine) | institutional context across weeks | never the workflow database |
 | **Cloud Storage** | evidence and artifacts | immutable, referenced by URI from Postgres |
 | **Pub/Sub** | durable eventing between stages | messages carry IDs and URIs, never repository source |
+| **Cloud Trace** (via the Telemetry API) | the run's reasoning chain, for reading | not durable audit; identifier-shaped attributes only, never document text |
+
+Cloud Trace is a fifth store and is deliberately the weakest. It holds one trace
+per run — `patchapi.run` plus the seven stage spans, with ADK's model and tool
+spans nested underneath — which is what makes a run's reasoning chain readable.
+It is not the audit record: attributes are restricted to the keys pinned in
+`packages/observability/config.py` and to identifier-shaped values, so nothing
+that would answer an audit question in prose can be stored there. The durable
+audit trail is in Postgres.
 
 ## Postgres — console tenancy
 
-Current table set (what the frontend actually writes):
+Tenancy and provider-portal tables (what the frontend writes). The run-state
+tables are listed under [Workflow state](#workflow-state); `db/migrations/` is
+the complete set.
 
 ```text
-users
-user_identities
-github_connections
-projects
-project_repositories
-workspaces
-project_secrets
-providers
-provider_connections
-provider_services
-provider_change_notes
-project_provider_subscriptions
+users                      user_identities            github_connections
+projects                   project_repositories       workspaces
+project_secrets            project_notifications      gcp_connections
+providers                  provider_connections       provider_services
+provider_change_notes      project_provider_subscriptions
+provider_usages            repo_index_state
 ```
 
 | Table | Role |
@@ -51,9 +56,30 @@ project_provider_subscriptions
 | `workspaces` | Clone URL, branch, optional subfolder from import-repo. |
 | `project_secrets` | Secret name + ARN/resource pointer. Values live in Secret Manager. |
 
-Workflow tables from roadmap §10.1 (`change_events`, `remediation_runs`,
-`policy_decisions`, …) are not present. Add them later against `projects` /
-`project_repositories` rather than inventing a parallel tenancy model.
+### Workflow state
+
+The run state machine is here, not in Memory Bank and not in a trace
+(constraint 7). Added by `0011` and `0014` (change corpus and impact) and `0018`
+onward (runs):
+
+```text
+change_events              change_event_identifiers   change_event_snapshots
+change_impacts             change_impact_findings     project_change_findings
+remediation_runs           run_state_transitions      run_trace_events
+policy_decisions           patch_attempts             verification_results
+artifacts                  pull_requests              idempotency_keys
+audit_events               remediation_workers
+```
+
+`idempotency_keys` is what makes every external action carry a key of
+`run_id + action_type + base_sha`, and `remediation_workers` plus the lane,
+lease, and heartbeat columns added by `0020`–`0023` are how the Cloud Run worker
+pool claims a run and how anything outside a worker process tells a working
+instance from a dead one.
+
+`run_trace_events` is the durable, queryable record of what a run did. The Cloud
+Trace export is a second, non-authoritative view of the same run, kept for
+readability rather than audit — see the storage split above.
 
 ### What does not go in Postgres
 
@@ -64,14 +90,24 @@ Workflow tables from roadmap §10.1 (`change_events`, `remediation_runs`,
 
 ## Memory Bank — institutional context
 
-Per-repository profile recalled when a related change arrives weeks later:
-owning team, criticality, provider dependencies, known API versions, approval
-rules, previous migration decisions and why they were rejected, known
-exceptions, canonical test commands, prohibited paths. Shape:
-[`roadmap.md` §10.2](../roadmap.md#10-state-architecture).
+Vertex AI Agent Engine `6770363244553961472` in `us-central1`, reached over the
+Agent Engine REST surface by `packages/memory/vertex.py`. `LocalMemoryBank` is
+the offline fallback for tests and laptop runs, not the only implementation.
+
+Two shapes live under one repository scope, kept apart because they are consumed
+differently (`packages/memory/config.py`):
+
+| Kind | Shape | Read by |
+|---|---|---|
+| `repository_profile` | one JSON fact behind a version marker: owning team, criticality, approval rules, previous migration decisions, known exceptions, canonical test commands, prohibited paths | recalled by exact scope |
+| `previous_migration` | one prose sentence per migration outcome | retrieved by similarity, because a run months later asks "was something like this tried here before" and a JSON blob is not what that matches against |
 
 Memory Bank informs judgment. It never determines run status, idempotency, or
-audit truth.
+audit truth. That is enforced by shape rather than convention: `agents/memory.py`
+renders everything recalled into prose and drops the typed profile, so no
+deterministic gate has a field to branch on. Recalled text is
+injection-screened, bounded, and withheld entirely from the Verification Agent.
+See [`threat-model.md`](./threat-model.md) T13.
 
 ## Cloud Storage — evidence
 
@@ -98,5 +134,8 @@ configuration, never inlined at a call site.
 
 ## Reality check
 
-No Cloud SQL instance is provisioned. Local work uses Docker Postgres from
-`db/docker-compose.yml`. See [`operations.md`](./operations.md).
+Cloud SQL instance `patchapi-console` is provisioned and is where hosted runs
+keep state; local work reaches it through the Auth Proxy
+(`./scripts/run_cloud_sql_proxy.sh`) or uses Docker Postgres from
+`db/docker-compose.yml` for offline verification. See
+[`operations.md`](./operations.md).
