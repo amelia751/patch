@@ -65,6 +65,7 @@ only-include = ["__init__.py"]
 "inbox_corpus.py" = "packages/state/inbox_corpus.py"
 "index_inventory.py" = "packages/state/index_inventory.py"
 "refresh.py" = "packages/state/refresh.py"
+"refresh_log.py" = "packages/state/refresh_log.py"
 "pool.py" = "packages/state/pool.py"
 "remediation.py" = "packages/state/remediation.py"
 "run_dispatch.py" = "packages/state/run_dispatch.py"

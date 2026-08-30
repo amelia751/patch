@@ -38,10 +38,10 @@ async def test_the_job_registers_codecs_before_it_writes(
         order.append("connect")
         return connection
 
-    async def fake_refresh(conn: Any, *, provider: str) -> dict[str, Any]:
+    async def fake_refresh(conn: Any, *, provider: str) -> refresh.RefreshSummary:
         order.append("refresh")
         assert "jsonb" in conn.codecs, "the job reached its work without codecs"
-        return {"checked": 0, "announced": (), "projects": ()}
+        return refresh.RefreshSummary(provider=provider)
 
     import asyncpg
 

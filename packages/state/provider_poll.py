@@ -138,7 +138,7 @@ async def announce(
         result = await publish_async(envelope)
         if result.published:
             published.append(envelope.event_id)
-            log.info(
+            log.debug(
                 "published %s %s %s -> %s",
                 EventType.PROVIDER_CHANGE_DETECTED.value,
                 change.identifier,
@@ -162,6 +162,14 @@ class PollOutcome:
     results: tuple[LiveResult, ...]
     transitions: tuple[Transition, ...]
     published: tuple[str, ...]
+    # Identifiers with no stored answer before this poll. Not a transition —
+    # `classify_transition` decides that — but a change in what is being
+    # watched, which the caller reports and which nothing else records.
+    first_seen: tuple[str, ...] = ()
+    # Transitions whose event never reached the topic. Their liveness rows were
+    # withheld below, so the next poll sees the same change and retries it. The
+    # caller raises the whole refresh to WARNING on the strength of this.
+    held_back: tuple[str, ...] = ()
 
 
 async def poll_provider(
@@ -185,7 +193,7 @@ async def poll_provider(
     rows = await connection.fetch(_INDEXED_IDENTIFIERS_SQL, provider)
     identifiers = [str(row["identifier"]) for row in rows]
     if not identifiers:
-        log.info("the index names no %s identifiers; nothing to poll", provider)
+        log.debug("the index names no %s identifiers; nothing to poll", provider)
         return PollOutcome(provider=provider, results=(), transitions=(), published=())
 
     # Two surfaces, one diff. A model is asked of the publisher's listing and a
@@ -196,20 +204,21 @@ async def poll_provider(
     results = await live_identifiers(models) if models else ()
     results += await live_packages(sdks)
     transitions = detect_transitions(previous, results)
+    # Every line below is DEBUG because the caller emits one entry for the whole
+    # refresh. Printed at INFO, they were seven lines an hour at a severity that
+    # could not distinguish them from a crash — see `refresh_log`.
     for change in transitions:
-        log.info(
+        log.debug(
             "%s %-9s %s -> %s",
             change.transition,
             change.surface,
             change.identifier,
             change.current_status,
         )
-    if not transitions:
-        log.info("no provider transitions; nothing announced")
 
     published, failed = await announce(transitions, provider=provider)
     for identifier, surface in sorted(failed):
-        log.warning(
+        log.debug(
             "holding back the liveness row for %s on %s; the next poll retries it",
             identifier,
             surface,
@@ -224,6 +233,16 @@ async def poll_provider(
         results=results,
         transitions=tuple(transitions),
         published=tuple(published),
+        first_seen=tuple(
+            sorted(
+                {
+                    result.identifier
+                    for result in results
+                    if (result.identifier, result.surface) not in previous
+                }
+            )
+        ),
+        held_back=tuple(f"{identifier} on {surface}" for identifier, surface in sorted(failed)),
     )
 
 
