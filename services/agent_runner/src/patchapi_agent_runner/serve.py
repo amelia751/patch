@@ -26,7 +26,7 @@ from packages.events.config import EventType
 from packages.events.envelope import EventEnvelope
 from packages.state.config import database_url
 from packages.state.pool import configure_connection
-from patchapi_agent_runner import runner
+from patchapi_agent_runner import runner, telemetry
 
 log = logging.getLogger(__name__)
 
@@ -67,9 +67,17 @@ async def create_agent_pool() -> asyncpg.Pool:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logging.basicConfig(level=logging.INFO)
+    # Installed here rather than at import: the provider is global, so a module
+    # that installed one would win or lose by import order. ADK's own model and
+    # tool spans attach to whatever provider is current, so this is what carries
+    # a turn's reasoning chain out of the process.
+    app.state.tracing = telemetry.install(telemetry.SERVICE_AGENTS)
     app.state.pool = await create_agent_pool()
     yield
     await app.state.pool.close()
+    # A push-delivery instance is scaled to zero between events, so spans still
+    # in the batch when it stops are the trace of the turn that just ran.
+    telemetry.flush(app.state.tracing)
 
 
 def create_app() -> FastAPI:
