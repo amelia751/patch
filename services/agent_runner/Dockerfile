@@ -41,6 +41,8 @@ COPY packages/providers/pyproject.toml packages/providers/
 COPY packages/state/pyproject.toml packages/state/
 COPY packages/repo_scan/pyproject.toml packages/repo_scan/
 COPY packages/policy/pyproject.toml packages/policy/
+COPY packages/memory/pyproject.toml packages/memory/
+COPY packages/observability/pyproject.toml packages/observability/
 COPY services/control_api/pyproject.toml services/control_api/
 COPY services/repo_indexer/pyproject.toml services/repo_indexer/
 COPY services/agent_runner/pyproject.toml services/agent_runner/
@@ -52,6 +54,11 @@ COPY packages/providers packages/providers
 COPY packages/state packages/state
 COPY packages/repo_scan packages/repo_scan
 COPY packages/policy packages/policy
+# Institutional context across weeks, and the run's exported trace. Both are
+# imported at module load by the orchestrator, so an image without them starts
+# and then dies on the first run it claims.
+COPY packages/memory packages/memory
+COPY packages/observability packages/observability
 # patchapi-state depends on patchapi-control-api, so the member has to be
 # resolvable in full rather than by its manifest alone.
 COPY services/control_api services/control_api

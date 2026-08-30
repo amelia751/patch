@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 DEFAULT_API: Final[str] = "https://patchapi-api-uhkx74fgmq-uc.a.run.app"
 DEFAULT_CHANGE: Final[str] = "chg_flash_image_preview"
+TRACE_PROJECT: Final[str] = "patch-505223"
 
 # A hosted run calls the model several times per stage and waits on a sandbox,
 # so minutes are normal and a fixed sleep would either flake or crawl. These
@@ -254,8 +256,15 @@ def audit(dsn: str, attempt: Attempt) -> list[str]:
     if screened and int(screened[0]) == 0:
         problems.append("no intake screening recorded, but the run reported SANITIZED")
 
-    if "SANITIZED" not in attempt.states:
-        problems.append("run never passed through SANITIZED")
+    # From the transition table rather than from what the poller happened to
+    # catch. SANITIZED lasts milliseconds, so a five-second poll misses it on a
+    # healthy run and would report a passing control as a missing one.
+    if not psql(
+        dsn,
+        f"SELECT sequence FROM run_state_transitions WHERE run_id = '{run}' "
+        "AND to_state = 'SANITIZED'",
+    ):
+        problems.append("run never transitioned to SANITIZED")
 
     policy = psql(dsn, f"SELECT decision FROM policy_decisions WHERE run_id = '{run}'")
     if not policy:
@@ -287,31 +296,46 @@ def audit(dsn: str, attempt: Attempt) -> list[str]:
     return problems
 
 
-def cloud_trace_spans(since: str) -> list[str]:
-    """PatchAPI span names Cloud Trace holds since `since`.
+def cloud_trace_spans(run_id: str, since: str) -> list[str]:
+    """Span names Cloud Trace holds *for this run*, read back out of Google.
 
-    Read back out of Google rather than trusting the exporter's own report,
-    because "the client says it exported" and "the backend stored it" have
-    already diverged once in this project.
+    Filtered on the run id rather than on a time window, so a leftover trace
+    from an earlier pass cannot be mistaken for this one's. Read from the
+    backend rather than from the exporter's own report, because "the client says
+    it exported" and "the backend stored it" have already diverged once here.
     """
-    out = subprocess.run(
-        [
-            "gcloud",
-            "trace",
-            "list",
-            f"--start-time={since}",
-            "--format=value(spans.name)",
-            "--limit=300",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if out.returncode != 0:
-        print(f"    (cloud trace unreadable: {out.stderr.strip()[:160]})", flush=True)
+    try:
+        import google.auth
+        import google.auth.transport.requests
+
+        credentials, _ = google.auth.load_credentials_from_file(
+            str(REPO_ROOT / ".secrets" / "gcp-service-account.json"),
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        credentials.refresh(google.auth.transport.requests.Request())
+        query = urllib.parse.urlencode(
+            {
+                "filter": f"+patchapi.run_id:{run_id}",
+                "startTime": since,
+                "view": "COMPLETE",
+                "pageSize": "100",
+            }
+        )
+        request_ = urllib.request.Request(
+            f"https://cloudtrace.googleapis.com/v1/projects/{TRACE_PROJECT}/traces?{query}",
+            headers={"Authorization": f"Bearer {credentials.token}"},
+        )
+        with urllib.request.urlopen(request_, timeout=60) as response:
+            payload = json.loads(response.read() or b"{}")
+    except Exception as exc:
+        print(f"    (cloud trace unreadable: {exc})", flush=True)
         return []
-    names = out.stdout.replace(";", "\n").replace(",", "\n").splitlines()
-    return sorted({name.strip() for name in names if name.strip()})
+    names: set[str] = set()
+    for trace in payload.get("traces") or []:
+        for span_ in trace.get("spans") or []:
+            if name := str(span_.get("name") or "").strip():
+                names.add(name)
+    return sorted(names)
 
 
 def memory_recollections(repo: str) -> int:
@@ -393,7 +417,9 @@ def main() -> int:
         # against our own logs. Reported but not fatal: a trace that has not
         # been ingested yet is a lag, not a broken remediation, and the whole
         # design says observability must not be able to fail a run.
-        spans = [name for name in cloud_trace_spans(opened) if "patchapi" in name.lower()]
+        spans = [
+            name for name in cloud_trace_spans(attempt.run_id, opened) if "patchapi" in name.lower()
+        ]
         print(f"    cloud trace: {len(spans)} patchapi spans {spans[:6]}", flush=True)
         memories_after = memory_recollections(repository)
         print(f"    memory bank: {memories_before} -> {memories_after} recollections", flush=True)
