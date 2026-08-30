@@ -61,7 +61,12 @@ from importlib import import_module
 expected = {
     "packages.github": ["Capability", "resolve_capability", "ForbiddenCapabilityError"],
     "packages.repo_scan": ["scan_tree", "classify_path", "UsageKind"],
-    "packages.policy": ["evaluate_path", "evaluate_change", "scan_untrusted_text"],
+    "packages.policy": [
+        "evaluate_path",
+        "evaluate_change",
+        "scan_untrusted_text",
+        "screen_untrusted_text",
+    ],
     "packages.events": ["EventEnvelope", "EventType", "idempotency_key"],
     "packages.memory": ["MemoryBankClient", "LocalMemoryBank", "RepositoryProfile"],
     "packages.observability": ["configure_tracing", "span"],
@@ -115,6 +120,33 @@ print("adversarial release note -> blocked:", ", ".join(tripped))
 
 assert scan_untrusted_text(benign, source="benign-release-note.md").outcome is PolicyOutcome.ALLOW
 print("benign release note -> allow")
+PY
+
+step "the composed gate refuses without Model Armor"
+"${RUN[@]}" python - <<'PY'
+from pathlib import Path
+
+from packages.policy import ArmorState, PolicyOutcome, screen_untrusted_text
+
+# `screen_untrusted_text` layers Model Armor behind the regex gate. This asserts
+# the property that makes that safe to deploy: with no Model Armor configured —
+# which is this environment, and the default everywhere — the composed verdict is
+# exactly the deterministic one, and it says so rather than implying two gates.
+fixtures = Path("packages/policy/tests/adversarial")
+hostile = (fixtures / "prompt-injection-release-note.md").read_text(encoding="utf-8")
+
+blocked = screen_untrusted_text(hostile, source="prompt-injection-release-note.md", env={})
+assert blocked.outcome is PolicyOutcome.BLOCKED, blocked.outcome
+assert not blocked.armor.consulted
+assert len(blocked.screened_by) == 1, blocked.screened_by
+assert not blocked.degraded, "an unconfigured second opinion is not a degraded one"
+print(f"unconfigured -> {blocked.outcome.value} by {blocked.screened_by[0]}")
+
+benign = (fixtures / "benign-release-note.md").read_text(encoding="utf-8")
+allowed = screen_untrusted_text(benign, source="benign-release-note.md", env={})
+assert allowed.allowed
+assert allowed.armor.state is ArmorState.NOT_CONSULTED
+print("benign release note -> allow (one gate, reported as one)")
 PY
 
 step "span reaches the console exporter"

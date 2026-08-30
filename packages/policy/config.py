@@ -15,7 +15,7 @@ from packages.policy.decision import PolicyOutcome, Rule, RuleTier
 # Bumped whenever a rule is added, removed, or changes outcome. Recorded on
 # every evaluation so an old decision can be explained by the rules that were
 # actually in force when it was made.
-POLICY_VERSION: Final[str] = "1.0.0"
+POLICY_VERSION: Final[str] = "1.1.0"
 
 
 # --- Hard blocks -----------------------------------------------------------
@@ -276,3 +276,56 @@ REQUIRED_CHECKS: Final[tuple[str, ...]] = ("build", "unit_tests", "live_api_smok
 # refused rather than truncated: a truncated scan that reports "clean" is worse
 # than one that reports "too large to clear".
 MAX_UNTRUSTED_TEXT_CHARS: Final[int] = 200_000
+
+
+# --- Model Armor, as a second opinion only ---------------------------------
+#
+# `INJECTION_RULES` above is a regex table and misses phrasings nobody wrote a
+# pattern for: `demo/adversarial/ci-workflow-edit-request.md` clears every rule
+# in it, and Google's Model Armor rates the same document a MEDIUM_AND_ABOVE
+# prompt-injection match. That is the case for consulting it.
+#
+# It is nonetheless never the authoritative gate here, and the reason is not
+# modesty about its accuracy. Google documents that Model Armor's Vertex
+# integration fails *open* — when the service errors or is unreachable, the
+# prompt proceeds unscreened. A control that vanishes when it breaks cannot be
+# the control that says no. So it sits at `RuleTier.SEMANTIC_GOVERNANCE`, runs
+# only after the deterministic gate has already allowed, and can add a refusal
+# but never withdraw one.
+
+ENV_ARMOR_ENABLED: Final[str] = "PATCHAPI_MODEL_ARMOR_ENABLED"
+ENV_ARMOR_PROJECT: Final[str] = "PATCHAPI_MODEL_ARMOR_PROJECT"
+ENV_ARMOR_LOCATION: Final[str] = "PATCHAPI_MODEL_ARMOR_LOCATION"
+ENV_ARMOR_TEMPLATE: Final[str] = "PATCHAPI_MODEL_ARMOR_TEMPLATE"
+ENV_CLOUD_PROJECT: Final[str] = "GOOGLE_CLOUD_PROJECT"
+
+# Opt-in rather than on-by-default, so that a checkout with ambient Google
+# credentials does not start billing an external call from the unit suite. An
+# unconsulted Model Armor is never silent: every screening reports which gates
+# actually ran, so "deterministic only" is distinguishable from "both agreed".
+ARMOR_ENABLED_DEFAULT: Final[bool] = False
+
+ARMOR_LOCATION: Final[str] = "us-central1"
+ARMOR_TEMPLATE_ID: Final[str] = "patchapi-untrusted-intake"
+
+# Templates are served only from the regional endpoint. The global
+# `modelarmor.googleapis.com` host carries floor settings and answers a template
+# call with a 403 that names permission rather than the wrong host — an hour of
+# debugging that is pinned here so no call site has to rediscover it.
+ARMOR_ENDPOINT_HOST: Final[str] = "modelarmor.{location}.rep.googleapis.com"
+ARMOR_SANITIZE_METHOD: Final[str] = "sanitizeUserPrompt"
+
+# Short by intent. The deterministic verdict is already in hand when this call
+# is made, so waiting longer only delays a run that has an answer.
+ARMOR_REQUEST_TIMEOUT_SECONDS: Final[float] = 8.0
+
+# The filter that carries prompt-injection and jailbreak verdicts. Named so a
+# reader of an audit record can tell an injection match from an SDP or malicious
+# URI match without consulting Google's response schema.
+ARMOR_INJECTION_FILTER: Final[str] = "pi_and_jailbreak"
+
+# Any `MATCH_FOUND` refuses, at whatever confidence the service reports. The
+# sensitivity knob is the template's own confidence threshold, and keeping it
+# there means there is one place to reason about how strict screening is rather
+# than a second threshold hidden in this repository.
+ARMOR_RULE_ID: Final[str] = "policy.injection.model_armor"
