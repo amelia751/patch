@@ -12,6 +12,33 @@ TRACING_SCHEMA_VERSION: Final[str] = "1.0.0"
 
 DEFAULT_SERVICE_NAME: Final[str] = "patchapi"
 
+# Where spans go. `auto` resolves to Cloud Trace when a project is configured and
+# the exporter is installed, and to the console otherwise, so the same image
+# traces to Agent Observability in Cloud Run and to stdout on a laptop without a
+# per-environment code path.
+ENV_TRACE_EXPORTER: Final[str] = "PATCHAPI_TRACE_EXPORTER"
+EXPORTER_AUTO: Final[str] = "auto"
+EXPORTER_CLOUD: Final[str] = "cloud"
+EXPORTER_CONSOLE: Final[str] = "console"
+EXPORTER_NONE: Final[str] = "none"
+
+ENV_CLOUD_PROJECT: Final[str] = "GOOGLE_CLOUD_PROJECT"
+
+# Cloud Trace ingests OTLP natively through the Telemetry API, and the older
+# `CloudTraceSpanExporter` is deprecated. Exporting OTLP also means the spans are
+# not reshaped on the way out: semantic-convention keys survive verbatim, which
+# is what makes the same trace readable outside Google Cloud.
+TELEMETRY_ENDPOINT: Final[str] = "telemetry.googleapis.com"
+
+# The Telemetry API routes on this resource attribute, so a span without it is
+# rejected as INVALID_ARGUMENT rather than stored somewhere unexpected.
+ATTR_GCP_PROJECT: Final[str] = "gcp.project_id"
+
+# A remediation runs as a Cloud Run job or a pull-based worker, so the process
+# can exit while the batch processor still holds spans. Entry points flush on the
+# way out; this bounds how long shutdown waits for that.
+TRACE_FLUSH_TIMEOUT_MS: Final[int] = 10_000
+
 # One span per pipeline stage (roadmap §8), named so a trace reads as the run.
 SPAN_CHANGE_INTELLIGENCE: Final[str] = "patchapi.change_intelligence"
 SPAN_IMPACT: Final[str] = "patchapi.impact"

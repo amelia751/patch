@@ -23,6 +23,12 @@ from packages.observability.config import (
     SPAN_VERIFICATION,
     TRACING_SCHEMA_VERSION,
 )
+from packages.observability.export import (
+    cloud_trace_unavailable_reason,
+    configured_mode,
+    flush_tracing,
+    install_process_tracing,
+)
 from packages.observability.tracing import configure_tracing, get_tracer, span
 
 __all__ = [
@@ -43,7 +49,11 @@ __all__ = [
     "SPAN_SANDBOX",
     "SPAN_VERIFICATION",
     "TRACING_SCHEMA_VERSION",
+    "cloud_trace_unavailable_reason",
     "configure_tracing",
+    "configured_mode",
+    "flush_tracing",
     "get_tracer",
+    "install_process_tracing",
     "span",
 ]

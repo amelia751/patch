@@ -258,6 +258,7 @@ async def _main() -> int:
 
     from packages.state.config import database_url
     from packages.state.pool import create_pool
+    from patchapi_agent_runner import telemetry
 
     in_lane = lane()
     if not in_lane:
@@ -273,6 +274,7 @@ async def _main() -> int:
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stopping.set)
 
+    provider = telemetry.install(telemetry.SERVICE_REMEDIATION_WORKER)
     pool = await create_pool(database_url())
     log.info("worker %s ready in lane %s; polling every %.1fs", worker, in_lane, poll_seconds())
     try:
@@ -281,6 +283,7 @@ async def _main() -> int:
     finally:
         await _stand_down(pool, worker)
         await pool.close()
+        telemetry.flush(provider)
 
 
 async def _stand_down(pool: asyncpg.Pool, worker: str) -> None:

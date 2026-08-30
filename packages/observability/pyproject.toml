@@ -4,12 +4,20 @@ version = "0.1.0"
 description = "OpenTelemetry tracing setup for PatchAPI agents and services."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-# Standards-based instrumentation first (roadmap §14): OpenTelemetry here, and
-# the Cloud Trace exporter added by the deployment, so nothing in the runtime
-# path is tied to one backend.
+# Standards-based instrumentation first (roadmap §14): the instrumented code
+# only ever sees the OpenTelemetry API. The Cloud Trace exporter and the resource
+# detector are declared here so a deployed image can reach Agent Observability
+# without a per-environment build, and both are imported lazily so a tree without
+# Google Cloud credentials still traces to the console.
 dependencies = [
     "opentelemetry-api>=1.30,<2",
     "opentelemetry-sdk>=1.30,<2",
+    # OTLP straight to the Telemetry API. The older `opentelemetry-exporter-gcp-trace`
+    # is deprecated, and it reshaped spans on the way out — this keeps semantic
+    # convention keys verbatim, so the same trace is readable off Google Cloud.
+    "opentelemetry-exporter-otlp-proto-grpc>=1.30,<2",
+    "opentelemetry-resourcedetector-gcp>=1.9,<2",
+    "google-auth>=2.35,<3",
 ]
 
 [build-system]
@@ -22,4 +30,5 @@ only-include = ["__init__.py"]
 [tool.hatch.build.targets.wheel.force-include]
 "__init__.py" = "packages/observability/__init__.py"
 "config.py" = "packages/observability/config.py"
+"export.py" = "packages/observability/export.py"
 "tracing.py" = "packages/observability/tracing.py"

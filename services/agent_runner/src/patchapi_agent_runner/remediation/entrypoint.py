@@ -47,8 +47,10 @@ async def _main(run_id: str) -> int:
 
     from packages.state.config import database_url
     from packages.state.pool import create_pool
+    from patchapi_agent_runner import telemetry
     from patchapi_agent_runner.remediation import job
 
+    provider = telemetry.install(telemetry.SERVICE_REMEDIATE)
     pool = await create_pool(database_url())
     try:
         return await job.execute(pool, run_id)
@@ -61,6 +63,9 @@ async def _main(run_id: str) -> int:
         return EXIT_MISCONFIGURED
     finally:
         await pool.close()
+        # This container exits as soon as the run ends, so an unflushed batch is
+        # a lost trace of exactly the run an operator came here to read.
+        telemetry.flush(provider)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

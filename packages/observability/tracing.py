@@ -32,9 +32,10 @@ def configure_tracing(
 ) -> TracerProvider:
     """Build a tracer provider that exports spans as JSON lines.
 
-    `SimpleSpanProcessor` rather than the batching one: spans are exported as
-    they end, so a run that crashes still leaves the trace that explains why.
-    Throughput is not the constraint here — a run is a handful of spans.
+    Deliberately console-only and independent of the environment, because a test
+    needs an isolated provider whose output it can read. A process that should
+    reach Cloud Trace calls `packages.observability.export.install_process_tracing`
+    instead, which resolves the destination from configuration.
 
     Set `install_globally` only in a process entry point. OpenTelemetry ignores
     a second global provider, so installing one from a library would silently
