@@ -40,12 +40,15 @@ def test_no_forbidden_capability_is_implemented():
     assert implemented.isdisjoint(FORBIDDEN_CAPABILITIES)
 
 
-def test_routes_are_only_health_and_the_capability_choke_point():
+def test_routes_are_only_health_and_the_capability_choke_points():
     paths = {route.path for route in create_app().routes if hasattr(route, "path")}
     product_paths = {path for path in paths if not path.startswith(("/docs", "/redoc", "/openapi"))}
+    # `/mcp` is a second transport, not a second surface: it reaches GitHub only
+    # through the same `execute_capability` pipeline the REST route uses.
     assert product_paths == {
         "/healthz",
         "/readyz",
+        "/mcp",
         "/v1/capabilities",
         "/v1/capabilities/{capability_name}",
     }

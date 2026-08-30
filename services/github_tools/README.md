@@ -16,6 +16,7 @@ GET  /healthz                             liveness
 GET  /readyz                              ready only when the App is wired
 GET  /v1/capabilities                     the catalog, the grants, the boundary
 POST /v1/capabilities/{capability_name}   invoke one capability
+POST /mcp                                 the same capabilities over MCP JSON-RPC
 ```
 
 | Read | Write |
@@ -45,6 +46,44 @@ blocked a second time at the transport by URL shape.
 
 Steps 1–3 never reach GitHub. Step 2 does not depend on step 4: an attempt to
 merge is refused as forbidden whether or not the App is wired.
+
+Both transports run these checks by calling one function,
+`invocation.execute_capability`. There is no second implementation of the order.
+
+## MCP
+
+`POST /mcp` speaks MCP over JSON-RPC 2.0 (`initialize`, `tools/list`,
+`tools/call`, `ping`, and `notifications/initialized`) so the service can be
+published in an agent catalog and discovered across departments. It is a second
+**transport**, not a second surface:
+
+- `tools/call` goes through `execute_capability` — the same gates in the same
+  order — so MCP grants no privilege the REST route does not.
+- `tools/list` is scoped to the identity in `X-PatchAPI-Agent`. `patchapi.pr`
+  sees ten tools, a read-only agent sees six, `patchapi.change_intelligence`
+  sees none. A forbidden operation has no descriptor to omit.
+- `inputSchema` is generated from the same Pydantic model the REST route
+  validates against, with `$ref` inlined for consumers that reject references.
+  It cannot drift from the REST contract.
+- Annotations state the boundary in MCP's own vocabulary: `readOnlyHint` for the
+  six reads, `destructiveHint: false` everywhere (the writes create a branch, a
+  commit, a pull request, or a comment — nothing deletes or rewrites history),
+  and `idempotentHint` only where a replay genuinely converges.
+
+Authentication stays at the transport: an unrecognised caller gets HTTP 401.
+Everything after that is JSON-RPC — a malformed envelope, an unknown method, and
+a refused capability all return HTTP 200 with an error object, and each refusal
+carries the REST refusal detail verbatim in `error.data`, so both transports
+leave the same audit record. Refusal codes are distinct on purpose:
+
+| Code | Meaning |
+|---|---|
+| `-32001` | forbidden operation — not part of this surface |
+| `-32002` | the calling agent does not hold that capability |
+| `-32003` | the GitHub App is not configured; no call was attempted |
+| `-32004` | the repository moved since verification |
+| `-32005` | GitHub refused or failed the call |
+| `-32602` | unknown tool, or arguments that fail the contract |
 
 ## Write-path guarantees
 

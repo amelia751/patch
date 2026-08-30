@@ -19,6 +19,21 @@ SERVICE_VERSION: Final[str] = "0.1.0"
 # platform health check never has to follow an API version bump.
 API_PREFIX: Final[str] = "/v1"
 
+# The MCP endpoint is unversioned for the same reason a health probe is: the
+# path is published in an agent catalog that other departments discover the
+# service through, and MCP already carries its own version in the handshake.
+MCP_PATH: Final[str] = "/mcp"
+
+# The MCP revision this service speaks. Advertised in `initialize`, and echoed
+# back when a client asks for a revision listed as still accepted, so an older
+# catalog client is not refused over a version string alone.
+MCP_PROTOCOL_VERSION: Final[str] = "2025-06-18"
+MCP_ACCEPTED_PROTOCOL_VERSIONS: Final[tuple[str, ...]] = (
+    "2025-06-18",
+    "2025-03-26",
+    "2024-11-05",
+)
+
 # The calling agent names itself here. It is an identity claim, not an
 # authorization: the platform is expected to authenticate the caller (Cloud Run
 # IAM / Agent Gateway) before the request reaches this service, and this header

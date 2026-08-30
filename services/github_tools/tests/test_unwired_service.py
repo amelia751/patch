@@ -62,6 +62,7 @@ def test_openapi_describes_the_whole_surface(unwired_client):
     assert set(document["paths"]) == {
         "/healthz",
         "/readyz",
+        "/mcp",
         "/v1/capabilities",
         "/v1/capabilities/{capability_name}",
     }

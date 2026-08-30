@@ -7,6 +7,8 @@
 #   * the catalog lists exactly the roadmap §7.3 read and write operations,
 #   * every "explicitly absent" operation returns a structured 403,
 #   * an unrecognised caller is refused, and a read-only agent cannot write,
+#   * the MCP JSON-RPC endpoint publishes a per-identity tool list that names no
+#     forbidden operation, and refuses a call through the same gates,
 #   * with no GitHub App configured every invocation fails closed with a 503
 #     that names the missing dependency.
 #
@@ -262,6 +264,102 @@ assert "no GitHub call was attempted" in detail["reason"], detail
 print("fails closed:", detail["reason"])
 '
 
+step "POST /mcp initialize advertises the MCP server identity"
+CODE="$(probe POST "$BASE/mcp" \
+  -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.pr' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}')"
+[[ "$CODE" == "200" ]] || fail "mcp initialize returned $CODE, expected 200"
+"${RUN[@]}" python -c '
+import json
+
+from patchapi_github_tools.config import MCP_PROTOCOL_VERSION, SERVICE_NAME, SERVICE_VERSION
+
+body = json.load(open("'"$BODY_FILE"'"))
+assert body["jsonrpc"] == "2.0" and body["id"] == 1, body
+result = body["result"]
+assert result["protocolVersion"] == MCP_PROTOCOL_VERSION, result
+assert result["serverInfo"] == {"name": SERVICE_NAME, "version": SERVICE_VERSION}, result
+assert "stops at the pull request" in result["instructions"], result
+print("mcp", result["protocolVersion"], result["serverInfo"])
+'
+
+step "POST /mcp tools/list is per-identity and omits every forbidden operation"
+for identity in patchapi.pr patchapi.impact patchapi.change_intelligence; do
+  CODE="$(probe POST "$BASE/mcp" \
+    -H 'Content-Type: application/json' -H "X-PatchAPI-Agent: $identity" \
+    -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
+  [[ "$CODE" == "200" ]] || fail "mcp tools/list returned $CODE for $identity, expected 200"
+  "${RUN[@]}" python -c '
+import json, sys
+
+from packages.github import FORBIDDEN_CAPABILITIES
+
+identity = sys.argv[1]
+tools = json.load(open("'"$BODY_FILE"'"))["result"]["tools"]
+names = {tool["name"] for tool in tools}
+assert not names & set(FORBIDDEN_CAPABILITIES), sorted(names & set(FORBIDDEN_CAPABILITIES))
+expected = {
+    "patchapi.pr": 10,
+    "patchapi.impact": 6,
+    # Roadmap §8.1: reads untrusted provider material, holds no grant at all.
+    "patchapi.change_intelligence": 0,
+}[identity]
+assert len(names) == expected, (identity, sorted(names))
+for tool in tools:
+    annotations = tool["annotations"]
+    assert annotations["destructiveHint"] is False, tool["name"]
+    assert "$ref" not in json.dumps(tool["inputSchema"]), tool["name"]
+reads = {tool["name"] for tool in tools if tool["annotations"]["readOnlyHint"]}
+print(f"{identity}: {len(names)} tools, {len(reads)} read-only")
+' "$identity"
+done
+
+step "POST /mcp tools/call is refused by the same gates as the REST route"
+CODE="$(probe POST "$BASE/mcp" \
+  -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.pr' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"merge_pull_request"}}')"
+[[ "$CODE" == "200" ]] || fail "mcp refusal returned $CODE, expected a 200 JSON-RPC error"
+"${RUN[@]}" python -c '
+import json
+
+error = json.load(open("'"$BODY_FILE"'"))["error"]
+assert error["code"] == -32001, error
+assert error["data"]["error"] == "forbidden_capability", error
+assert "stops at the pull request" in error["data"]["reason"], error
+print("mcp forbidden:", error["code"], error["data"]["capability"])
+'
+
+CODE="$(probe POST "$BASE/mcp" \
+  -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.impact' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"open_pull_request","arguments":{"repo":"amelia751/egaki"}}}')"
+[[ "$CODE" == "200" ]] || fail "mcp ungranted write returned $CODE, expected a 200 JSON-RPC error"
+"${RUN[@]}" python -c '
+import json
+
+error = json.load(open("'"$BODY_FILE"'"))["error"]
+assert error["code"] == -32002, error
+assert error["data"]["error"] == "capability_not_granted", error
+assert "open_pull_request" not in error["data"]["granted_capabilities"], error
+print("mcp not granted:", error["code"], error["data"]["agent"])
+'
+
+CODE="$(probe POST "$BASE/mcp" \
+  -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: attacker.agent' \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/list"}')"
+[[ "$CODE" == "401" ]] || fail "mcp unknown agent returned $CODE, expected 401"
+
+CODE="$(probe POST "$BASE/mcp" \
+  -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.pr' \
+  -d '{"jsonrpc":')"
+[[ "$CODE" == "200" ]] || fail "mcp malformed envelope returned $CODE, expected a 200 JSON-RPC error"
+"${RUN[@]}" python -c '
+import json
+
+error = json.load(open("'"$BODY_FILE"'"))["error"]
+assert error["code"] == -32700, error
+print("mcp parse error:", error["code"])
+'
+
 step "OpenAPI describes no merge, admin, secret, or protection route"
 CODE="$(probe GET "$BASE/openapi.json")"
 [[ "$CODE" == "200" ]] || fail "/openapi.json returned $CODE, expected 200"
@@ -270,7 +368,9 @@ import json
 
 document = json.load(open("'"$BODY_FILE"'"))
 paths = set(document["paths"])
-expected = {"/healthz", "/readyz", "/v1/capabilities", "/v1/capabilities/{capability_name}"}
+expected = {
+    "/healthz", "/readyz", "/mcp", "/v1/capabilities", "/v1/capabilities/{capability_name}",
+}
 assert paths == expected, sorted(paths ^ expected)
 serialized = json.dumps(document["paths"])
 for banned in ("/merge", "/protection", "/admin", "/secrets"):

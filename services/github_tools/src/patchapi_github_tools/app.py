@@ -15,7 +15,7 @@ from fastapi import FastAPI
 
 from patchapi_github_tools.config import API_PREFIX, SERVICE_NAME, SERVICE_VERSION
 from patchapi_github_tools.github_rest import GitHubRest
-from patchapi_github_tools.routes import capabilities, health
+from patchapi_github_tools.routes import capabilities, health, mcp
 
 _DESCRIPTION = (
     "Narrow GitHub App capability adapter for PatchAPI. Agents receive "
@@ -30,4 +30,8 @@ def create_app(*, github: GitHubRest | None = None) -> FastAPI:
     app.state.github = github
     app.include_router(health.router)
     app.include_router(capabilities.router, prefix=API_PREFIX)
+    # The MCP endpoint is a second transport over the same gates, not a second
+    # surface: it is registered here so a catalog can discover the service, and
+    # it reaches GitHub only through the capability pipeline the REST route uses.
+    app.include_router(mcp.router)
     return app
