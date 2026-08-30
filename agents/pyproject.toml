@@ -12,6 +12,8 @@ dependencies = [
     # workspace.
     "google-adk>=2.1,<3",
     "greenlet>=3",
+    "patchapi-memory",
+    "patchapi-observability",
     "patchapi-policy",
     "patchapi-providers",
     "patchapi-repo-scan",
@@ -27,6 +29,8 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
+patchapi-memory = { workspace = true }
+patchapi-observability = { workspace = true }
 patchapi-policy = { workspace = true }
 patchapi-providers = { workspace = true }
 patchapi-repo-scan = { workspace = true }

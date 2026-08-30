@@ -27,11 +27,22 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Final
 
-from agents import live_check
+from agents import live_check, memory
 from agents.adk import TurnResult, new_session_service, resume_turn, run_turn, session_id_for
-from agents.config import AgentId
+from agents.config import REASONING_MODEL, AgentId
 from agents.context import RunContext
 from agents.journal import RunJournal
+from agents.observe import (
+    EVENT_MEMORY_NOT_RECORDED,
+    EVENT_MEMORY_RECALLED,
+    EVENT_MEMORY_RECORDED,
+    EVENT_MEMORY_UNAVAILABLE,
+    SPAN_RUN,
+    StageSpan,
+    current_stage_span,
+    run_identity,
+    stage_span,
+)
 from agents.specialists.change_intelligence import build as build_change_intelligence
 from agents.specialists.impact import build as build_impact
 from agents.specialists.patch import build as build_patch
@@ -43,6 +54,19 @@ from agents.tools.patch.skill import SKILLS_DIRNAME
 from agents.tools.pr import github_tools_base_url, invoke_github_capability
 from agents.tools.results import ReasonCode
 from agents.trace import ToolStatus, ToolTrace
+from packages.observability.config import (
+    ATTR_CHANGE_ID,
+    ATTR_MODEL_ID,
+    ATTR_POLICY_OUTCOME,
+    ATTR_TRUST,
+    SPAN_CHANGE_INTELLIGENCE,
+    SPAN_IMPACT,
+    SPAN_PATCH,
+    SPAN_POLICY,
+    SPAN_PULL_REQUEST,
+    SPAN_SANDBOX,
+    SPAN_VERIFICATION,
+)
 from packages.policy.armor import screen_untrusted_text
 from packages.policy.injection import normalize_untrusted_text
 from packages.providers.google.normalize import manifest_from_feed_file
@@ -144,6 +168,21 @@ _SECRET_NAME: Final[re.Pattern[str]] = re.compile(
     r"\b([A-Z][A-Z0-9_]*(?:API_KEY|ACCESS_TOKEN|SECRET|TOKEN))\b"
 )
 
+# What the intake gate concluded about the untrusted document this run started
+# from, as one enum token on the Change Intelligence span. `screened_degraded`
+# is the honest middle: the deterministic rules cleared the text and the Model
+# Armor verdict that should have joined them did not arrive.
+TRUST_SCREENED: Final[str] = "screened"
+TRUST_SCREENED_DEGRADED: Final[str] = "screened_degraded"
+TRUST_BLOCKED: Final[str] = "blocked"
+
+# The specialists a recalled memory may be shown. Verification is absent and
+# must stay absent: constraint 6 makes the verifier independent, and an earlier
+# run's "this migration was fine" is precisely the sentence that must not be
+# available to the agent grading this one. Change Intelligence is absent because
+# it reasons about a provider notice, not about this repository's history.
+MEMORY_CONTEXT_AGENTS: Final[frozenset[AgentId]] = frozenset({AgentId.IMPACT, AgentId.PATCH})
+
 
 def build_fleet(context: RunContext, trace: ToolTrace) -> dict[AgentId, Any]:
     """Construct the four reasoning agents against one run context and trace.
@@ -234,7 +273,12 @@ class Orchestrator:
     """
 
     def __init__(
-        self, context: RunContext, trace: ToolTrace, journal: RunJournal | None = None
+        self,
+        context: RunContext,
+        trace: ToolTrace,
+        journal: RunJournal | None = None,
+        *,
+        attempt: int = 1,
     ) -> None:
         self._context = context
         self._trace = trace
@@ -242,11 +286,17 @@ class Orchestrator:
         # journal is how a long-running job publishes progress; nothing in the
         # state machine depends on one being attached.
         self._journal = journal
+        # Which try at this run this execution is, from the attempt Postgres
+        # opened. It exists so two attempts at one run are distinguishable in a
+        # trace; nothing in the state machine reads it.
+        self._attempt = attempt
         self._state = RunState.RECEIVED
         self._agents: dict[AgentId, Any] | None = None
         self._session_service: Any | None = None
         self._evidence_uris: list[str] = []
         self._entrypoint_digest: str = ""
+        self._memory_bank: Any | None = None
+        self._recollection: memory.Recollection | None = None
         self._last_build: dict[str, Any] = {}
         self._last_tests: dict[str, Any] = {}
         # One index, so the impact scan and the report that commits its findings
@@ -271,6 +321,151 @@ class Orchestrator:
     @property
     def trace(self) -> ToolTrace:
         return self._trace
+
+    @property
+    def recollection(self) -> memory.Recollection:
+        """What institutional memory offered this run, or the absence of it.
+
+        Exposed so a caller can state, truthfully, that the run proceeded
+        without institutional context. Before the recall it is the same
+        "nothing, and here is why" a failed recall produces — never an empty
+        history that reads like a clean one.
+        """
+        return self._recollection or memory.Recollection(
+            repo="", reason="institutional memory has not been recalled for this run"
+        )
+
+    # -- tracing ----------------------------------------------------------
+
+    def _identity(
+        self, slice_: VerticalSlice | None = None, *, base_sha: str = "", model_id: str = ""
+    ) -> dict[str, Any]:
+        """The pinned identity attributes every stage span opens with."""
+        return run_identity(
+            run_id=self._context.run_id,
+            repo=slice_.repo if slice_ is not None else "",
+            change_id=slice_.change_id if slice_ is not None else "",
+            base_sha=base_sha,
+            attempt=self._attempt,
+            model_id=model_id,
+        )
+
+    def _served_model(self, span: StageSpan, turn: TurnResult | None) -> None:
+        """Replace the requested model id with the one Vertex actually served."""
+        if turn is not None and turn.served_model:
+            span.set(ATTR_MODEL_ID, turn.served_model)
+
+    # -- institutional memory ---------------------------------------------
+
+    def _memory(self) -> Any | None:
+        """The configured Memory Bank for this run, opened once."""
+        if self._memory_bank is None:
+            self._memory_bank, reason = memory.open_memory_bank()
+            if self._memory_bank is None:
+                log.info("run %s has no Memory Bank: %s", self._context.run_id, reason)
+        return self._memory_bank
+
+    def recall_memory(self, slice_: VerticalSlice) -> memory.Recollection:
+        """Fetch what earlier runs recorded about this repository.
+
+        Recorded on the span as a moment, not as a tool call: recall is not an
+        agent acting, and the run log is a record of what the agents did.
+
+        What comes back is prose and stays prose. Nothing downstream branches on
+        it — the Impact and Patch prompts quote it as background, and the
+        deterministic stages never see it at all.
+        """
+        query = ""
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        if isinstance(manifest, ChangeManifest):
+            query = " ".join([manifest.change_id, *manifest.affected_identifiers]).strip()
+        recalled = memory.recall(self._memory(), slice_.repo, query=query or slice_.change_id)
+        self._recollection = recalled
+        span = current_stage_span()
+        if recalled.has_context:
+            span.note(EVENT_MEMORY_RECALLED)
+            log.info(
+                "run %s recalled %d note(s) about %s",
+                self._context.run_id,
+                len(recalled.notes),
+                slice_.repo,
+            )
+        else:
+            span.note(EVENT_MEMORY_UNAVAILABLE)
+            log.info(
+                "run %s is proceeding without institutional context: %s",
+                self._context.run_id,
+                recalled.reason or f"the Memory Bank holds nothing about {slice_.repo}",
+            )
+        return recalled
+
+    def memory_context(self, agent: AgentId) -> str:
+        """The recalled block for `agent`, or nothing at all.
+
+        The allowlist is the enforcement, not the prompt wording. Verification
+        is not on it, so no recollection can reach the agent that grades this
+        patch — an earlier run's "this was fine" is exactly the sentence
+        constraint 6 keeps out of an independent verdict.
+        """
+        if agent not in MEMORY_CONTEXT_AGENTS:
+            return ""
+        return self.recollection.as_prompt_block()
+
+    def _remember_outcome(self, slice_: VerticalSlice) -> None:
+        """Write what this run decided, so a later run can recall it.
+
+        Additive to Postgres, never a substitute for it: the authoritative
+        record of this run's state, its idempotency and its audit trail is the
+        database (constraint 7). What goes here is one sentence in PatchAPI's
+        own vocabulary — identifiers, an outcome, a state — and never a provider
+        quote, a model's prose, or anything a vault resolved.
+        """
+        span = current_stage_span()
+        if not is_terminal(self._state):
+            # A run parked for the operator has not ended, and writing a pause
+            # into institutional memory as an outcome would have a later run
+            # recall a decision nobody made. The execution that finishes it
+            # records the ending.
+            span.note(EVENT_MEMORY_NOT_RECORDED)
+            log.info(
+                "run %s stopped at %s without an outcome to remember",
+                self._context.run_id,
+                self._state,
+            )
+            return
+        migration = memory.PreviousMigration(
+            migration_id=slice_.change_id,
+            decision=str(self._state).lower(),
+            reason=self._outcome_sentence(slice_),
+        )
+        written, reason = memory.record_outcome(self._memory(), slice_.repo, migration)
+        if written:
+            span.note(EVENT_MEMORY_RECORDED)
+            return
+        span.note(EVENT_MEMORY_NOT_RECORDED)
+        log.info(
+            "run %s was not recorded in institutional memory: %s", self._context.run_id, reason
+        )
+
+    def _outcome_sentence(self, slice_: VerticalSlice) -> str:
+        """One recallable sentence about what was migrated and how it ended."""
+        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+        decision = self._context.output(STAGE_CONTRACTS[AgentId.POLICY])
+        report = self._context.output(STAGE_CONTRACTS[AgentId.VERIFICATION])
+        parts: list[str] = []
+        if isinstance(manifest, ChangeManifest):
+            retired = ", ".join(manifest.affected_identifiers)
+            replacement = manifest.recommended_replacement or "no recommended replacement"
+            parts.append(
+                f"PatchAPI attempted to migrate {retired or 'a retired identifier'} to "
+                f"{replacement} in {slice_.entrypoint}."
+            )
+        if isinstance(decision, PolicyDecision):
+            parts.append(f"Policy returned {decision.outcome}.")
+        if isinstance(report, VerificationReport):
+            parts.append(f"Independent verification returned {report.verdict}.")
+        parts.append(f"The run ended {self._state}.")
+        return " ".join(parts)
 
     @property
     def fleet(self) -> dict[AgentId, Any]:
@@ -356,10 +551,13 @@ class Orchestrator:
             duration_ms=(perf_counter() - started) * 1000.0,
             detail=f"screened by {', '.join(screening.screened_by)}{degraded}",
         )
+        gate = current_stage_span()
         if screening.allowed:
+            gate.set(ATTR_TRUST, TRUST_SCREENED_DEGRADED if screening.degraded else TRUST_SCREENED)
             self._advance(RunState.SANITIZED)
             return None
 
+        gate.set(ATTR_TRUST, TRUST_BLOCKED)
         self._advance(RunState.BLOCKED)
         reasons = "; ".join(
             dict.fromkeys(finding.reason for finding in screening.evaluation.blocking_findings)
@@ -526,49 +724,61 @@ class Orchestrator:
         state transition cannot be conditional on a model choosing a tool.
         """
         agent = AgentId.CHANGE_INTELLIGENCE
-        path = self._notice_path(change_id)
-        if path is None:
-            return self._fail(agent, f"no provider notice with change_id {change_id!r}")
-        refused = self._screen_notice(agent, path)
-        if refused is not None:
-            return refused
+        identity = run_identity(
+            run_id=self._context.run_id,
+            change_id=change_id,
+            attempt=self._attempt,
+            model_id=REASONING_MODEL,
+        )
+        with stage_span(SPAN_CHANGE_INTELLIGENCE, identity) as span:
+            path = self._notice_path(change_id)
+            if path is None:
+                span.outcome("no_notice", ok=False)
+                return self._fail(agent, f"no provider notice with change_id {change_id!r}")
+            refused = self._screen_notice(agent, path)
+            if refused is not None:
+                span.outcome(str(self._state).lower(), ok=False)
+                return refused
 
-        prompt = (
-            f"Produce the ChangeManifest for provider change {change_id!r}. "
-            "Read the notice, compare it against the deterministic parse, "
-            "corroborate identifiers and dates with search_web, then call "
-            "record_change_manifest if they agree or record_human_required if "
-            "they do not. search_web is not the finish — you must record."
-        )
-        turn = await run_turn(
-            self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
-        )
-        output = self._context.output(STAGE_CONTRACTS[agent])
-        if output is None:
-            # A stage that read everything and recorded nothing gets one nudge
-            # in the same ADK session, so the evidence it already gathered is
-            # still in context. This was routine while the search child ended
-            # the turn that called it; it stays as a net for a model that
-            # simply forgets the obligation.
+            prompt = (
+                f"Produce the ChangeManifest for provider change {change_id!r}. "
+                "Read the notice, compare it against the deterministic parse, "
+                "corroborate identifiers and dates with search_web, then call "
+                "record_change_manifest if they agree or record_human_required if "
+                "they do not. search_web is not the finish — you must record."
+            )
             turn = await run_turn(
-                self.agent(agent),
-                (
-                    "You already have the notice, the parse, and search hits. "
-                    "Call record_change_manifest now if they agree, or "
-                    "record_human_required if they do not. Do not call "
-                    "search_web again."
-                ),
-                trace=self._trace,
-                session_service=self._sessions(),
+                self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
             )
             output = self._context.output(STAGE_CONTRACTS[agent])
+            if output is None:
+                # A stage that read everything and recorded nothing gets one
+                # nudge in the same ADK session, so the evidence it already
+                # gathered is still in context. This was routine while the
+                # search child ended the turn that called it; it stays as a net
+                # for a model that simply forgets the obligation. The retry is
+                # visible in the trace as a second model span under this stage.
+                turn = await run_turn(
+                    self.agent(agent),
+                    (
+                        "You already have the notice, the parse, and search hits. "
+                        "Call record_change_manifest now if they agree, or "
+                        "record_human_required if they do not. Do not call "
+                        "search_web again."
+                    ),
+                    trace=self._trace,
+                    session_service=self._sessions(),
+                )
+                output = self._context.output(STAGE_CONTRACTS[agent])
 
-        if output is None:
-            self._advance(RunState.FAILED)
-        else:
-            self._advance(RunState.NORMALIZED)
+            self._served_model(span, turn)
+            if output is None:
+                self._advance(RunState.FAILED)
+            else:
+                self._advance(RunState.NORMALIZED)
+            span.outcome(str(self._state).lower(), ok=output is not None)
 
-        return self._stage(agent, turn, output, "" if output else "no manifest was recorded")
+            return self._stage(agent, turn, output, "" if output else "no manifest was recorded")
 
     def seed_change_manifest(self, change_id: str) -> StageResult:
         """Commit the pinned deterministic parse of a notice as this run's manifest.
@@ -585,11 +795,20 @@ class Orchestrator:
         and this path reads the same untrusted document the model would have.
         """
         agent = AgentId.ORCHESTRATOR
+        identity = run_identity(
+            run_id=self._context.run_id, change_id=change_id, attempt=self._attempt
+        )
+        with stage_span(SPAN_CHANGE_INTELLIGENCE, identity) as span:
+            return self._seed_change_manifest(agent, change_id, span)
+
+    def _seed_change_manifest(self, agent: AgentId, change_id: str, span: StageSpan) -> StageResult:
         path = self._notice_path(change_id)
         if path is None:
+            span.outcome("no_notice", ok=False)
             return self._fail(agent, f"no provider notice with change_id {change_id!r}")
         refused = self._screen_notice(agent, path)
         if refused is not None:
+            span.outcome(str(self._state).lower(), ok=False)
             return refused
 
         started = perf_counter()
@@ -609,6 +828,7 @@ class Orchestrator:
                 duration_ms=(perf_counter() - started) * 1000.0,
                 detail="the feed document did not normalize",
             )
+            span.outcome("not_normalized", ok=False)
             return self._fail(agent, f"{path.name} did not normalize into a ChangeManifest: {exc}")
 
         self._context.record(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE], agent, manifest)
@@ -627,6 +847,7 @@ class Orchestrator:
             detail="pinned deterministic parse; the Change Intelligence agent did not run",
         )
         self._advance(RunState.NORMALIZED)
+        span.outcome(str(self._state).lower(), ok=True)
         return self._stage(agent, None, manifest, "manifest seeded from the pinned feed document")
 
     def seed_static_manifest(self, path: Path) -> StageResult:
@@ -646,6 +867,11 @@ class Orchestrator:
         strength of having been through one weeks earlier.
         """
         agent = AgentId.ORCHESTRATOR
+        identity = run_identity(run_id=self._context.run_id, attempt=self._attempt)
+        with stage_span(SPAN_CHANGE_INTELLIGENCE, identity) as span:
+            return self._seed_static_manifest(agent, path, span)
+
+    def _seed_static_manifest(self, agent: AgentId, path: Path, span: StageSpan) -> StageResult:
         started = perf_counter()
         try:
             document = path.read_text(encoding="utf-8")
@@ -659,10 +885,12 @@ class Orchestrator:
                 duration_ms=(perf_counter() - started) * 1000.0,
                 detail="the static manifest could not be read",
             )
+            span.outcome("unreadable_manifest", ok=False)
             return self._fail(agent, f"{path} could not be read: {exc}")
 
         refused = self._screen_intake(agent, source=path, text=document)
         if refused is not None:
+            span.outcome(str(self._state).lower(), ok=False)
             return refused
 
         started = perf_counter()
@@ -678,6 +906,7 @@ class Orchestrator:
                 duration_ms=(perf_counter() - started) * 1000.0,
                 detail="the static manifest did not validate",
             )
+            span.outcome("invalid_manifest", ok=False)
             return self._fail(agent, f"{path} is not a ChangeManifest: {exc}")
 
         self._context.record(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE], agent, manifest)
@@ -695,6 +924,8 @@ class Orchestrator:
             detail="static ChangeManifest; the Change Intelligence agent did not run",
         )
         self._advance(RunState.NORMALIZED)
+        span.set(ATTR_CHANGE_ID, manifest.change_id)
+        span.outcome(str(self._state).lower(), ok=True)
         return self._stage(agent, None, manifest, f"manifest seeded from {path.name}")
 
     def _notice_path(self, change_id: str) -> Path | None:
@@ -719,30 +950,41 @@ class Orchestrator:
         `packages.repo_scan` never saw.
         """
         agent = AgentId.IMPACT
-        manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
-        if not isinstance(manifest, ChangeManifest):
-            self._advance(RunState.FAILED)
-            return self._stage(agent, None, None, "the run has no ChangeManifest to scan for")
+        identity = self._identity(
+            slice_, base_sha=base_sha, model_id="" if deterministic else REASONING_MODEL
+        )
+        with stage_span(SPAN_IMPACT, identity) as span:
+            manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
+            if not isinstance(manifest, ChangeManifest):
+                self._advance(RunState.FAILED)
+                span.outcome("no_manifest", ok=False)
+                return self._stage(agent, None, None, "the run has no ChangeManifest to scan for")
 
-        self._advance(RunState.IMPACT_SCANNING)
-        turn: TurnResult | None = None
-        if deterministic:
-            self._impact_deterministically(manifest, slice_, base_sha=base_sha)
-        else:
-            prompt = self._impact_prompt(manifest, slice_, base_sha)
-            turn = await run_turn(
-                self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
-            )
+            self._advance(RunState.IMPACT_SCANNING)
+            turn: TurnResult | None = None
+            if deterministic:
+                self._impact_deterministically(manifest, slice_, base_sha=base_sha)
+            else:
+                prompt = self._impact_prompt(manifest, slice_, base_sha)
+                turn = await run_turn(
+                    self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
+                )
+            self._served_model(span, turn)
 
-        report = self._context.output(STAGE_CONTRACTS[agent])
-        if not isinstance(report, ImpactReport):
-            return self._fail(agent, "no ImpactReport was recorded", turn)
-        if not report.affected:
-            self._advance(RunState.UNAFFECTED)
-            return self._stage(agent, turn, report, "the workspace uses none of the retired IDs")
+            report = self._context.output(STAGE_CONTRACTS[agent])
+            if not isinstance(report, ImpactReport):
+                span.outcome("no_report", ok=False)
+                return self._fail(agent, "no ImpactReport was recorded", turn)
+            if not report.affected:
+                self._advance(RunState.UNAFFECTED)
+                span.outcome(str(self._state).lower(), ok=True)
+                return self._stage(
+                    agent, turn, report, "the workspace uses none of the retired IDs"
+                )
 
-        self._advance(RunState.POLICY_EVALUATION)
-        return self._stage(agent, turn, report, f"{len(report.findings)} findings")
+            self._advance(RunState.POLICY_EVALUATION)
+            span.outcome(str(self._state).lower(), ok=True)
+            return self._stage(agent, turn, report, f"{len(report.findings)} findings")
 
     def _impact_prompt(self, manifest: ChangeManifest, slice_: VerticalSlice, base_sha: str) -> str:
         identifiers = ", ".join(manifest.affected_identifiers)
@@ -750,7 +992,8 @@ class Orchestrator:
             f"Provider change {manifest.change_id!r} retires these identifiers: {identifiers}. "
             f"Scan the workspace for them, then record the ImpactReport for repository "
             f"{slice_.repo!r} at base_sha {base_sha!r}. The checks a patch must pass are "
-            f"{_check_names(slice_) or 'a live provider resolve of the replacement'}."
+            f"{_check_names(slice_) or 'a live provider resolve of the replacement'}.\n\n"
+            f"{self.memory_context(AgentId.IMPACT)}"
         )
 
     def _impact_deterministically(
@@ -790,28 +1033,37 @@ class Orchestrator:
         denied a path, HUMAN_REQUIRED when evidence or risk needs a person.
         """
         agent = AgentId.POLICY
-        report = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
-        if not isinstance(report, ImpactReport):
-            return self._fail(agent, "the run has no ImpactReport to evaluate")
+        # No model id on this span: §8.3 makes policy Python, and a trace that
+        # named a model here would misdescribe who decided.
+        with stage_span(SPAN_POLICY, self._identity(slice_)) as span:
+            report = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
+            if not isinstance(report, ImpactReport):
+                span.outcome("no_report", ok=False)
+                return self._fail(agent, "the run has no ImpactReport to evaluate")
 
-        proposed = sorted({finding.file for finding in report.findings})
-        # §8.3: policy is Python, not an LlmAgent. The flag is kept so callers
-        # do not change; both paths hit the same gate.
-        turn: TurnResult | None = None
-        self._policy_deterministically(report, slice_, proposed)
+            proposed = sorted({finding.file for finding in report.findings})
+            # The flag is kept so callers do not change; both paths hit the
+            # same gate.
+            turn: TurnResult | None = None
+            self._policy_deterministically(report, slice_, proposed)
 
-        decision = self._context.output(STAGE_CONTRACTS[agent])
-        if not isinstance(decision, PolicyDecision):
-            return self._fail(agent, "no PolicyDecision was recorded", turn)
-        if str(decision.outcome) == "blocked":
-            self._advance(RunState.BLOCKED)
+            decision = self._context.output(STAGE_CONTRACTS[agent])
+            if not isinstance(decision, PolicyDecision):
+                span.outcome("no_decision", ok=False)
+                return self._fail(agent, "no PolicyDecision was recorded", turn)
+            span.set(ATTR_POLICY_OUTCOME, str(decision.outcome))
+            if str(decision.outcome) == "blocked":
+                self._advance(RunState.BLOCKED)
+                span.outcome(str(self._state).lower(), ok=False)
+                return self._stage(agent, turn, decision, decision.reason)
+            if not decision.auto_patch or decision.human_review_required:
+                self._advance(RunState.HUMAN_REQUIRED)
+                span.outcome(str(self._state).lower(), ok=False)
+                return self._stage(agent, turn, decision, decision.reason)
+
+            self._advance(RunState.PATCHING)
+            span.outcome(str(self._state).lower(), ok=True)
             return self._stage(agent, turn, decision, decision.reason)
-        if not decision.auto_patch or decision.human_review_required:
-            self._advance(RunState.HUMAN_REQUIRED)
-            return self._stage(agent, turn, decision, decision.reason)
-
-        self._advance(RunState.PATCHING)
-        return self._stage(agent, turn, decision, decision.reason)
 
     def _policy_deterministically(
         self, report: ImpactReport, slice_: VerticalSlice, proposed: list[str]
@@ -853,6 +1105,31 @@ class Orchestrator:
         checks still run — skipping the whole stage would jump PATCHING to
         VERIFYING, which the machine forbids.
         """
+        identity = self._identity(
+            slice_,
+            base_sha=base_sha,
+            model_id="" if deterministic or skip_turn else REASONING_MODEL,
+        )
+        with stage_span(SPAN_PATCH, identity) as span:
+            stage = await self._run_patch(
+                slice_,
+                span,
+                base_sha=base_sha,
+                deterministic=deterministic,
+                skip_turn=skip_turn,
+            )
+            span.outcome(str(self._state).lower(), ok=self._state is not RunState.FAILED)
+            return stage
+
+    async def _run_patch(
+        self,
+        slice_: VerticalSlice,
+        span: StageSpan,
+        *,
+        base_sha: str,
+        deterministic: bool,
+        skip_turn: bool,
+    ) -> StageResult:
         agent = AgentId.PATCH
         manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
         report = self._context.output(STAGE_CONTRACTS[AgentId.IMPACT])
@@ -890,6 +1167,7 @@ class Orchestrator:
             if self._context.waiting_on_operator or (turn is not None and turn.paused):
                 return self._park_for_operator(agent, turn)
 
+        self._served_model(span, turn)
         # A one-line identifier rebind is mechanical and named by the manifest.
         # Land it when the model (or a resumed tree) left the identifier retired.
         source = self._read_entrypoint(slice_)
@@ -913,29 +1191,37 @@ class Orchestrator:
                 turn,
             )
 
-        build = self._run_repo_check(agent, slice_.build_command)
-        if is_refusal(build) or int(build.get("exit_code", 1)) != 0:
-            return self._fail(
-                agent,
-                f"{slice_.build_command} did not exit 0"
-                if slice_.build_command
-                else "the repository check did not exit 0",
-                turn,
-            )
-        self._last_build = build
-        self._advance(RunState.BUILDING)
+        # The pinned checks are the orchestrator's own evidence and they execute
+        # inside the isolated workspace, so they get the sandbox span rather
+        # than the Patch agent's: what is timed here is generated code running
+        # under containment, not a model reasoning.
+        with stage_span(SPAN_SANDBOX, self._identity(slice_, base_sha=base_sha)) as sandbox:
+            build = self._run_repo_check(agent, slice_.build_command)
+            if is_refusal(build) or int(build.get("exit_code", 1)) != 0:
+                sandbox.outcome("build_failed", ok=False)
+                return self._fail(
+                    agent,
+                    f"{slice_.build_command} did not exit 0"
+                    if slice_.build_command
+                    else "the repository check did not exit 0",
+                    turn,
+                )
+            self._last_build = build
+            self._advance(RunState.BUILDING)
 
-        tests = self._run_repo_check(agent, slice_.test_command)
-        if is_refusal(tests) or int(tests.get("exit_code", 1)) != 0:
-            return self._fail(
-                agent,
-                f"{slice_.test_command} did not exit 0"
-                if slice_.test_command
-                else "the repository tests did not exit 0",
-                turn,
-            )
-        self._last_tests = tests
-        self._advance(RunState.TESTING)
+            tests = self._run_repo_check(agent, slice_.test_command)
+            if is_refusal(tests) or int(tests.get("exit_code", 1)) != 0:
+                sandbox.outcome("tests_failed", ok=False)
+                return self._fail(
+                    agent,
+                    f"{slice_.test_command} did not exit 0"
+                    if slice_.test_command
+                    else "the repository tests did not exit 0",
+                    turn,
+                )
+            self._last_tests = tests
+            self._advance(RunState.TESTING)
+            sandbox.outcome(str(self._state).lower(), ok=True)
 
         plan = self._context.output(STAGE_CONTRACTS[agent])
         return self._stage(
@@ -997,7 +1283,8 @@ class Orchestrator:
             "call request_runtime_credentials and stop — do not invent a key and do "
             "not record that you cannot test. Then "
             f"{proof}, and record_patch_plan with what you changed. Do "
-            "not edit any file outside the ones listed above."
+            "not edit any file outside the ones listed above.\n\n"
+            f"{self.memory_context(AgentId.PATCH)}"
         )
 
     def _patch_deterministically(
@@ -1208,6 +1495,19 @@ class Orchestrator:
         self, slice_: VerticalSlice, *, deterministic: bool = False
     ) -> StageResult:
         """Grade orchestrator evidence. Blind to the Patch turn's transcript."""
+        identity = self._identity(slice_, model_id="" if deterministic else REASONING_MODEL)
+        with stage_span(SPAN_VERIFICATION, identity) as span:
+            stage = await self._run_verification(slice_, span, deterministic=deterministic)
+            verdict = getattr(stage.output, "verdict", None)
+            span.outcome(
+                str(verdict).lower() if verdict is not None else str(self._state).lower(),
+                ok=str(verdict or "").lower() == "pass",
+            )
+            return stage
+
+    async def _run_verification(
+        self, slice_: VerticalSlice, span: StageSpan, *, deterministic: bool
+    ) -> StageResult:
         agent = AgentId.VERIFICATION
         manifest = self._context.output(STAGE_CONTRACTS[AgentId.CHANGE_INTELLIGENCE])
         if not isinstance(manifest, ChangeManifest):
@@ -1239,6 +1539,7 @@ class Orchestrator:
             turn = await run_turn(
                 self.agent(agent), prompt, trace=self._trace, session_service=self._sessions()
             )
+            self._served_model(span, turn)
             if self._context.waiting_on_operator or (turn is not None and turn.paused):
                 return self._park_for_operator(agent, turn)
 
@@ -1345,6 +1646,12 @@ class Orchestrator:
 
     async def run_pr(self, slice_: VerticalSlice) -> StageResult:
         """Open a PR only after VerificationReport.verdict == PASS."""
+        with stage_span(SPAN_PULL_REQUEST, self._identity(slice_)) as span:
+            stage = await self._run_pr(slice_)
+            span.outcome(str(self._state).lower(), ok=self._state is RunState.PR_CREATED)
+            return stage
+
+    async def _run_pr(self, slice_: VerticalSlice) -> StageResult:
         agent = AgentId.PR
         report = self._context.output(STAGE_CONTRACTS[AgentId.VERIFICATION])
         if not isinstance(report, VerificationReport) or not report.permits_pull_request:
@@ -1440,7 +1747,38 @@ class Orchestrator:
         still starts from a real scan.
         `skip_patch` is the operator-resume path: the working tree already
         holds the rewrite, so the model must not start a second patch loop.
+
+        The run span opened here is the parent every stage span hangs from, so
+        one remediation reaches the trace backend as one trace rather than as
+        seven unrelated roots. Institutional memory is recalled inside it and
+        this run's outcome is written back on the way out, whatever the ending —
+        a run that was blocked or needed a human is the one most worth recalling.
         """
+        with stage_span(SPAN_RUN, self._identity(slice_, base_sha=base_sha)) as span:
+            try:
+                result = await self._vertical_slice(
+                    slice_,
+                    base_sha=base_sha,
+                    deterministic=deterministic,
+                    setup_deterministic=setup_deterministic,
+                    static_manifest=static_manifest,
+                    skip_patch=skip_patch,
+                )
+            finally:
+                self._remember_outcome(slice_)
+            span.outcome(str(result.state).lower(), ok=result.state is not RunState.FAILED)
+            return result
+
+    async def _vertical_slice(
+        self,
+        slice_: VerticalSlice,
+        *,
+        base_sha: str,
+        deterministic: bool | None,
+        setup_deterministic: bool,
+        static_manifest: Path | None,
+        skip_patch: bool,
+    ) -> SliceResult:
         if deterministic is None:
             deterministic = os.environ.get(DETERMINISTIC_ENV_VAR) == "1"
         setup = deterministic or setup_deterministic
@@ -1454,6 +1792,11 @@ class Orchestrator:
         )
         if not keep(seeded):
             return result
+        # After the manifest, because the manifest is the first thing that says
+        # what this run is about, and the similarity query is what makes recall
+        # find the earlier attempt at the same migration rather than the most
+        # recent one.
+        self.recall_memory(slice_)
         if not keep(await self.run_impact(slice_, base_sha=base_sha, deterministic=setup)):
             return result
         if not keep(await self.run_policy(slice_, deterministic=setup)):

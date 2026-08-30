@@ -342,16 +342,19 @@ async def _run(
                 live_credentials=await _live_credentials(pool, row.project_id),
                 agent_hold=resume.hold,
             )
-            orchestrator = Orchestrator(context, trace, journal)
-
             async with pool.acquire() as connection:
-                attempt_id, _number = await remediation.begin_attempt(
+                attempt_id, attempt_number = await remediation.begin_attempt(
                     connection,
                     row.run_id,
                     patch_agent="patch",
                     prompt_version=slice_.skill_id,
                     sandbox_ref=f"{kind}:{getattr(session, 'name', row.run_id)}",
                 )
+
+            # Opened before the orchestrator so the trace can say which try at
+            # this run it is recording. Two executions of one run are otherwise
+            # indistinguishable in the backend.
+            orchestrator = Orchestrator(context, trace, journal, attempt=attempt_number)
 
             # Impact and policy stay deterministic: whether a repository is
             # affected, and which files, is the scanner's answer, and a status
