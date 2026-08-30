@@ -474,12 +474,72 @@ def reset(dsn: str) -> None:
         psql(dsn, statement)
 
 
+def reset_github(repository: str, change: str) -> None:
+    """Close the run's pull request and delete its branch, so the next pass opens one.
+
+    Clearing Postgres alone leaves GitHub holding the branch, and PatchAPI is
+    deliberately idempotent per change: the next run finds the open pull request
+    and pushes another commit onto it. That is correct product behaviour — one
+    change is one pull request — but it means a repeated pass stops exercising
+    the path that *creates* one. Three green passes measured that way prove
+    reconciliation three times and creation once.
+
+    Off by default. This is the only thing here that writes to GitHub, and
+    closing someone's pull request is not a side effect a test should have unless
+    it was asked for. Closing rather than merging, because nothing in this
+    product merges.
+    """
+    branch = f"patchapi/{change}"
+    numbers = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            repository,
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--json",
+            "number",
+            "--jq",
+            ".[].number",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for number in numbers.stdout.split():
+        subprocess.run(
+            ["gh", "pr", "close", number, "--repo", repository, "--delete-branch"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        print(f"    closed pull request #{number} and deleted {branch}", flush=True)
+    # The branch outlives a pull request that was closed without it, and an
+    # orphan branch is enough to make the next run reconcile instead of create.
+    subprocess.run(
+        ["gh", "api", "-X", "DELETE", f"repos/{repository}/git/refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api", default=os.environ.get("PATCHAPI_API_URL", DEFAULT_API))
     parser.add_argument("--change", default=DEFAULT_CHANGE)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--no-reset", action="store_true")
+    parser.add_argument(
+        "--fresh-pr",
+        action="store_true",
+        help="close the change's pull request and delete its branch before each pass, "
+        "so every pass proves pull request creation rather than reconciliation",
+    )
     args = parser.parse_args()
 
     from packages.state.session import issue
@@ -503,6 +563,8 @@ def main() -> int:
         print(f"pass {pass_number} of {args.repeat}", flush=True)
         if not args.no_reset:
             reset(dsn)
+            if args.fresh_pr and repository:
+                reset_github(repository, args.change)
         opened = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         memories_before = memory_recollections(repository)
         try:
