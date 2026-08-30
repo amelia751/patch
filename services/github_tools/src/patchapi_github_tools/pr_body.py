@@ -156,7 +156,10 @@ def render_pull_request_body(
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     filled = (
         template.replace("{{lead}}", _human_why(evidence))
-        .replace("{{changes}}", "\n\n".join(item.strip() for item in evidence.migration) or "_None recorded._")
+        .replace(
+            "{{changes}}",
+            "\n\n".join(item.strip() for item in evidence.migration) or "_None recorded._",
+        )
         .replace("{{files}}", _files_table(evidence))
         .replace("{{checks}}", _checks_table(evidence.verification))
         .replace("{{evidence}}", _evidence_block(evidence, base_sha=base_sha, run_id=run_id))
