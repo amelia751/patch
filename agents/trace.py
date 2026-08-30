@@ -101,6 +101,17 @@ def summarise(value: Any) -> str:
     return collapsed[: _MAX_SUMMARY_CHARS - 1] + "…"
 
 
+def _reason_code(result: Any) -> str:
+    """The `ReasonCode` a refusal states, or empty for anything else.
+
+    Read structurally rather than imported, so this module keeps its one
+    dependency and a tool result that is not a refusal is simply not one.
+    """
+    if isinstance(result, Mapping) and result.get("status") == "refused":
+        return str(result.get("reason_code") or "")
+    return ""
+
+
 def _argument_view(arguments: Mapping[str, Any]) -> dict[str, str]:
     """Argument names mapped to a bounded description of each value."""
     view: dict[str, str] = {}
@@ -128,6 +139,11 @@ class ToolTraceEvent:
     result_summary: str
     fleet_version: str = FLEET_VERSION
     detail: str | None = None
+    # The refusal's own vocabulary, kept because `status` cannot tell a control
+    # saying no from a tool that had no answer: `read_file` returning NOT_FOUND
+    # and `run_command` returning POLICY_DENIED are both REFUSED. The audit log
+    # records the second and not the first, and this is what separates them.
+    reason_code: str = ""
 
     def to_record(self) -> dict[str, Any]:
         """A flat, JSON-safe record. What gets persisted and streamed."""
@@ -214,9 +230,16 @@ class ToolTrace:
         result: Any,
         duration_ms: float,
         detail: str | None = None,
+        reason_code: str = "",
         now: datetime | None = None,
     ) -> ToolTraceEvent:
-        """Append one call and return the event that was stored."""
+        """Append one call and return the event that was stored.
+
+        `reason_code` is read off the result for every tool that returns the
+        standard refusal shape, so a new refusal site carries its code without
+        knowing this exists. It is passed explicitly only by callers whose
+        result is not that shape.
+        """
         moment = now or datetime.now(UTC)
         event = ToolTraceEvent(
             sequence=len(self.events) + 1,
@@ -230,6 +253,7 @@ class ToolTrace:
             result_digest=digest(result),
             result_summary=summarise(result),
             detail=detail,
+            reason_code=reason_code or _reason_code(result),
         )
         self.events.append(event)
         self.emit(event.render())

@@ -550,6 +550,10 @@ class Orchestrator:
             result=screening.to_audit_record(),
             duration_ms=(perf_counter() - started) * 1000.0,
             detail=f"screened by {', '.join(screening.screened_by)}{degraded}",
+            # Every rule that can block here is an injection rule, including the
+            # oversized-document one and Model Armor's: the gate reads untrusted
+            # text and has nothing else to refuse it for.
+            reason_code="" if screening.allowed else str(ReasonCode.INJECTION_DETECTED),
         )
         gate = current_stage_span()
         if screening.allowed:

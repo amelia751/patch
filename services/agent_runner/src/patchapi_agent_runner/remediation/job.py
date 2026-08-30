@@ -42,6 +42,7 @@ from agents import live_check
 from agents.adk import session_hold_reason
 from agents.command_allowlist import CommandNotAllowedError, match_command
 from agents.context import RunContext
+from agents.denials import denials_for_run
 from agents.journal import RunJournal
 from agents.orchestrator import Orchestrator, VerticalSlice
 from agents.tools.credentials import RuntimeCredentialsInventory
@@ -93,7 +94,7 @@ MAX_ARTIFACT_CHARS: Final[int] = 20_000
 _RUN_SQL: Final[str] = """
 SELECT
     r.id, r.state::text AS state, r.repository, r.base_sha, r.project_id,
-    r.change_event_id, r.attempt_budget,
+    r.change_event_id, r.attempt_budget, r.trace_id,
     ce.external_id, ce.affected_identifiers
 FROM remediation_runs r
 JOIN change_events ce ON ce.id = r.change_event_id
@@ -123,6 +124,7 @@ class RunRow:
     change_event_id: UUID
     external_id: str
     identifiers: list[str]
+    trace_id: str = ""
 
 
 async def _load(connection: asyncpg.Connection, run_id: str) -> RunRow | None:
@@ -138,6 +140,7 @@ async def _load(connection: asyncpg.Connection, run_id: str) -> RunRow | None:
         change_event_id=row["change_event_id"],
         external_id=row["external_id"],
         identifiers=list(row["affected_identifiers"] or []),
+        trace_id=str(row["trace_id"] or ""),
     )
 
 
@@ -371,6 +374,7 @@ async def _run(
             await _persist(
                 pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline
             )
+            await _audit_denials(pool, row, trace, context)
             await _remember_hold(pool, row, result, recorder)
             log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
             if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
@@ -428,6 +432,41 @@ class ResumeState:
             # again, and saying otherwise would make the next hold look broken.
             supplied = "No new credential is visible to this project yet."
         return supplied
+
+
+async def _audit_denials(
+    pool: asyncpg.Pool, row: RunRow, trace: ToolTrace, context: RunContext
+) -> None:
+    """Mirror what this run was refused into the cross-run audit log.
+
+    The one place denials are written. They are derived from the run's own record
+    — the refused tool calls in its trace and the verdict policy reached — so no
+    gate has to remember to report itself, and the worklog and the audit log
+    cannot disagree about what happened.
+
+    Guarded end to end, and run after the run's own state is already written. A
+    run that succeeded must not become a run that failed because an audit insert
+    did, and a run that was blocked was blocked whether or not this row lands.
+    What a failure here costs is the cross-run view, not the run and not the
+    refusals themselves, which stay in the worklog.
+    """
+    try:
+        denials = denials_for_run(trace.events, context.output("policy_decision"))
+        if not denials:
+            return
+        async with pool.acquire() as connection:
+            written = await remediation.audit_denials(
+                connection,
+                denials,
+                run_id=row.run_id,
+                project_id=row.project_id,
+                repository=row.repository,
+                trace_id=row.trace_id,
+            )
+    except Exception as exc:
+        log.warning("run %s could not audit what it refused: %s", row.run_id, exc)
+        return
+    log.info("run %s audited %d of %d denials", row.run_id, written, len(denials))
 
 
 async def _remember_hold(pool: asyncpg.Pool, row: RunRow, result: Any, recorder: Any) -> None:
