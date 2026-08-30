@@ -1,14 +1,14 @@
-"""Auditing what a run refused must not be able to fail the run.
+"""Auditing what a run refused or opened must not be able to fail the run.
 
 The audit log is a record of work already done. A remediation that reached a
 pull request has reached one, and a remediation that was blocked was blocked,
-whether or not the row describing that lands. So this write is the one place in
-the job that swallows its own failure: the alternative is a green run turning red
-because a bookkeeping insert timed out, which trades a real outcome for a note
-about it.
+whether or not the row describing that lands. So these writes are the one place
+in the job that swallows its own failure: the alternative is a green run turning
+red because a bookkeeping insert timed out, which trades a real outcome for a
+note about it.
 
-The refusals are not lost when this fails — they are in the run's worklog, which
-is written as the run happens. What is lost is the cross-run view, and the
+Neither the refusals nor the pull request are lost when this fails — they are in
+the run's worklog and on GitHub. What is lost is the cross-run view, and the
 warning says so.
 """
 
@@ -81,6 +81,29 @@ def _context() -> RunContext:
     return RunContext(run_id="run-audit", repo_root=Path.cwd(), feed_dir=Path.cwd())
 
 
+class _Stage:
+    def __init__(self, output: Any) -> None:
+        self.output = output
+
+
+class _Result:
+    def __init__(self, *stages: Any) -> None:
+        self.stages = list(stages)
+
+
+def _opened() -> Any:
+    return _Result(
+        _Stage(
+            {
+                "result": {
+                    "number": 7,
+                    "html_url": "https://github.com/amelia751/egaki/pull/7",
+                }
+            }
+        )
+    )
+
+
 @pytest.mark.asyncio
 async def test_a_database_that_is_gone_does_not_fail_the_remediation() -> None:
     pool = _Pool(broken=True)
@@ -134,3 +157,61 @@ async def test_the_denials_written_are_the_ones_the_run_produced(
     assert seen["project_id"] == row.project_id
     assert seen["repository"] == row.repository
     assert seen["trace_id"] == row.trace_id
+
+
+@pytest.mark.asyncio
+async def test_a_missing_column_does_not_fail_a_run_that_opened_its_pull_request(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shape of the outage this guard exists for: images deployed ahead of the
+    # migration adding the column their INSERT names.
+    async def refuse(*_args: object, **_kwargs: object) -> bool:
+        raise RuntimeError('column "dedupe_key" of relation "audit_events" does not exist')
+
+    monkeypatch.setattr(job.remediation, "audit", refuse)
+    row = _row()
+
+    with caplog.at_level("WARNING"):
+        await job._audit_pull_request(_Pool(), row, _opened())
+
+    assert any(row.run_id in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_a_database_that_is_gone_does_not_fail_an_opened_pull_request() -> None:
+    pool = _Pool(broken=True)
+
+    await job._audit_pull_request(pool, _row(), _opened())
+
+    assert pool.acquired == 1
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_opened_nothing_does_not_touch_the_database() -> None:
+    pool = _Pool()
+
+    await job._audit_pull_request(pool, _row(), _Result())
+
+    assert pool.acquired == 0
+
+
+@pytest.mark.asyncio
+async def test_the_audited_pull_request_is_the_one_the_run_opened(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    async def capture(_connection: object, **kwargs: Any) -> bool:
+        seen.update(kwargs)
+        return True
+
+    monkeypatch.setattr(job.remediation, "audit", capture)
+    row = _row()
+
+    await job._audit_pull_request(_Pool(), row, _opened())
+
+    assert seen["action"] == "open_pull_request"
+    assert seen["outcome"] == "SUCCEEDED"
+    assert seen["target"] == f"{row.repository}#7"
+    assert seen["run_id"] == row.run_id
+    assert seen["project_id"] == row.project_id

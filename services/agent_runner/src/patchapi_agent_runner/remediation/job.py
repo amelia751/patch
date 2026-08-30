@@ -375,6 +375,7 @@ async def _run(
                 pool, row, slice_, context, result, source, session, attempt_id, baseline=baseline
             )
             await _audit_denials(pool, row, trace, context)
+            await _audit_pull_request(pool, row, result)
             await _remember_hold(pool, row, result, recorder)
             log.info("run %s ended %s: %s", row.run_id, result.state, result.detail)
             if result.state in {RunState.PR_CREATED, RunState.WAITING_ON_OPERATOR}:
@@ -467,6 +468,38 @@ async def _audit_denials(
         log.warning("run %s could not audit what it refused: %s", row.run_id, exc)
         return
     log.info("run %s audited %d of %d denials", row.run_id, written, len(denials))
+
+
+async def _audit_pull_request(pool: asyncpg.Pool, row: RunRow, result: Any) -> None:
+    """Mirror an opened pull request into the cross-run audit log.
+
+    Guarded and separate for the reason `_audit_denials` is, and it was not: this
+    write is what the run does on its way out, after the pull request already
+    exists on GitHub. Unguarded and sharing the pull request's own connection, a
+    column the deployed image expected and the database did not have ended a run
+    that had finished its work, and the console showed PR_CREATED with no URL.
+
+    Failure costs the cross-run view, not the pull request, so it is logged
+    rather than raised — and logged rather than dropped, because an audit log
+    missing an event it should hold is not one an auditor can rely on.
+    """
+    opened = _pull_request(result)
+    if not opened:
+        return
+    try:
+        async with pool.acquire() as connection:
+            await remediation.audit(
+                connection,
+                actor="patchapi.pr",
+                action="open_pull_request",
+                outcome="SUCCEEDED",
+                target=f"{row.repository}#{opened.get('number', '')}",
+                run_id=row.run_id,
+                project_id=row.project_id,
+                repository=row.repository,
+            )
+    except Exception as exc:
+        log.warning("run %s opened a pull request it could not audit: %s", row.run_id, exc)
 
 
 async def _remember_hold(pool: asyncpg.Pool, row: RunRow, result: Any, recorder: Any) -> None:
@@ -875,16 +908,6 @@ async def _persist(
                 head_branch=f"patchapi/{slice_.change_id}",
                 base_branch="main",
                 head_sha=str(opened.get("head_sha") or ""),
-            )
-            await remediation.audit(
-                connection,
-                actor="patchapi.pr",
-                action="open_pull_request",
-                outcome="SUCCEEDED",
-                target=f"{row.repository}#{opened.get('number', '')}",
-                run_id=row.run_id,
-                project_id=row.project_id,
-                repository=row.repository,
             )
 
 
