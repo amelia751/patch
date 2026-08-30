@@ -37,6 +37,18 @@ env:
   # lane falls back to a local file when this is unset, which is why an empty
   # value degrades a deploy quietly instead of failing it.
   MEMORY_BANK_ENGINE: "6770363244553961472"
+  # Model Armor's template screen on untrusted provider text. Off by default in
+  # code so a checkout with ambient Google credentials cannot bill an external
+  # call from the unit suite, which means a hosted run screened with the
+  # deterministic rules alone and reported Armor as `not_consulted` — a control
+  # described as configured that never executed. The project floor settings are a
+  # separate layer and were already inspecting Vertex calls inline.
+  #
+  # Defence in depth only. Armor's Vertex integration fails open, so it runs
+  # after the deterministic gate has already allowed and can add a refusal but
+  # never withdraw one; a verdict that does not arrive marks the screening
+  # degraded rather than failing the run.
+  MODEL_ARMOR_ENABLED: "1"
   # The poll behind both Cloud Scheduler and the console's "Check now" button.
   REFRESH_JOB: patchapi-refresh-releases
   # One remediation, started by the console's "Start remediation" button. A job
@@ -390,7 +402,7 @@ jobs:
             --concurrency=1 \
             --min-instances=0 \
             --max-instances=2 \
-            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|GCP_VERTEX_LOCATION=global|PATCHAPI_ENV=cloud|PATCHAPI_REPO_ROOT=/app|PATCHAPI_FEED_DIR=/app/demo/fixtures|PATCHAPI_MEMORY_BANK_ENGINE=${MEMORY_BANK_ENGINE}|PATCHAPI_MEMORY_BANK_LOCATION=${REGION}" \
+            --set-env-vars="^|^GCP_PROJECT=${PROJECT_ID}|GCP_VERTEX_LOCATION=global|PATCHAPI_ENV=cloud|PATCHAPI_REPO_ROOT=/app|PATCHAPI_FEED_DIR=/app/demo/fixtures|PATCHAPI_MEMORY_BANK_ENGINE=${MEMORY_BANK_ENGINE}|PATCHAPI_MEMORY_BANK_LOCATION=${REGION}|PATCHAPI_MODEL_ARMOR_ENABLED=${MODEL_ARMOR_ENABLED}" \
             --add-cloudsql-instances=patch-505223:us-central1:patchapi-console \
             --set-secrets="DATABASE_URL=patchapi-database-url:latest,GOOGLE_API_KEY=patchapi-gemini-api-key:latest"
           AGENTS_URL="$(gcloud run services describe "${AGENTS_SERVICE}" \
@@ -419,7 +431,7 @@ jobs:
               --project="${PROJECT_ID}" \
               --region="${REGION}" \
               --image="${IMAGE}" \
-              --update-env-vars="^|^PATCHAPI_MEMORY_BANK_ENGINE=${MEMORY_BANK_ENGINE}|PATCHAPI_MEMORY_BANK_LOCATION=${REGION}"
+              --update-env-vars="^|^PATCHAPI_MEMORY_BANK_ENGINE=${MEMORY_BANK_ENGINE}|PATCHAPI_MEMORY_BANK_LOCATION=${REGION}|PATCHAPI_MODEL_ARMOR_ENABLED=${MODEL_ARMOR_ENABLED}"
             # Reasserted rather than left to the one-time bootstrap. Without it
             # the console's Start remediation answers 403 from Cloud Run, which
             # reads to an operator as the product being broken. The role is the
@@ -451,7 +463,7 @@ jobs:
               --region="${REGION}" \
               --image="${IMAGE}" \
               --scaling="${REMEDIATION_WORKER_INSTANCES}" \
-              --update-env-vars="^|^PATCHAPI_MEMORY_BANK_ENGINE=${MEMORY_BANK_ENGINE}|PATCHAPI_MEMORY_BANK_LOCATION=${REGION}" \
+              --update-env-vars="^|^PATCHAPI_MEMORY_BANK_ENGINE=${MEMORY_BANK_ENGINE}|PATCHAPI_MEMORY_BANK_LOCATION=${REGION}|PATCHAPI_MODEL_ARMOR_ENABLED=${MODEL_ARMOR_ENABLED}" \
               --quiet
           elif printf '%s' "${reason}" | grep -qiE 'NOT_FOUND|could not be found|does not exist'; then
             echo "worker pool ${REMEDIATION_WORKER_POOL} does not exist yet;" \
