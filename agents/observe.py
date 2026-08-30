@@ -43,6 +43,11 @@ from packages.observability.config import (
     ATTR_REPO,
     ATTR_RUN_ID,
     ATTR_TRUST,
+    EVENT_MEMORY_NOT_RECORDED,
+    EVENT_MEMORY_RECALLED,
+    EVENT_MEMORY_RECORDED,
+    EVENT_MEMORY_UNAVAILABLE,
+    SPAN_RUN,
 )
 
 log = logging.getLogger(__name__)
@@ -62,24 +67,6 @@ PINNED_ATTRIBUTES: Final[frozenset[str]] = frozenset(
         ATTR_TRUST,
     }
 )
-
-# The run-level parent the stage spans hang from. Without one, each stage is its
-# own trace root and a single remediation arrives at the backend as seven
-# unrelated traces, which is not a chain anyone can read.
-#
-# It is pinned here rather than in `packages/observability/config.py` only
-# because this is not a stage: that module names the seven stages of roadmap §8,
-# and a run is the thing that contains them. Both names should end up in one
-# registry; see the note in the change that introduced this.
-SPAN_RUN: Final[str] = "patchapi.run"
-
-# Span events, not attributes: these mark a moment inside a stage rather than
-# describing it, and they carry no payload precisely because the payload would
-# be prose. What the run could not reach, and why, goes to the log.
-EVENT_MEMORY_RECALLED: Final[str] = "patchapi.memory.recalled"
-EVENT_MEMORY_UNAVAILABLE: Final[str] = "patchapi.memory.unavailable"
-EVENT_MEMORY_RECORDED: Final[str] = "patchapi.memory.recorded"
-EVENT_MEMORY_NOT_RECORDED: Final[str] = "patchapi.memory.not_recorded"
 
 MAX_ATTRIBUTE_CHARS: Final[int] = 200
 

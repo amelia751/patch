@@ -43,6 +43,11 @@ ATTR_GCP_PROJECT: Final[str] = "gcp.project_id"
 # way out; this bounds how long shutdown waits for that.
 TRACE_FLUSH_TIMEOUT_MS: Final[int] = 10_000
 
+# The parent the stage spans hang from. Without one, a single remediation
+# arrives at the backend as seven unrelated traces, which is not a chain anyone
+# can read.
+SPAN_RUN: Final[str] = "patchapi.run"
+
 # One span per pipeline stage (roadmap §8), named so a trace reads as the run.
 SPAN_CHANGE_INTELLIGENCE: Final[str] = "patchapi.change_intelligence"
 SPAN_IMPACT: Final[str] = "patchapi.impact"
@@ -62,3 +67,12 @@ ATTR_POLICY_OUTCOME: Final[str] = "patchapi.policy_outcome"
 ATTR_TRUST: Final[str] = "patchapi.trust"
 ATTR_MODEL_ID: Final[str] = "patchapi.model_id"
 ATTR_ATTEMPT: Final[str] = "patchapi.attempt"
+
+# Span events, not attributes: each marks a moment inside a stage rather than
+# describing it, and each carries a name only. Whether institutional context was
+# available is a fact about the run worth reading off a trace; the sentence
+# explaining why it was not has spaces in it, so it goes to the log instead.
+EVENT_MEMORY_RECALLED: Final[str] = "patchapi.memory.recalled"
+EVENT_MEMORY_UNAVAILABLE: Final[str] = "patchapi.memory.unavailable"
+EVENT_MEMORY_RECORDED: Final[str] = "patchapi.memory.recorded"
+EVENT_MEMORY_NOT_RECORDED: Final[str] = "patchapi.memory.not_recorded"
