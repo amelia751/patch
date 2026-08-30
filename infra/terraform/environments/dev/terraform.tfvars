@@ -12,6 +12,11 @@ environment = "dev"
 # this project; us-central1 returns 404 for those model IDs.
 vertex_location = "global"
 
+# Created by scripts/bootstrap_cloud_run.sh. Set so its project roles — including
+# the Cloud SQL access the deploy workflow's migration gate needs — are applied
+# from configuration rather than by hand.
+deploy_service_account = "patchapi-github-deploy@patch-505223.iam.gserviceaccount.com"
+
 enable_model_armor = true
 
 enable_gke_sandbox = false

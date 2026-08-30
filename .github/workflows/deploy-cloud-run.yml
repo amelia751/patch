@@ -1,6 +1,9 @@
-# Deploy the dashboard and the wired control plane to named Cloud Run
-# services on every push to main. The service names are the URL: do not
-# rename `patchapi-web` or `patchapi-api` or the links change.
+# Apply pending migrations, then deploy the dashboard and the wired control plane
+# to named Cloud Run services on every push to main. The service names are the
+# URL: do not rename `patchapi-web` or `patchapi-api` or the links change.
+#
+# The `migrate` job gates every other job. Read its comment before adding a job
+# here or a migration under db/migrations/.
 #
 # One-time GCP bootstrap (WIF, Artifact Registry, reserved services):
 #   ./scripts/bootstrap_cloud_run.sh
@@ -73,9 +76,107 @@ env:
   WEB_URL_CLASSIC: https://patchapi-web-uhkx74fgmq-uc.a.run.app
 
 jobs:
+  # Every other job needs this one, so nothing is repointed at a new image until
+  # the schema that image expects is in place. Without this gate a commit that
+  # added a migration and the code reading it deployed the code alone, and the
+  # next remediation failed on a column that did not exist — after it had already
+  # opened its pull request.
+  #
+  # Correct only while migrations stay additive. The previous image keeps serving
+  # for the length of the rollout, so a migration that drops or renames breaks
+  # it; db/README.md states that rule where a migration gets written.
+  migrate:
+    name: schema
+    runs-on: ubuntu-latest
+    outputs:
+      # Whether the deployment has a database at all. Decided once here instead
+      # of by each job in turn, so the services that need a DSN and the services
+      # that do not can disagree about it without disagreeing about the answer.
+      ready: ${{ steps.dsn.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/913371146929/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: patchapi-github-deploy@patch-505223.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # The DSN lands in a runner-local file rather than a step output or
+      # GITHUB_ENV: it is a credential, and only the boolean derived from it is
+      # allowed to travel between jobs.
+      - name: Read the database DSN
+        id: dsn
+        run: |
+          install -d -m 700 "${RUNNER_TEMP}/db"
+          umask 077
+          gcloud secrets versions access latest \
+            --secret=patchapi-database-url \
+            --project="${PROJECT_ID}" >"${RUNNER_TEMP}/db/dsn" 2>/dev/null || true
+          if grep -q '^postgres' "${RUNNER_TEMP}/db/dsn" 2>/dev/null; then
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          else
+            rm -f "${RUNNER_TEMP}/db/dsn"
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+            echo "patchapi-database-url is not a Postgres DSN yet;" \
+                 "skipping migrations and every service that needs one."
+          fi
+
+      # Reached through the Cloud SQL Auth Proxy because the runner is not on the
+      # instance's VPC — widening the instance's own network exposure to spare a
+      # binary is not the trade. `--unix-socket /cloudsql` is the path Cloud Run
+      # mounts, which is what lets the secret be used exactly as stored: nothing
+      # here parses or rebuilds a DSN, so there is no host or port for a log line
+      # to leak or for this job to get wrong.
+      - name: Apply pending migrations
+        if: steps.dsn.outputs.ready == 'true'
+        env:
+          CLOUDSQL_INSTANCE: patch-505223:us-central1:patchapi-console
+          PROXY_VERSION: v2.15.2
+        run: |
+          socket_dir="/cloudsql/${CLOUDSQL_INSTANCE}"
+
+          # The runner image ships a psql client and the migration runner shells
+          # out to one. Installed here only for the day that stops being true.
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+
+          curl -fsSL -o /tmp/cloud-sql-proxy \
+            "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/${PROXY_VERSION}/cloud-sql-proxy.linux.amd64"
+          chmod +x /tmp/cloud-sql-proxy
+          sudo install -d -o "$(id -u)" -g "$(id -g)" /cloudsql
+
+          /tmp/cloud-sql-proxy "${CLOUDSQL_INSTANCE}" --unix-socket /cloudsql &
+          proxy=$!
+          trap 'kill "${proxy}" 2>/dev/null || true' EXIT
+          for _ in $(seq 30); do
+            if [[ -S "${socket_dir}/.s.PGSQL.5432" ]]; then break; fi
+            sleep 1
+          done
+          if [[ ! -S "${socket_dir}/.s.PGSQL.5432" ]]; then
+            echo "the Cloud SQL Auth Proxy did not open a socket at ${socket_dir}" >&2
+            exit 1
+          fi
+
+          # `patchapi-db` is standard library only, so PYTHONPATH is the entire
+          # install and a failure here cannot be dependency resolution. `migrate`
+          # applies each pending migration once and is a no-op on an unchanged
+          # tree; `status` then exits non-zero if anything is still pending, so a
+          # runner that somehow half-applied the ledger fails this job rather
+          # than letting the images past it.
+          DATABASE_URL="$(cat "${RUNNER_TEMP}/db/dsn")"
+          export DATABASE_URL
+          export PYTHONPATH=db/src
+          python3 -m patchapi_db migrate
+          python3 -m patchapi_db status
+
   web:
     name: patchapi-web
     runs-on: ubuntu-latest
+    needs: migrate
     steps:
       - uses: actions/checkout@v4
 
@@ -124,6 +225,9 @@ jobs:
   api:
     name: patchapi-api
     runs-on: ubuntu-latest
+    # No DSN means no control plane: the reserved service stays as it is.
+    needs: migrate
+    if: needs.migrate.outputs.ready == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -134,23 +238,10 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Skip until DATABASE_URL is a real DSN
-        id: db
-        run: |
-          dsn="$(gcloud secrets versions access latest --secret=patchapi-database-url 2>/dev/null || true)"
-          if printf '%s' "${dsn}" | grep -q '^postgres'; then
-            echo "ready=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "ready=false" >> "${GITHUB_OUTPUT}"
-            echo "patchapi-database-url is not a Postgres DSN yet; leaving the reserved API service in place."
-          fi
-
       - name: Auth Docker to Artifact Registry
-        if: steps.db.outputs.ready == 'true'
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push control plane
-        if: steps.db.outputs.ready == 'true'
         env:
           IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/api:${{ github.sha }}
         run: |
@@ -159,7 +250,6 @@ jobs:
           echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Deploy control plane
-        if: steps.db.outputs.ready == 'true'
         run: |
           gcloud run deploy "${API_SERVICE}" \
             --project="${PROJECT_ID}" \
@@ -183,7 +273,6 @@ jobs:
       # schema migration behind the code, which is silent until the first
       # scheduled run fails against a table the migration renamed.
       - name: Deploy release refresh job
-        if: steps.db.outputs.ready == 'true'
         run: |
           gcloud run jobs update "${REFRESH_JOB}" \
             --project="${PROJECT_ID}" \
@@ -193,6 +282,8 @@ jobs:
   indexer:
     name: patchapi-indexer
     runs-on: ubuntu-latest
+    needs: migrate
+    if: needs.migrate.outputs.ready == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -203,22 +294,10 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Skip until DATABASE_URL is a real DSN
-        id: db
-        run: |
-          dsn="$(gcloud secrets versions access latest --secret=patchapi-database-url 2>/dev/null || true)"
-          if printf '%s' "${dsn}" | grep -q '^postgres'; then
-            echo "ready=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "ready=false" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Auth Docker to Artifact Registry
-        if: steps.db.outputs.ready == 'true'
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push indexer
-        if: steps.db.outputs.ready == 'true'
         env:
           IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/indexer:${{ github.sha }}
         run: |
@@ -227,7 +306,6 @@ jobs:
           echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Deploy indexer
-        if: steps.db.outputs.ready == 'true'
         run: |
           gcloud run deploy "${INDEXER_SERVICE}" \
             --project="${PROJECT_ID}" \
@@ -264,6 +342,8 @@ jobs:
   agents:
     name: patchapi-agents
     runs-on: ubuntu-latest
+    needs: migrate
+    if: needs.migrate.outputs.ready == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -280,22 +360,10 @@ jobs:
         with:
           install_components: beta
 
-      - name: Skip until DATABASE_URL is a real DSN
-        id: db
-        run: |
-          dsn="$(gcloud secrets versions access latest --secret=patchapi-database-url 2>/dev/null || true)"
-          if printf '%s' "${dsn}" | grep -q '^postgres'; then
-            echo "ready=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "ready=false" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Auth Docker to Artifact Registry
-        if: steps.db.outputs.ready == 'true'
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push the agent lane
-        if: steps.db.outputs.ready == 'true'
         env:
           IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/agents:${{ github.sha }}
         run: |
@@ -304,7 +372,6 @@ jobs:
           echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Deploy the agent lane
-        if: steps.db.outputs.ready == 'true'
         run: |
           # A turn calls the model, the liveness check, and web search, so one
           # request is minutes rather than milliseconds: concurrency 1 and a long
@@ -345,7 +412,6 @@ jobs:
       # Repointed here so a deploy cannot leave the console starting yesterday's
       # patch loop while the services are on today's.
       - name: Repoint the remediation job
-        if: steps.db.outputs.ready == 'true'
         run: |
           if gcloud run jobs describe "${REMEDIATION_JOB}" \
                --project="${PROJECT_ID}" --region="${REGION}" >/dev/null 2>&1; then
@@ -374,7 +440,6 @@ jobs:
       # the job, and more urgently: an instance here is long-lived, so without
       # this it would keep serving the old image until something restarted it.
       - name: Repoint the remediation worker pool
-        if: steps.db.outputs.ready == 'true'
         run: |
           # Any failure other than "no such pool" fails the deploy. Treating them
           # all as absence is how a green deploy left the remediator running an
@@ -399,6 +464,8 @@ jobs:
   github-tools:
     name: patchapi-github-tools
     runs-on: ubuntu-latest
+    # Holds no DSN, but still waits: a failed migration deploys nothing.
+    needs: migrate
     steps:
       - uses: actions/checkout@v4
 

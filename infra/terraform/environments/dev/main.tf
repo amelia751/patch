@@ -143,6 +143,37 @@ module "service_accounts" {
   depends_on = [module.project_services]
 }
 
+# The GitHub Actions deploy identity. Not a member of module.service_accounts
+# above: scripts/bootstrap_cloud_run.sh creates it alongside the Workload
+# Identity Federation binding, because the deploy path has to exist before this
+# configuration can be applied from anywhere. Its project roles are declared here
+# regardless, so they survive as configuration rather than as three lines of a
+# bootstrap script somebody ran once.
+#
+# roles/cloudsql.client is what lets the deploy workflow apply pending migrations
+# before it repoints an image. A runner is not on the instance's VPC, so it
+# connects through the Cloud SQL Auth Proxy, which authenticates as this identity
+# and needs nothing opened on the instance's own network.
+#
+# google_project_iam_member adds a member and never rewrites the project policy,
+# so applying this cannot drop a grant made elsewhere. roles/aiplatform.user is
+# on this identity live and is deliberately not declared: nothing in the deploy
+# path calls Vertex.
+resource "google_project_iam_member" "deploy" {
+  for_each = var.deploy_service_account == "" ? toset([]) : toset([
+    "roles/artifactregistry.writer",
+    "roles/cloudsql.client",
+    "roles/run.admin",
+    "roles/secretmanager.secretAccessor",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${var.deploy_service_account}"
+
+  depends_on = [module.project_services]
+}
+
 # ---------------------------------------------------------------------------
 # Always-on scaffolding: free at rest, safe to apply on a clean project
 # ---------------------------------------------------------------------------

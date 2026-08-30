@@ -91,6 +91,13 @@ project_provider_subscriptions
    its ledger row in one transaction, so a failed migration leaves nothing.
 4. **No business logic in triggers.** The only database-side logic is `CHECK`
    constraints.
+5. **Additive.** Add columns, tables, and indexes; do not drop or rename what a
+   deployed image still reads. `.github/workflows/deploy-cloud-run.yml` applies
+   pending migrations *before* it repoints any service, job, or worker pool, so
+   for the length of a rollout the previous image is serving against the new
+   schema. That ordering is what stops a new image from meeting an old schema; it
+   also means a destructive migration takes the running deployment down. A
+   removal is two deploys: stop reading the column, then drop it.
 
 ## Constraints
 

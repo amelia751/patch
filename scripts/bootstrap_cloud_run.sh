@@ -103,6 +103,11 @@ API_SA="$(sa_email "$API_SA_ID")"
 bind_project_role "$DEPLOY_SA" roles/run.admin
 bind_project_role "$DEPLOY_SA" roles/artifactregistry.writer
 bind_project_role "$DEPLOY_SA" roles/secretmanager.secretAccessor
+# The deploy workflow applies pending migrations before it repoints any image,
+# and reaches Cloud SQL through the Auth Proxy because a runner is not on the
+# instance's VPC. Bound here as well as in Terraform so a clean account has a
+# working deploy path before any apply.
+bind_project_role "$DEPLOY_SA" roles/cloudsql.client
 bind_project_role "$API_SA" roles/secretmanager.secretAccessor
 # Create / rotate / delete patchapi-ps-* and patchapi-gcp-* payloads. Reveal
 # stays on secretAccessor.

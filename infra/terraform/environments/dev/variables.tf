@@ -24,6 +24,15 @@ variable "environment" {
   default     = "dev"
 }
 
+# Empty on a project where scripts/bootstrap_cloud_run.sh has not run: an IAM
+# binding naming a service account that does not exist is rejected, and a clean
+# project must stay applyable.
+variable "deploy_service_account" {
+  description = "Email of the GitHub Actions deploy identity, or empty to manage no grants for it."
+  type        = string
+  default     = ""
+}
+
 variable "enable_model_armor" {
   description = "Enable the Model Armor API for untrusted provider-input screening."
   type        = bool
