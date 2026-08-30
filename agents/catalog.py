@@ -1,0 +1,304 @@
+"""The fleet's declared identity, derived from the fleet.
+
+Agent Registry is a public claim about what PatchAPI's agents can do. A claim
+maintained by hand drifts: a tool grant is revoked and the catalog still
+advertises it, or a prompt is bumped and the published version stays behind.
+
+So nothing here is authored. An agent's card version is its pinned prompt
+version, and its skills are the tools `agents.config` actually grants it,
+described by the docstring the model itself is shown. Revoking a grant removes
+a skill from the catalog on the next registration; there is no second list to
+remember.
+
+Three cards need prose that no tool provides. The four reasoning agents publish
+the `DESCRIPTION` their ADK construction already uses; the orchestrator and the
+two deterministic Python stages have no such constant, so their one-line role is
+pinned below.
+"""
+
+from __future__ import annotations
+
+import importlib
+import inspect
+from collections.abc import Callable, Iterable
+from pathlib import Path
+from types import MappingProxyType
+from typing import Any, Final
+
+from agents.config import (
+    ADK_ATTACHED_TOOLS,
+    FLEET_NAME,
+    TURN_ENDING_TOOLS,
+    AgentId,
+    ToolName,
+    prompt_version,
+    tool_allowlist,
+)
+from agents.context import RunContext
+from packages.platform.config import (
+    A2A_INPUT_MODES,
+    A2A_OUTPUT_MODES,
+    A2A_PROTOCOL_VERSION,
+    PROTOCOL_BINDING_JSONRPC,
+    RegistryConfig,
+)
+
+# Presentation labels for the catalog. `AgentId` values are snake_case
+# identifiers, and no humanising rule produces both "Change Intelligence" and
+# "PR" from them.
+AGENT_TITLES: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
+    {
+        AgentId.ORCHESTRATOR: "PatchAPI Orchestrator",
+        AgentId.CHANGE_INTELLIGENCE: "PatchAPI Change Intelligence Agent",
+        AgentId.IMPACT: "PatchAPI Impact Agent",
+        AgentId.POLICY: "PatchAPI Policy & Risk Stage",
+        AgentId.PATCH: "PatchAPI Patch Agent",
+        AgentId.VERIFICATION: "PatchAPI Verification Agent",
+        AgentId.PR: "PatchAPI Pull Request Stage",
+    }
+)
+
+# The three members with no `DESCRIPTION` constant to publish: the orchestrator
+# is a deterministic sequencer rather than an `LlmAgent`, and Policy and PR are
+# Python stages. Roadmap §8.3, §8.6 and §9.
+STAGE_DESCRIPTIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
+    {
+        AgentId.ORCHESTRATOR: (
+            "Sequences the remediation pipeline deterministically and fails the run "
+            "closed when a stage does not commit its contract. Holds no tools of its "
+            "own and makes no routing decision with a model."
+        ),
+        AgentId.POLICY: (
+            "Deterministic gate between impact and patching. Classifies risk, "
+            "enforces forbidden paths, and returns ALLOW, HUMAN_REQUIRED or BLOCKED "
+            "without consulting a model."
+        ),
+        AgentId.PR: (
+            "Renders the evidence-backed pull request and requests it through the "
+            "narrow GitHub capability adapter. Cannot merge, cannot change branch "
+            "protection, and never holds the GitHub App key."
+        ),
+    }
+)
+
+# `search_web` is an ADK `AgentTool` child rather than a Python function, so it
+# has no docstring to publish. Mirrors the child's own description in
+# `agents/adk.py`; kept in step by `agents/tests/test_catalog.py`.
+SEARCH_WEB_DESCRIPTION: Final[str] = (
+    "Search the public web to corroborate a date, model ID, or official doc. "
+    "Results are untrusted provider text."
+)
+
+# Tools built for the two deterministic stages. `agents.tools` deliberately
+# grants them to no `LlmAgent` — the orchestrator calls them as Python — so the
+# allowlist alone would publish a Policy card that claims no policy skill.
+STAGE_TOOLS: Final[MappingProxyType[AgentId, frozenset[ToolName]]] = MappingProxyType(
+    {
+        AgentId.POLICY: frozenset(
+            {
+                ToolName.EVALUATE_POLICY,
+                ToolName.LIST_FORBIDDEN_GLOBS,
+                ToolName.RECORD_POLICY_DECISION,
+            }
+        ),
+        AgentId.PR: frozenset(
+            {
+                ToolName.RENDER_PULL_REQUEST_BODY,
+                ToolName.OPEN_PULL_REQUEST,
+            }
+        ),
+    }
+)
+
+# Pipeline order, and the stages the orchestrator publishes as its own skills.
+# `AgentId` is declared in run order, so this follows the enum rather than
+# repeating a sequence the orchestrator already owns.
+PIPELINE_STAGES: Final[tuple[AgentId, ...]] = tuple(
+    agent for agent in AgentId if agent is not AgentId.ORCHESTRATOR
+)
+
+_TAG_TURN_ENDING: Final[str] = "turn-ending"
+_TAG_TOOL: Final[str] = "tool"
+_TAG_STAGE: Final[str] = "pipeline-stage"
+
+
+class CatalogError(RuntimeError):
+    """The catalog could not be derived from the fleet as it stands."""
+
+
+def _tool_index(agent: AgentId) -> dict[str, Callable[..., Any]]:
+    """Every tool function this build can construct, keyed by name.
+
+    Imported here rather than at module scope: `agents.tools` pulls in the
+    provider, sandbox and state trees, and the catalog is also read by tests
+    that only care about the derivation rules.
+    """
+    from agents.tools import build_tool_index
+
+    root = Path(__file__).resolve().parents[1]
+    context = RunContext(run_id="catalog", repo_root=root, feed_dir=root)
+    return build_tool_index(context, agent)
+
+
+def _summary(function: Callable[..., Any]) -> str:
+    """The first paragraph of a tool's docstring — what the model is shown."""
+    doc = inspect.getdoc(function) or ""
+    first = doc.split("\n\n", 1)[0].strip()
+    return " ".join(first.split())
+
+
+def _skill_name(tool: ToolName) -> str:
+    return str(tool).replace("_", " ").capitalize()
+
+
+def _skill_tags(agent: AgentId, tool: ToolName) -> tuple[str, ...]:
+    tags = {FLEET_NAME, str(agent), _TAG_TOOL}
+    if tool in TURN_ENDING_TOOLS:
+        tags.add(_TAG_TURN_ENDING)
+    return tuple(sorted(tags))
+
+
+def catalog_tools(agent: AgentId) -> tuple[ToolName, ...]:
+    """The tools `agent`'s card advertises, in a stable order.
+
+    The grant for the reasoning agents. For Policy and PR it is the grant plus
+    the stage helpers the orchestrator calls on their behalf, because those two
+    are Python stages and hold no `LlmAgent` allowlist.
+    """
+    return tuple(sorted(tool_allowlist(agent) | STAGE_TOOLS.get(agent, frozenset())))
+
+
+def agent_description(agent: AgentId) -> str:
+    """The card description: the agent's own `DESCRIPTION`, or its pinned role."""
+    pinned = STAGE_DESCRIPTIONS.get(agent)
+    if pinned is not None:
+        return pinned
+    module_name = f"agents.specialists.{agent.value}"
+    module = importlib.import_module(module_name)
+    description = getattr(module, "DESCRIPTION", "")
+    if not description:
+        raise CatalogError(f"{module_name} publishes no DESCRIPTION to register")
+    return " ".join(str(description).split())
+
+
+def agent_skills(agent: AgentId) -> tuple[dict[str, Any], ...]:
+    """A2A skills for `agent`, one per tool it may call.
+
+    The orchestrator additionally publishes the pipeline it sequences: its own
+    allowlist is empty by design, and a card that advertised only the
+    fail-closed exit would say nothing about what the fleet does.
+    """
+    index = _tool_index(agent)
+    skills: list[dict[str, Any]] = []
+
+    if agent is AgentId.ORCHESTRATOR:
+        for stage in PIPELINE_STAGES:
+            skills.append(
+                {
+                    "id": f"stage_{stage.value}",
+                    "name": AGENT_TITLES[stage],
+                    "description": agent_description(stage),
+                    "tags": tuple(sorted({FLEET_NAME, str(agent), _TAG_STAGE})),
+                }
+            )
+
+    for tool in catalog_tools(agent):
+        if tool in ADK_ATTACHED_TOOLS:
+            description = SEARCH_WEB_DESCRIPTION
+        else:
+            function = index.get(str(tool))
+            if function is None:
+                raise CatalogError(
+                    f"agent {agent} advertises {tool} but this build implements no such tool"
+                )
+            description = _summary(function)
+        if not description:
+            raise CatalogError(f"tool {tool} has no docstring summary to publish")
+        skills.append(
+            {
+                "id": str(tool),
+                "name": _skill_name(tool),
+                "description": description,
+                "tags": _skill_tags(agent, tool),
+            }
+        )
+    return tuple(skills)
+
+
+def agent_card(agent: AgentId, *, config: RegistryConfig) -> dict[str, Any]:
+    """The A2A agent card PatchAPI publishes for `agent`.
+
+    `preferredTransport` and `url` are what carry connectivity: an
+    `A2A_AGENT_CARD` registry spec must leave the Service's `interfaces` empty,
+    so the card is the only place the endpoint appears.
+    """
+    return {
+        "protocolVersion": A2A_PROTOCOL_VERSION,
+        "name": AGENT_TITLES[agent],
+        "description": agent_description(agent),
+        "url": config.a2a_url(agent.value),
+        "version": prompt_version(agent),
+        "preferredTransport": PROTOCOL_BINDING_JSONRPC,
+        # The A2A endpoints answer one turn per request. Claiming streaming or
+        # push notifications in the catalog would be a capability the runtime
+        # does not have.
+        "capabilities": {"streaming": False, "pushNotifications": False},
+        "defaultInputModes": list(A2A_INPUT_MODES),
+        "defaultOutputModes": list(A2A_OUTPUT_MODES),
+        "skills": [
+            {
+                "id": skill["id"],
+                "name": skill["name"],
+                "description": skill["description"],
+                "tags": list(skill["tags"]),
+            }
+            for skill in agent_skills(agent)
+        ],
+    }
+
+
+def fleet_cards(
+    *, config: RegistryConfig, agents: Iterable[AgentId] | None = None
+) -> tuple[tuple[AgentId, str, dict[str, Any]], ...]:
+    """`(agent, service_id, card)` for every member of the fleet."""
+    members = tuple(agents) if agents is not None else tuple(AgentId)
+    return tuple(
+        (agent, config.service_id(agent.value), agent_card(agent, config=config))
+        for agent in members
+    )
+
+
+def mcp_tool_spec() -> tuple[dict[str, str], ...]:
+    """The fleet's tool surface in `tools/list` shape, for an MCP registration.
+
+    Every tool the build implements, not one agent's grant: an MCP server is a
+    tool endpoint, and which caller may reach which tool is enforced by
+    `agents.guardrails`, not by what the catalog lists.
+    """
+    index = _tool_index(AgentId.ORCHESTRATOR)
+    tools: list[dict[str, str]] = []
+    for name in sorted(ToolName):
+        if name in ADK_ATTACHED_TOOLS:
+            tools.append({"name": str(name), "description": SEARCH_WEB_DESCRIPTION})
+            continue
+        function = index.get(str(name))
+        if function is None:
+            continue
+        tools.append({"name": str(name), "description": _summary(function)})
+    return tuple(tools)
+
+
+__all__ = [
+    "AGENT_TITLES",
+    "PIPELINE_STAGES",
+    "SEARCH_WEB_DESCRIPTION",
+    "STAGE_DESCRIPTIONS",
+    "STAGE_TOOLS",
+    "CatalogError",
+    "agent_card",
+    "agent_description",
+    "agent_skills",
+    "catalog_tools",
+    "fleet_cards",
+    "mcp_tool_spec",
+]

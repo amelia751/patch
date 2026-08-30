@@ -10,8 +10,16 @@ locals {
   # Service families from roadmap.md §20–§21. Names are the current GA API IDs;
   # aiplatform.googleapis.com is the Gemini Enterprise Agent Platform API in the
   # 2026 docs, and agentregistry.googleapis.com is separate (setup.md §8).
+  # Agent Gateway and agent connectivity templates live under
+  # networkservices.googleapis.com (projects.locations.agentGateways, v1beta1),
+  # which is already listed below — there is no separate agentgateway API to
+  # enable. agentidentity.googleapis.com owns projects.locations.authProviders,
+  # which an Agent Registry binding attaches a published Service to. Enabling it
+  # pulls in agentidentitycredentials.googleapis.com, which is why that shows up
+  # in `gcloud services list` without being declared here.
   core_services = [
     "aiplatform.googleapis.com",
+    "agentidentity.googleapis.com",
     "agentregistry.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
@@ -56,6 +64,13 @@ locals {
   ]
 }
 
+# Agent Registry Service resources — the fleet's published A2A cards — are not
+# Terraform-managed. Verified against the pinned providers with
+# `terraform providers schema -json`: hashicorp/google and google-beta 6.x expose
+# no agentregistry resource type (only the unrelated Dialogflow agents). The
+# resources are created idempotently by scripts/register_agent_registry.sh, which
+# derives each card from agents/config.py. Terraform owns the API enablement and
+# the IAM below.
 module "project_services" {
   source = "../../modules/project_services"
 
@@ -75,9 +90,16 @@ module "service_accounts" {
 
   service_accounts = {
     control-api = {
-      display_name  = "PatchAPI control plane"
-      description   = "Run state transitions, event publication, dashboard backend."
-      project_roles = ["roles/cloudsql.client", "roles/logging.logWriter", "roles/cloudtrace.agent"]
+      display_name = "PatchAPI control plane"
+      description  = "Run state transitions, event publication, dashboard backend."
+      project_roles = [
+        "roles/cloudsql.client",
+        "roles/logging.logWriter",
+        "roles/cloudtrace.agent",
+        # The fleet page renders the published catalog. Read-only: publishing is
+        # an operator action, not something the console can trigger.
+        "roles/agentregistry.viewer",
+      ]
     }
     repo-indexer = {
       display_name  = "PatchAPI repo indexer"
@@ -90,9 +112,26 @@ module "service_accounts" {
       project_roles = ["roles/logging.logWriter", "roles/cloudtrace.agent"]
     }
     agents = {
-      display_name  = "PatchAPI ADK agent fleet"
-      description   = "Agent Runtime identity for the orchestrator and six specialists."
-      project_roles = ["roles/aiplatform.user", "roles/logging.logWriter", "roles/cloudtrace.agent"]
+      display_name = "PatchAPI ADK agent fleet"
+      description  = "Agent Runtime identity for the orchestrator and six specialists."
+      project_roles = [
+        "roles/aiplatform.user",
+        "roles/logging.logWriter",
+        "roles/cloudtrace.agent",
+        # Look peers up in the catalog. An agent must not be able to rewrite what
+        # the fleet claims about itself, so viewer and not editor.
+        "roles/agentregistry.viewer",
+      ]
+    }
+    # Publishes the fleet's A2A cards (scripts/register_agent_registry.sh). Split
+    # from every runtime identity on purpose: registration is the one action that
+    # changes what PatchAPI claims to be, and no service needs it at request time.
+    # `roles/agentregistry.editor` carries services.create / .update and no IAM,
+    # no project, and no Vertex permission.
+    registrar = {
+      display_name  = "PatchAPI agent catalog publisher"
+      description   = "Registers the fleet's A2A agent cards. No runtime or data-plane access."
+      project_roles = ["roles/agentregistry.editor", "roles/logging.logWriter"]
     }
     sandbox = {
       display_name  = "PatchAPI sandbox runner"
