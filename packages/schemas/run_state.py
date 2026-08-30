@@ -54,7 +54,13 @@ RESUMABLE_RUN_STATES: Final[frozenset[RunState]] = frozenset({RunState.WAITING_O
 ALLOWED_RUN_STATE_TRANSITIONS: Final[MappingProxyType[RunState, frozenset[RunState]]] = (
     MappingProxyType(
         {
-            RunState.RECEIVED: frozenset({RunState.SANITIZED, RunState.FAILED}),
+            # BLOCKED from RECEIVED because the intake gate is a decision, not a
+            # fault. Untrusted provider text that reads as an instruction to the
+            # agent is the attack this product expects, and a run that can only
+            # report FAILED describes it as the system breaking rather than as
+            # the system refusing — which is the difference between an incident
+            # to investigate and a control working.
+            RunState.RECEIVED: frozenset({RunState.SANITIZED, RunState.BLOCKED, RunState.FAILED}),
             RunState.SANITIZED: frozenset({RunState.NORMALIZED, RunState.FAILED}),
             RunState.NORMALIZED: frozenset({RunState.IMPACT_SCANNING, RunState.FAILED}),
             RunState.IMPACT_SCANNING: frozenset(

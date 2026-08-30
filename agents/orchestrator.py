@@ -37,11 +37,14 @@ from agents.specialists.impact import build as build_impact
 from agents.specialists.patch import build as build_patch
 from agents.specialists.verification import build as build_verification
 from agents.tools import build_tool_index, is_refusal
+from agents.tools.change.feed import provider_authored_text
 from agents.tools.credentials import live_check_ready, resolve_inventory
 from agents.tools.patch.skill import SKILLS_DIRNAME
 from agents.tools.pr import github_tools_base_url, invoke_github_capability
 from agents.tools.results import ReasonCode
 from agents.trace import ToolStatus, ToolTrace
+from packages.policy.armor import screen_untrusted_text
+from packages.policy.injection import normalize_untrusted_text
 from packages.providers.google.normalize import manifest_from_feed_file
 from packages.schemas.change_manifest import ChangeManifest
 from packages.schemas.impact_report import ImpactReport
@@ -318,6 +321,72 @@ class Orchestrator:
         self._advance(RunState.FAILED)
         return self._stage(agent, turn, None, detail)
 
+    # -- intake screening -------------------------------------------------
+
+    def _screen_intake(self, agent: AgentId, *, source: Path, text: str) -> StageResult | None:
+        """Screen one untrusted intake document, then leave RECEIVED.
+
+        The only place in this class that reaches SANITIZED, and that is the
+        point. SANITIZED is a claim that untrusted text was read by a gate, and
+        every path here used to assert it on the way past: the seeded paths — the
+        ones the flagship demo and the console both run — advanced to SANITIZED
+        without screening anything at all, so a run could report a sanitized
+        intake it had never performed.
+
+        A refusal ends the run BLOCKED rather than FAILED. What stopped it is a
+        control doing its job on hostile provider text, and the audit record says
+        which gate stopped it and what it matched.
+
+        Returns `None` when the run may carry on, or the stage that ended it.
+        """
+        started = perf_counter()
+        screening = screen_untrusted_text(normalize_untrusted_text(text), source=str(source))
+        degraded = (
+            "; a Model Armor verdict was expected here and did not arrive, so this "
+            "document was cleared by the deterministic rules alone"
+            if screening.degraded
+            else ""
+        )
+        self._trace.record(
+            agent=agent,
+            tool="screen_untrusted_text",
+            status=ToolStatus.OK if screening.allowed else ToolStatus.REFUSED,
+            arguments={"source": str(source), "chars": len(text)},
+            result=screening.to_audit_record(),
+            duration_ms=(perf_counter() - started) * 1000.0,
+            detail=f"screened by {', '.join(screening.screened_by)}{degraded}",
+        )
+        if screening.allowed:
+            self._advance(RunState.SANITIZED)
+            return None
+
+        self._advance(RunState.BLOCKED)
+        reasons = "; ".join(
+            dict.fromkeys(finding.reason for finding in screening.evaluation.blocking_findings)
+        )
+        return self._stage(
+            agent,
+            None,
+            None,
+            f"{source.name} did not pass the untrusted-text gate: {reasons}",
+        )
+
+    def _screen_notice(self, agent: AgentId, path: Path) -> StageResult | None:
+        """Screen a provider feed document, reading only the provider's own bytes.
+
+        The internal envelope is stripped exactly as `load_provider_notice` strips
+        it, because PatchAPI's own annotations are not the provider speaking and
+        scanning them for instructions would flag this product's prose as an
+        attack on itself.
+        """
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return self._fail(agent, f"{path.name} could not be read as a feed document: {exc}")
+        if not isinstance(payload, dict):
+            return self._fail(agent, f"{path.name} is not a feed document")
+        return self._screen_intake(agent, source=path, text=provider_authored_text(payload))
+
     def _park_for_operator(
         self, agent: AgentId, turn: TurnResult | None, detail: str = ""
     ) -> StageResult:
@@ -446,13 +515,23 @@ class Orchestrator:
     async def run_change_intelligence(self, change_id: str) -> StageResult:
         """Normalize one provider notice into a `ChangeManifest`.
 
-        RECEIVED → SANITIZED once the notice has passed the untrusted-text gate
-        the tool applies, then → NORMALIZED once a manifest is committed. A
-        stage that commits nothing ends the run FAILED rather than leaving the
-        state where a later stage could read it as success.
+        RECEIVED → SANITIZED once the notice has passed the untrusted-text gate,
+        then → NORMALIZED once a manifest is committed. A stage that commits
+        nothing ends the run FAILED rather than leaving the state where a later
+        stage could read it as success.
+
+        The gate runs here, before the turn, rather than being inferred from the
+        tool the model happened to call. `load_provider_notice` screens again on
+        its own account — it has to, because it refuses whoever calls it — but a
+        state transition cannot be conditional on a model choosing a tool.
         """
         agent = AgentId.CHANGE_INTELLIGENCE
-        self._advance(RunState.SANITIZED)
+        path = self._notice_path(change_id)
+        if path is None:
+            return self._fail(agent, f"no provider notice with change_id {change_id!r}")
+        refused = self._screen_notice(agent, path)
+        if refused is not None:
+            return refused
 
         prompt = (
             f"Produce the ChangeManifest for provider change {change_id!r}. "
@@ -501,14 +580,17 @@ class Orchestrator:
         orchestrator's identity and not Change Intelligence's.
 
         RECEIVED → SANITIZED → NORMALIZED, so the run reaches the Impact stage
-        through the same transitions a live Change Intelligence turn would use.
+        through the same transitions a live Change Intelligence turn would use —
+        including the gate. Skipping a model does not make provider text trusted,
+        and this path reads the same untrusted document the model would have.
         """
         agent = AgentId.ORCHESTRATOR
-        self._advance(RunState.SANITIZED)
-
         path = self._notice_path(change_id)
         if path is None:
             return self._fail(agent, f"no provider notice with change_id {change_id!r}")
+        refused = self._screen_notice(agent, path)
+        if refused is not None:
+            return refused
 
         started = perf_counter()
         try:
@@ -554,13 +636,39 @@ class Orchestrator:
         loop already knows how to consume. The file must validate as
         `ChangeManifest` — a feed document still goes through
         `seed_change_manifest`.
+
+        The manifest is screened before it is parsed, and every field of it, not
+        a chosen subset. A normalized manifest is quieter than a release note but
+        it is not this product's own prose: the console path builds one from a
+        `change_events` row whose summary, constraints and source URLs all came
+        from a provider, and the demo path builds one from a pinned file. Neither
+        is a document PatchAPI wrote, so neither gets to skip the gate on the
+        strength of having been through one weeks earlier.
         """
         agent = AgentId.ORCHESTRATOR
-        self._advance(RunState.SANITIZED)
         started = perf_counter()
         try:
-            manifest = ChangeManifest.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
+            document = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            self._trace.record(
+                agent=agent,
+                tool="seed_static_manifest",
+                status=ToolStatus.ERROR,
+                arguments={"path": str(path)},
+                result={"error": str(exc)},
+                duration_ms=(perf_counter() - started) * 1000.0,
+                detail="the static manifest could not be read",
+            )
+            return self._fail(agent, f"{path} could not be read: {exc}")
+
+        refused = self._screen_intake(agent, source=path, text=document)
+        if refused is not None:
+            return refused
+
+        started = perf_counter()
+        try:
+            manifest = ChangeManifest.model_validate_json(document)
+        except ValueError as exc:
             self._trace.record(
                 agent=agent,
                 tool="seed_static_manifest",
