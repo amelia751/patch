@@ -35,6 +35,7 @@ from packages.events.repo_events import (
     project_repo_removed_event,
     repo_push_event,
 )
+from packages.providers import registry
 from packages.repo_scan import SCANNER_VERSION
 from packages.repo_scan.classify import UsageKind
 
@@ -80,16 +81,24 @@ class FakeStore:
     """An in-memory stand-in for `store.py`, recording what a handler asked for."""
 
     RepoIndexState = store.RepoIndexState
+    ProviderIndexState = store.ProviderIndexState
 
     scopes: dict[tuple[str, str], list[store.ProjectScope]] = field(default_factory=dict)
     states: dict[tuple[str, str], store.RepoIndexState] = field(default_factory=dict)
     targets: list[store.IndexTarget] = field(default_factory=list)
     project_usages: dict[UUID, list[store.ProjectUsage]] = field(default_factory=dict)
+    # Provider subscriptions per target. Empty means "no project subscribed",
+    # which the worker reads as every registered provider.
+    subscriptions: dict[tuple[str, str], tuple[str, ...]] = field(default_factory=dict)
+    provider_states: dict[tuple[str, str, str], store.ProviderIndexState] = field(
+        default_factory=dict
+    )
 
     progress: list[tuple[str, str, str, int, str | None]] = field(default_factory=list)
     persisted: list[ApiUsageInventory] = field(default_factory=list)
     retired: list[tuple[str, str, tuple[str, ...], str]] = field(default_factory=list)
     recorded: list[store.RepoIndexState] = field(default_factory=list)
+    recorded_providers: list[store.ProviderIndexState] = field(default_factory=list)
     acquired: list[tuple[str, str]] = field(default_factory=list)
     released: list[tuple[str, str]] = field(default_factory=list)
     references: dict[tuple[str, str], int] = field(default_factory=dict)
@@ -140,6 +149,22 @@ class FakeStore:
     async def record_state(self, conn: Any, state: store.RepoIndexState) -> None:
         self.recorded.append(state)
         self.states[(state.repository, state.branch)] = state
+
+    async def providers_for(self, conn: Any, repository: str, branch: str) -> tuple[str, ...]:
+        return self.subscriptions.get((repository, branch), ())
+
+    async def load_provider_states(
+        self, conn: Any, repository: str, branch: str
+    ) -> dict[str, store.ProviderIndexState]:
+        return {
+            provider: state
+            for (repo, ref, provider), state in self.provider_states.items()
+            if repo == repository and ref == branch
+        }
+
+    async def record_provider_state(self, conn: Any, state: store.ProviderIndexState) -> None:
+        self.recorded_providers.append(state)
+        self.provider_states[(state.repository, state.branch, state.provider)] = state
 
     async def projects_for(
         self, conn: Any, repository: str, branch: str
@@ -308,6 +333,33 @@ def ready_state(sha: str = BEFORE_SHA, **overrides: Any) -> store.RepoIndexState
     return replace(state, **overrides) if overrides else state
 
 
+def provider_state(
+    provider: str = "google", sha: str = BEFORE_SHA, **overrides: Any
+) -> store.ProviderIndexState:
+    """A `repo_provider_index_state` row saying this provider was fully scanned."""
+    state = store.ProviderIndexState(
+        repository=REPOSITORY,
+        branch=BRANCH,
+        provider=provider,
+        indexed_sha=sha,
+        search_intent=registry.descriptor_for(provider).search_intent(),
+        indexer_version=INDEXER_VERSION,
+        scanner_version=SCANNER_VERSION,
+        scope="full_tree",
+    )
+    return replace(state, **overrides) if overrides else state
+
+
+def already_scanned(
+    fake_store: FakeStore, *, sha: str, providers: tuple[str, ...] = ("google",)
+) -> None:
+    """Record that `providers` have each had a full scan of the target at `sha`."""
+    for provider in providers:
+        fake_store.provider_states[(REPOSITORY, BRANCH, provider)] = provider_state(
+            provider, sha
+        )
+
+
 def push_event(*, before: str = BEFORE_SHA, after: str = AFTER_SHA, branch: str = BRANCH):
     return repo_push_event(
         repository=REPOSITORY,
@@ -388,7 +440,9 @@ async def test_push_to_an_already_indexed_sha_is_dropped(
     conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
 ) -> None:
     fake_store.scopes[(REPOSITORY, BRANCH)] = [scope()]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google",)
     fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA)
+    already_scanned(fake_store, sha=AFTER_SHA)
 
     result = await worker.handle_push(conn, push_event(), effects=effects)
 
@@ -513,6 +567,7 @@ async def test_repo_added_acquires_and_full_indexes(
 ) -> None:
     project = uuid4()
     fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google",)
     world.usages = (usage_record("src/app.ts"),)
 
     envelope = project_repo_added_event(
@@ -531,6 +586,7 @@ async def test_repo_added_acquires_and_full_indexes(
     assert fake_store.recorded[0].last_full_index == NOW
     assert fake_store.recorded[0].file_count == 7
     assert result.usages_written == 1
+    assert result.providers == ("google",)
     assert [envelope.payload["project_id"] for envelope in world.published] == [str(project)]
 
 
@@ -542,6 +598,8 @@ async def test_repo_added_to_an_indexed_target_only_takes_a_reference(
     fake_store.references[(REPOSITORY, BRANCH)] = 1
     fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA)
     fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google",)
+    already_scanned(fake_store, sha=AFTER_SHA)
 
     envelope = project_repo_added_event(
         project_id=str(project),
@@ -559,6 +617,157 @@ async def test_repo_added_to_an_indexed_target_only_takes_a_reference(
     assert fake_store.progress[-1][2:4] == ("ready", 100)
     # The importing project still learns the repository is ready to read.
     assert [envelope.payload["indexed_sha"] for envelope in world.published] == [AFTER_SHA]
+
+
+async def test_a_newly_subscribed_provider_is_scanned_on_an_already_indexed_target(
+    conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
+) -> None:
+    """Onboarding a provider reaches repositories that were imported before it.
+
+    This is the case the old freshness key could not express. The target is
+    indexed, at the current extractor versions, so `(repository, branch)` alone
+    says "current" — but nothing has ever searched it for Stripe, and answering
+    "no Stripe usage" from a scan that never looked for Stripe is a false
+    negative dressed as good news.
+    """
+    project = uuid4()
+    fake_store.references[(REPOSITORY, BRANCH)] = 1
+    fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA)
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google", "stripe")
+    already_scanned(fake_store, sha=AFTER_SHA, providers=("google",))
+
+    result = await worker.handle_repo_added(
+        conn,
+        project_repo_added_event(
+            project_id=str(project),
+            repository=REPOSITORY,
+            branch=BRANCH,
+            occurred_at=OCCURRED_AT,
+        ),
+        effects=effects,
+    )
+
+    assert result.action == worker.ACTION_INDEXED
+    # Only Stripe. Google's shard is untouched, so onboarding a provider is not
+    # a reindex of the fleet for every provider already covered.
+    assert result.providers == ("stripe",)
+    assert [inventory["provider"] for inventory in world.inventories] == ["stripe"]
+    assert {state.provider for state in fake_store.recorded_providers} == {"stripe"}
+
+
+async def test_widening_a_watchlist_rescans_only_the_provider_that_changed(
+    conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
+) -> None:
+    """The recorded search intent, not a version constant, is what goes stale.
+
+    An operator who adds an identifier to a descriptor should not also have to
+    remember to bump a global version — and should not reindex every other
+    provider when they do.
+    """
+    project = uuid4()
+    fake_store.references[(REPOSITORY, BRANCH)] = 1
+    fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA)
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google", "stripe")
+    already_scanned(fake_store, sha=AFTER_SHA, providers=("google", "stripe"))
+    fake_store.provider_states[(REPOSITORY, BRANCH, "google")] = provider_state(
+        "google", AFTER_SHA, search_intent="intent-from-a-narrower-watchlist"
+    )
+
+    result = await worker.handle_repo_added(
+        conn,
+        project_repo_added_event(
+            project_id=str(project),
+            repository=REPOSITORY,
+            branch=BRANCH,
+            occurred_at=OCCURRED_AT,
+        ),
+        effects=effects,
+    )
+
+    assert result.providers == ("google",)
+
+
+async def test_a_delta_scan_does_not_stand_in_for_a_full_one(
+    conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
+) -> None:
+    """A push-scoped pass proves nothing about the files the push did not touch."""
+    project = uuid4()
+    fake_store.references[(REPOSITORY, BRANCH)] = 1
+    fake_store.states[(REPOSITORY, BRANCH)] = ready_state(sha=AFTER_SHA)
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google",)
+    fake_store.provider_states[(REPOSITORY, BRANCH, "google")] = provider_state(
+        "google", AFTER_SHA, scope="changed_paths"
+    )
+
+    result = await worker.handle_repo_added(
+        conn,
+        project_repo_added_event(
+            project_id=str(project),
+            repository=REPOSITORY,
+            branch=BRANCH,
+            occurred_at=OCCURRED_AT,
+        ),
+        effects=effects,
+    )
+
+    assert result.action == worker.ACTION_INDEXED
+    assert world.inventories[0]["changed_paths"] is None
+
+
+async def test_a_subscription_this_build_cannot_detect_does_not_stop_the_others(
+    conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
+) -> None:
+    """An unrecognised provider is logged and skipped, never raised.
+
+    A descriptor that has not reached this build yet is an operator problem. It
+    must not leave a repository unindexed for the providers this build does
+    know how to detect.
+    """
+    project = uuid4()
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+    fake_store.subscriptions[(REPOSITORY, BRANCH)] = ("google", "acme-cloud")
+
+    result = await worker.handle_repo_added(
+        conn,
+        project_repo_added_event(
+            project_id=str(project),
+            repository=REPOSITORY,
+            branch=BRANCH,
+            occurred_at=OCCURRED_AT,
+        ),
+        effects=effects,
+    )
+
+    assert result.action == worker.ACTION_INDEXED
+    assert result.providers == ("google",)
+
+
+async def test_a_target_nobody_subscribed_for_is_scanned_for_every_provider(
+    conn: FakeConnection, fake_store: FakeStore, world: FakeWorld, effects: worker.Effects
+) -> None:
+    """No subscription is not the same as subscribing to nothing.
+
+    Scanning wider than asked costs a query per provider. Scanning narrower
+    would put a repository nobody looked at in front of a reviewer as clean.
+    """
+    project = uuid4()
+    fake_store.scopes[(REPOSITORY, BRANCH)] = [scope(project_id=project)]
+
+    result = await worker.handle_repo_added(
+        conn,
+        project_repo_added_event(
+            project_id=str(project),
+            repository=REPOSITORY,
+            branch=BRANCH,
+            occurred_at=OCCURRED_AT,
+        ),
+        effects=effects,
+    )
+
+    assert result.providers == registry.known_providers()
 
 
 async def test_repo_added_marks_error_when_the_branch_cannot_be_resolved(

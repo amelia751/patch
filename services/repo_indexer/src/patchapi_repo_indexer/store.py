@@ -150,6 +150,26 @@ class RepoIndexState:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderIndexState:
+    """The `repo_provider_index_state` row for one target and one provider.
+
+    `search_intent` is what makes this more than a timestamp: it names the
+    question the scan asked, so a stored answer can be told apart from one
+    produced by a narrower watchlist.
+    """
+
+    repository: str
+    branch: str
+    provider: str
+    indexed_sha: str
+    search_intent: str
+    indexer_version: str
+    scanner_version: str
+    scope: str
+    indexed_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RepositoryIndexing:
     """One row of the Codebase tab banner's per-repository breakdown."""
 
@@ -382,6 +402,111 @@ async def record_state(conn: asyncpg.Connection, state: RepoIndexState) -> None:
         state.error_message,
     )
     await wake_console(conn, state.repository, state.branch)
+
+
+async def load_provider_states(
+    conn: asyncpg.Connection, repository: str, branch: str
+) -> dict[str, ProviderIndexState]:
+    """Every provider this target has been scanned for, by slug.
+
+    A provider absent from the result has never been searched for here, which is
+    a different fact from "searched for and found nothing" and is why the
+    per-provider row exists at all.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT repository, branch, provider, indexed_sha, search_intent,
+               indexer_version, scanner_version, scope, indexed_at
+        FROM repo_provider_index_state
+        WHERE repository = $1 AND branch = $2
+        """,
+        repository,
+        branch,
+    )
+    return {
+        row["provider"]: ProviderIndexState(
+            repository=row["repository"],
+            branch=row["branch"],
+            provider=row["provider"],
+            indexed_sha=row["indexed_sha"],
+            search_intent=row["search_intent"],
+            indexer_version=row["indexer_version"],
+            scanner_version=row["scanner_version"],
+            scope=row["scope"],
+            indexed_at=row["indexed_at"],
+        )
+        for row in rows
+    }
+
+
+async def record_provider_state(conn: asyncpg.Connection, state: ProviderIndexState) -> None:
+    """Upsert one provider's index completion for a target.
+
+    Written inside the same transaction as the inventory it describes: a row
+    claiming a provider was searched for, without the findings that search
+    produced, would let the next pass skip work that never happened.
+
+    A delta pass does not overwrite a recorded `full_tree` scope. It proves the
+    provider was searched for in the files a push touched, and letting that
+    stand in for a whole-tree scan would leave the rest of the repository
+    unsearched while the row said otherwise.
+    """
+    await conn.execute(
+        """
+        INSERT INTO repo_provider_index_state (
+            repository, branch, provider, indexed_sha, search_intent,
+            indexer_version, scanner_version, scope, indexed_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, clock_timestamp())
+        ON CONFLICT (repository, branch, provider) DO UPDATE SET
+            indexed_sha     = EXCLUDED.indexed_sha,
+            search_intent   = EXCLUDED.search_intent,
+            indexer_version = EXCLUDED.indexer_version,
+            scanner_version = EXCLUDED.scanner_version,
+            scope           = CASE
+                                WHEN EXCLUDED.scope = 'full_tree' THEN 'full_tree'
+                                WHEN repo_provider_index_state.scope = 'full_tree'
+                                     AND repo_provider_index_state.search_intent
+                                         = EXCLUDED.search_intent
+                                THEN 'full_tree'
+                                ELSE EXCLUDED.scope
+                              END,
+            indexed_at      = EXCLUDED.indexed_at
+        """,
+        state.repository,
+        state.branch,
+        state.provider,
+        state.indexed_sha,
+        state.search_intent,
+        state.indexer_version,
+        state.scanner_version,
+        state.scope,
+    )
+
+
+async def providers_for(conn: asyncpg.Connection, repository: str, branch: str) -> tuple[str, ...]:
+    """The provider slugs any project importing this target subscribes to.
+
+    Empty means no project has subscribed to anything, which the caller reads as
+    "search for every provider this build knows" rather than "search for
+    nothing". The join matches `projects_for` exactly, so the providers a scan
+    covers are the providers of the projects that can read its rows.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT pv.slug AS slug
+        FROM project_repositories pr
+        JOIN project_provider_subscriptions sub ON sub.project_id = pr.project_id
+        JOIN providers pv ON pv.id = sub.provider_id
+        LEFT JOIN workspaces w ON w.repository_id = pr.id AND w.repo_branch = $2
+        WHERE pr.full_name = $1
+          AND $2 = COALESCE(w.repo_branch, pr.default_branch)
+        ORDER BY slug
+        """,
+        repository,
+        branch,
+    )
+    return tuple(row["slug"] for row in rows)
 
 
 async def indexable_targets(conn: asyncpg.Connection) -> list[IndexTarget]:
@@ -702,14 +827,18 @@ __all__ = [
     "ProjectIndexingStatus",
     "ProjectScope",
     "ProjectUsage",
+    "ProviderIndexState",
     "RepoIndexState",
     "RepositoryIndexing",
     "acquire_shard",
     "indexable_targets",
     "indexing_for_project",
+    "load_provider_states",
     "load_state",
     "persist_inventory",
     "projects_for",
+    "providers_for",
+    "record_provider_state",
     "record_state",
     "release_shard",
     "retire_paths",

@@ -44,6 +44,7 @@ from packages.events.config import EventType
 from packages.events.provider_events import change_normalized_event
 from packages.events.publisher import publish_async
 from packages.events.repo_events import branch_from_ref, index_updated_event
+from packages.providers import registry
 from packages.state.findings import refresh_after_repo_ready
 from patchapi_repo_indexer import git, store
 from patchapi_repo_indexer.config import (
@@ -51,6 +52,8 @@ from patchapi_repo_indexer.config import (
     INDEX_BACKEND,
     INDEXER_VERSION,
     SCANNER_VERSION,
+    SCOPE_CHANGED_PATHS,
+    SCOPE_FULL_TREE,
 )
 from patchapi_repo_indexer.errors import (
     IndexerError,
@@ -124,6 +127,10 @@ class HandlerResult:
     paths_retired: int = 0
     reference_count: int | None = None
     notified_projects: tuple[str, ...] = ()
+    # Which providers this pass actually searched for. Reported rather than
+    # inferred: "indexed" now means "indexed for these providers", and a caller
+    # that cannot see the list would read a Google-only pass as a complete one.
+    providers: tuple[str, ...] = ()
 
     @property
     def indexed(self) -> bool:
@@ -250,13 +257,18 @@ def _ready_state(
     *,
     repository: str,
     branch: str,
-    inventory: ApiUsageInventory,
+    files_scanned: int,
+    observed_sha: str,
     previous: store.RepoIndexState | None,
     references: int,
     full: bool,
     now: datetime,
 ) -> store.RepoIndexState:
     """The `repo_index_state` row a finished pass writes.
+
+    Still one row per `(repository, branch)`: the shard is the tree, and the
+    tree is indexed once however many providers were searched for in it. Which
+    of them were searched for is `repo_provider_index_state`.
 
     `shard_path` is carried over rather than derived: `build_inventory` may have
     degraded to the literal walk, and naming a shard that was never built would
@@ -271,13 +283,13 @@ def _ready_state(
         branch=branch,
         status="ready",
         progress_percent=PROGRESS_DONE,
-        indexed_sha=inventory.observed_sha,
+        indexed_sha=observed_sha,
         shard_path=previous.shard_path if previous else None,
         indexer_version=INDEXER_VERSION,
         scanner_version=SCANNER_VERSION,
         last_full_index=now if full else (previous.last_full_index if previous else None),
         last_delta_index=now if not full else (previous.last_delta_index if previous else None),
-        file_count=inventory.files_scanned if full or previous is None else previous.file_count,
+        file_count=files_scanned if full or previous is None else previous.file_count,
         reference_count=previous.reference_count if previous else references,
         error_message=None,
     )
@@ -322,6 +334,85 @@ async def _fan_out(
     return tuple(notified)
 
 
+def _search_intent(provider: str) -> str:
+    """The identity of the question a default scan for `provider` asks.
+
+    Read from the descriptor rather than from a finished inventory, because the
+    skip check has to compute it *before* deciding whether to scan. Both sides
+    resolve the same way — `build_inventory` with no explicit identifiers uses
+    the descriptor's watchlist — so a target can never be recorded as current
+    under an intent the skip check would then read as stale.
+    """
+    return registry.descriptor_for(provider).search_intent()
+
+
+async def _providers_for(conn: asyncpg.Connection, repository: str, branch: str) -> tuple[str, ...]:
+    """Which providers this target is scanned for.
+
+    The subscriptions of the projects that imported it, narrowed to providers
+    this build actually has a descriptor for. A subscription PatchAPI cannot
+    detect is logged rather than raised: one unrecognised provider must not stop
+    a repository being indexed for the others.
+
+    No subscriptions at all means every registered provider. Scanning wider than
+    asked costs a query per provider; scanning narrower would report a
+    repository as unaffected by a provider nobody had looked for.
+    """
+    subscribed = await store.providers_for(conn, repository, branch)
+    known = set(registry.known_providers())
+    wanted = tuple(slug for slug in subscribed if slug in known)
+
+    unknown = tuple(slug for slug in subscribed if slug not in known)
+    if unknown:
+        log.warning(
+            "%s@%s subscribes to %s, which this build has no descriptor for; not scanned",
+            repository,
+            branch,
+            ", ".join(unknown),
+        )
+    return wanted or registry.known_providers()
+
+
+def _provider_is_current(
+    state: store.ProviderIndexState | None, *, sha: str, intent: str
+) -> bool:
+    """True when a stored scan for one provider still answers today's question.
+
+    Four things have to hold, and each of them changes what a scan would find:
+    the commit, the extractor versions, and the search intent. A delta pass does
+    not count — it searched the files one push touched, and reading that as a
+    whole-tree answer would leave the rest of the repository unsearched while
+    the row claimed otherwise.
+    """
+    return (
+        state is not None
+        and state.scope == SCOPE_FULL_TREE
+        and state.indexed_sha == sha
+        and state.search_intent == intent
+        and state.indexer_version == INDEXER_VERSION
+        and state.scanner_version == SCANNER_VERSION
+    )
+
+
+async def _stale_providers(
+    conn: asyncpg.Connection,
+    repository: str,
+    branch: str,
+    providers: Sequence[str],
+    *,
+    sha: str,
+) -> tuple[str, ...]:
+    """The providers whose stored answer for this target is missing or outdated."""
+    states = await store.load_provider_states(conn, repository, branch)
+    return tuple(
+        provider
+        for provider in providers
+        if not _provider_is_current(
+            states.get(provider), sha=sha, intent=_search_intent(provider)
+        )
+    )
+
+
 async def _index(
     conn: asyncpg.Connection,
     repository: str,
@@ -331,17 +422,28 @@ async def _index(
     changed: Sequence[str] | None,
     references: int,
     effects: Effects,
+    providers: Sequence[str] | None = None,
 ) -> HandlerResult:
-    """Index one target at `sha` and record the pass.
+    """Index one target at `sha` for each provider, and record the pass.
 
     `changed is None` is a full pass; a sequence — including an empty one — is a
     push-driven delta over exactly those paths.
 
+    One checkout, one shard, one query per provider. The tree is the same for
+    everybody; what differs is the question asked of it, so the expensive part
+    is paid once and the provider loop is queries.
+
     The write is one transaction: an inventory persisted without its retirements
     would leave a migrated identifier live, and a state row recorded without its
     inventory would claim a commit was indexed when its findings never landed.
+    Retirement runs after *every* provider has been persisted, because it
+    retires by path — running it between two providers would retire the rows the
+    first one had just written.
     """
     full = changed is None
+    wanted = tuple(providers) if providers is not None else await _providers_for(
+        conn, repository, branch
+    )
     await store.set_index_progress(
         conn, repository, branch, status="indexing", progress_percent=PROGRESS_START
     )
@@ -350,20 +452,27 @@ async def _index(
         await store.set_index_progress(
             conn, repository, branch, status="indexing", progress_percent=PROGRESS_FETCHED
         )
-        inventory = effects.build_inventory(
-            root=checkout,
-            repository=repository,
-            observed_sha=sha,
-            branch=branch,
-            changed_paths=None if full else list(changed or ()),
-        )
+        inventories = [
+            effects.build_inventory(
+                root=checkout,
+                repository=repository,
+                observed_sha=sha,
+                branch=branch,
+                provider=provider,
+                changed_paths=None if full else list(changed or ()),
+            )
+            for provider in wanted
+        ]
         await store.set_index_progress(
             conn, repository, branch, status="indexing", progress_percent=PROGRESS_SCANNED
         )
 
         previous = await store.load_state(conn, repository, branch)
+        scope = SCOPE_FULL_TREE if full else SCOPE_CHANGED_PATHS
         async with conn.transaction():
-            written = await store.persist_inventory(conn, inventory)
+            written = 0
+            for inventory in inventories:
+                written += (await store.persist_inventory(conn, inventory)).total
             retired = (
                 0
                 if full
@@ -374,13 +483,28 @@ async def _index(
                 _ready_state(
                     repository=repository,
                     branch=branch,
-                    inventory=inventory,
+                    files_scanned=max((inv.files_scanned for inv in inventories), default=0),
+                    observed_sha=sha,
                     previous=previous,
                     references=references,
                     full=full,
                     now=effects.now(),
                 ),
             )
+            for provider in wanted:
+                await store.record_provider_state(
+                    conn,
+                    store.ProviderIndexState(
+                        repository=repository,
+                        branch=branch,
+                        provider=provider,
+                        indexed_sha=sha,
+                        search_intent=_search_intent(provider),
+                        indexer_version=INDEXER_VERSION,
+                        scanner_version=SCANNER_VERSION,
+                        scope=scope,
+                    ),
+                )
     except Exception as exc:
         await _mark_error(conn, repository, branch, exc)
         raise
@@ -392,20 +516,25 @@ async def _index(
         repository=repository,
         branch=branch,
         indexed_sha=sha,
-        usages_written=written.total,
+        usages_written=written,
         paths_retired=retired,
         reference_count=references,
         notified_projects=notified,
+        providers=wanted,
     )
 
 
-def _extractors_match(state: store.IndexState | None) -> bool:
+def _extractors_match(state: store.RepoIndexState | None) -> bool:
     """True when a stored inventory was written by the code running now.
 
     Both versions are checked because either one changes what a scan finds. The
     scanner learning to read dependency manifests leaves the indexer version
     untouched, and trusting a shard written before that would report a tree as
     having no SDK dependencies rather than as unread.
+
+    This answers "was the shard written by this code", which is a property of
+    the target. Whether a *provider* has been searched for is
+    `_provider_is_current`, and both have to hold before a pass can be skipped.
     """
     return (
         state is not None
@@ -417,34 +546,55 @@ def _extractors_match(state: store.IndexState | None) -> bool:
 async def handle_repo_added(
     conn: asyncpg.Connection, envelope: EventEnvelope, *, effects: Effects = DEFAULT_EFFECTS
 ) -> HandlerResult:
-    """Take a reference on a target's shard, and full-index it if nothing has.
+    """Take a reference on a target's shard, and full-index what has not been.
 
     Fires per `project_repositories` row, not per project. An already-indexed
     target costs a counter bump and a notification: its findings carry no
     project, so the importing project can read them the moment the reference
     lands.
+
+    "Already indexed" is now per provider. A repository indexed for Google and
+    then imported by a project that also subscribes to Stripe is not current: it
+    was never searched for Stripe, and skipping it would put a repository nobody
+    has looked at in front of a reviewer as one with no Stripe usage. Only the
+    providers that are actually stale are scanned, so onboarding a provider
+    costs one pass for that provider and does not re-index the others.
     """
     repository = _require(envelope.payload, "repository")
     branch = _require(envelope.payload, "branch")
 
     references = await store.acquire_shard(conn, repository, branch)
     previous = await store.load_state(conn, repository, branch)
+    wanted = await _providers_for(conn, repository, branch)
+
+    stale: tuple[str, ...] = wanted
     if previous is not None and previous.indexed_sha and _extractors_match(previous):
-        notified = await _fan_out(conn, repository, branch, previous.indexed_sha, effects)
-        # Import may have flipped the row to `indexing` for the banner. Put
-        # `ready` back and wake consoles so the overlay does not stick at 0%.
-        await store.set_index_progress(
-            conn, repository, branch, status="ready", progress_percent=PROGRESS_DONE
+        stale = await _stale_providers(
+            conn, repository, branch, wanted, sha=previous.indexed_sha
         )
-        await effects.refresh_findings(conn, repository, branch)
-        return HandlerResult(
-            action=ACTION_REFERENCED,
-            repository=repository,
-            branch=branch,
-            reason=f"already indexed at {previous.indexed_sha[:12]}",
-            indexed_sha=previous.indexed_sha,
-            reference_count=references,
-            notified_projects=notified,
+        if not stale:
+            notified = await _fan_out(conn, repository, branch, previous.indexed_sha, effects)
+            # Import may have flipped the row to `indexing` for the banner. Put
+            # `ready` back and wake consoles so the overlay does not stick at 0%.
+            await store.set_index_progress(
+                conn, repository, branch, status="ready", progress_percent=PROGRESS_DONE
+            )
+            await effects.refresh_findings(conn, repository, branch)
+            return HandlerResult(
+                action=ACTION_REFERENCED,
+                repository=repository,
+                branch=branch,
+                reason=f"already indexed at {previous.indexed_sha[:12]}",
+                indexed_sha=previous.indexed_sha,
+                reference_count=references,
+                notified_projects=notified,
+                providers=wanted,
+            )
+        log.info(
+            "%s@%s is indexed but not for %s; scanning those",
+            repository,
+            branch,
+            ", ".join(stale),
         )
 
     await store.set_index_progress(
@@ -464,6 +614,7 @@ async def handle_repo_added(
         changed=None,
         references=references,
         effects=effects,
+        providers=stale,
     )
 
 
@@ -533,14 +684,17 @@ async def handle_push(
 
     state = await store.load_state(conn, repository, branch)
     references = state.reference_count if state else len(scopes)
-    version_stale = (
-        state is not None
-        and state.status == "ready"
-        and state.indexed_sha == after
-        and not _extractors_match(state)
-    )
+    wanted = await _providers_for(conn, repository, branch)
+
+    # A push that carries a commit nothing has indexed re-scans for every
+    # provider: the files changed for all of them. Narrowing to the stale ones
+    # is only correct when the commit itself is already indexed and the reason
+    # to work again is that the *question* changed.
+    providers: tuple[str, ...] = wanted
+    version_stale = False
     if state is not None and state.status == "ready" and state.indexed_sha == after:
-        if not version_stale:
+        providers = await _stale_providers(conn, repository, branch, wanted, sha=after)
+        if not providers:
             return HandlerResult(
                 action=ACTION_DROPPED,
                 repository=repository,
@@ -548,15 +702,18 @@ async def handle_push(
                 reason="already indexed at this sha",
                 indexed_sha=after,
                 reference_count=references,
+                providers=wanted,
             )
+        version_stale = True
         log.info(
-            "indexer %s/scanner %s → %s/%s; re-indexing %s@%s at the same sha",
+            "re-indexing %s@%s at the same sha for %s (indexer %s/scanner %s → %s/%s)",
+            repository,
+            branch,
+            ", ".join(providers),
             state.indexer_version,
             state.scanner_version,
             INDEXER_VERSION,
             SCANNER_VERSION,
-            repository,
-            branch,
         )
 
     changed: list[str] | None = None
@@ -579,6 +736,7 @@ async def handle_push(
         changed=changed,
         references=references,
         effects=effects,
+        providers=providers,
     )
 
 
