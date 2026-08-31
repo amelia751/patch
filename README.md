@@ -112,10 +112,22 @@ in Secret Manager. A passing run opens a GitHub pull request.
 │   └── modules/              Cloud Run, Cloud SQL, GKE,
 │                             Pub/Sub, secrets, registry
 │
-├── demo/fixtures/            provider notice JSON
+├── demo/fixtures/            two storygen-relevant notices
 ├── docs/architecture.png
 ├── scripts/                  bootstrap, smoke, verify
 └── tests/                    integration + fixtures
+```
+
+`demo/fixtures/` is not the production feed. In the full flow Change
+Intelligence would read every BigQuery release note and write a
+ChangeManifest — a year of notes is thousands of rows and a lot of tokens —
+so the demo extracts the two notices that actually hit
+[`storygen`](https://github.com/amelia751/storygen) (Gemini 2.0 Flash
+shutdown, Imagen 4 retirement). The refresh job still pulls the rest of the
+corpus into Postgres without a model. To backfill that locally:
+
+```bash
+uv run --all-packages python scripts/refresh_releases.py
 ```
 
 ## Spin-up Instructions
