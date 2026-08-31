@@ -86,4 +86,3 @@ docs/                     Architecture and operations
 | Local and cloud setup | [`setup.md`](./setup.md) |
 | Architecture | [`docs/architecture.md`](./docs/architecture.md) |
 | Provider ingest | [`provider.md`](./provider.md) |
-| Conventions | [`CLAUDE.md`](./CLAUDE.md) |

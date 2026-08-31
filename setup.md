@@ -2,7 +2,7 @@
 
 > Review this document before dispatching the setup fleet.  
 > Source of truth for layout: [`roadmap.md`](./roadmap.md) §6.  
-> Source of truth for product constraints: [`CLAUDE.md`](./CLAUDE.md).
+> Source of truth for product constraints: [`README.md`](./README.md).
 
 **Goal:** scaffold every monorepo tree, install real dependencies, and prove each tree works with a **dynamic smoke test** (not a static checklist). After approval, a fleet batch executes these tasks in parallel with hard path ownership so workers do not collide.
 
@@ -22,7 +22,7 @@
 
 **Layout note:** `roadmap.md` §6 places the dashboard at `apps/web/`. The Next app has been relocated from root `web/` → `apps/web/` and stays on **npm** (project choice; overrides the roadmap’s pnpm preference for the dashboard). Storygen demo work may still use whatever the pinned fork uses.
 
-Where [`CLAUDE.md`](./CLAUDE.md) says `apps/dashboard/`, prefer `apps/web/` from the roadmap; update `CLAUDE.md` when conventions are synced.
+Where older notes say `apps/dashboard/`, prefer `apps/web/` from the roadmap.
 
 **GCP project for live smokes:** `patch-505223` (SA: `development@patch-505223.iam.gserviceaccount.com`, key in `.secrets/gcp-service-account.json`, gitignored).
 

@@ -103,8 +103,7 @@ Agent Engine is used for Memory Bank and nothing else.
 ## Repository layout
 
 The monorepo tree is specified in
-[`roadmap.md` §6](../roadmap.md#6-patchapi-monorepo-layout) and restated with
-project conventions in [`CLAUDE.md`](../CLAUDE.md). Two deliberate deviations
+[`roadmap.md` §6](../roadmap.md#6-patchapi-monorepo-layout). Two deliberate deviations
 from the roadmap, recorded in [`setup.md`](../setup.md):
 
 - the dashboard lives at `apps/web/` and uses **npm**, not pnpm;

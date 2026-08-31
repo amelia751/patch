@@ -107,4 +107,4 @@ certification. Nothing here asserts one.
 - No `roles/owner` or `roles/editor` on a workload identity; the module rejects
   those too.
 - No branch-protection, merge, or repository-admin surface of any kind. PatchAPI
-  stops at the pull request ([`CLAUDE.md`](../../CLAUDE.md) constraint 3).
+  stops at the pull request ([`README.md`](../../README.md)).
