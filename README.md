@@ -78,7 +78,8 @@ Local: `http://localhost:3000` (console) and `http://localhost:8080` (API).
 │   │                         GitHub webhooks
 │   ├── repo_indexer/         patchapi-indexer · Pub/Sub worker
 │   │   ├── zoekt/            regex recall
-│   │   └── astgrep/          call-site confirmation
+│   │   ├── astgrep/          call-site confirmation
+│   │   └── rules/<provider>/ one rule set per provider
 │   ├── github_tools/         patchapi-github-tools
 │   │   └── routes/           MCP + 10 capabilities
 │   │                         (no merge / admin / secrets)
@@ -97,7 +98,7 @@ Local: `http://localhost:3000` (console) and `http://localhost:8080` (API).
 │   ├── schemas/              ChangeManifest, ImpactReport,
 │   │                         PolicyDecision, PatchPlan,
 │   │                         VerificationReport
-│   ├── providers/            Google ingest adapters
+│   ├── providers/            descriptors + ingest adapters
 │   ├── policy/               injection gate + Model Armor
 │   ├── state/                Cloud SQL / Postgres
 │   ├── events/               Pub/Sub envelopes
