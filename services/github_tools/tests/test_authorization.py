@@ -19,7 +19,7 @@ def test_forbidden_capability_is_refused_with_a_structured_403(
     client, fake_github, pr_headers, forbidden
 ):
     response = client.post(
-        f"/v1/capabilities/{forbidden}", json={"repo": "amelia751/egaki"}, headers=pr_headers
+        f"/v1/capabilities/{forbidden}", json={"repo": "amelia751/storygen"}, headers=pr_headers
     )
     assert response.status_code == 403
     detail = response.json()["detail"]
@@ -34,7 +34,7 @@ def test_forbidden_capability_is_refused_even_for_a_read_only_agent(
 ):
     response = client.post(
         "/v1/capabilities/merge_pull_request",
-        json={"repo": "amelia751/egaki", "number": 1},
+        json={"repo": "amelia751/storygen", "number": 1},
         headers=impact_headers,
     )
     assert response.status_code == 403
@@ -59,7 +59,7 @@ def test_unknown_capability_is_a_structured_404(client, fake_github, pr_headers)
 
 def test_missing_agent_identity_is_401(client, fake_github):
     response = client.post(
-        "/v1/capabilities/get_repository_metadata", json={"repo": "amelia751/egaki"}
+        "/v1/capabilities/get_repository_metadata", json={"repo": "amelia751/storygen"}
     )
     assert response.status_code == 401
     assert response.json()["detail"]["error"] == "unknown_agent"
@@ -69,7 +69,7 @@ def test_missing_agent_identity_is_401(client, fake_github):
 def test_unrecognised_agent_is_401(client, fake_github):
     response = client.post(
         "/v1/capabilities/get_repository_metadata",
-        json={"repo": "amelia751/egaki"},
+        json={"repo": "amelia751/storygen"},
         headers={"X-PatchAPI-Agent": "attacker.agent"},
     )
     assert response.status_code == 401
@@ -84,7 +84,7 @@ def test_read_only_agent_cannot_reach_a_write_capability(
     client, fake_github, impact_headers, capability
 ):
     response = client.post(
-        f"/v1/capabilities/{capability}", json={"repo": "amelia751/egaki"}, headers=impact_headers
+        f"/v1/capabilities/{capability}", json={"repo": "amelia751/storygen"}, headers=impact_headers
     )
     assert response.status_code == 403
     detail = response.json()["detail"]
@@ -97,7 +97,7 @@ def test_read_only_agent_cannot_reach_a_write_capability(
 def test_change_intelligence_agent_holds_no_repository_grant(client, fake_github):
     response = client.post(
         "/v1/capabilities/get_file",
-        json={"repo": "amelia751/egaki", "path": "README.md", "ref": "a" * 40},
+        json={"repo": "amelia751/storygen", "path": "README.md", "ref": "a" * 40},
         headers={"X-PatchAPI-Agent": "patchapi.change_intelligence"},
     )
     assert response.status_code == 403
@@ -110,7 +110,7 @@ def test_change_intelligence_agent_holds_no_repository_grant(client, fake_github
 def test_bad_arguments_are_refused_before_github_is_called(client, fake_github, impact_headers):
     response = client.post(
         "/v1/capabilities/get_file",
-        json={"repo": "amelia751/egaki", "path": "README.md", "ref": "main"},
+        json={"repo": "amelia751/storygen", "path": "README.md", "ref": "main"},
         headers=impact_headers,
     )
     assert response.status_code == 422
@@ -121,7 +121,7 @@ def test_bad_arguments_are_refused_before_github_is_called(client, fake_github, 
 def test_write_outside_the_patch_branch_prefix_is_refused(client, fake_github, pr_headers):
     response = client.post(
         "/v1/capabilities/create_patch_branch",
-        json={"repo": "amelia751/egaki", "branch": "main", "base_sha": "a" * 40},
+        json={"repo": "amelia751/storygen", "branch": "main", "base_sha": "a" * 40},
         headers=pr_headers,
     )
     assert response.status_code == 422
@@ -132,7 +132,7 @@ def test_write_outside_the_patch_branch_prefix_is_refused(client, fake_github, p
 def test_unexpected_argument_is_refused(client, impact_headers):
     response = client.post(
         "/v1/capabilities/get_commit",
-        json={"repo": "amelia751/egaki", "sha": "a" * 40, "force": True},
+        json={"repo": "amelia751/storygen", "sha": "a" * 40, "force": True},
         headers=impact_headers,
     )
     assert response.status_code == 422

@@ -44,9 +44,8 @@ can disqualify the submission or break the enterprise trust model.
 10. **Do not invent migrations.** If the provider source is unavailable or the
     change is ambiguous, mark `HUMAN_REQUIRED` / fail closed. Never fabricate a
     deprecation, a model ID, a test result, or a sandbox outcome.
-11. **Pin the demo target.** The flagship migration is Google Imagen 4 →
-    Gemini 3.1 Flash Image against a pinned fork of `remorses/egaki`. Exact SHAs
-    and fixtures live under `demo/`.
+11. **Pin the demo target.** The demo repository is `amelia751/storygen`.
+    Exact SHAs and fixtures live under `demo/`.
 
 ## Layout
 
@@ -61,7 +60,7 @@ skills/                  Provider migration skills (Skill Registry shape)
 sandbox/                 Sandbox runner image + GKE templates
 db/                      Migrations and seeds
 infra/terraform/         GCP provisioning
-demo/                    Egaki baseline, fixtures, adversarial cases, demo script
+demo/                    Provider notice fixtures and demo artifacts
 docs/                    Architecture, data model, operations
 tests/                   Unit, integration, agent eval, adversarial
 ```
@@ -73,7 +72,7 @@ after updating the roadmap in the same change.
 
 - Python 3.12 with type hints on public functions; `ruff` for lint and format;
   `uv` for package management.
-- TypeScript strict mode; `npm` for the dashboard (`apps/web`). Egaki demo work follows the pinned fork’s package manager.
+- TypeScript strict mode; `npm` for the dashboard (`apps/web`).
 - Schemas are Pydantic; every agent I/O contract is versioned.
 - Model IDs, prompt versions, and schema versions live in configuration and are
   pinned, never inlined at a call site.

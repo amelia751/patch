@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Final
 
 # The only environment variables a step may request, and only during
-# live_verification. GOOGLE_GENERATIVE_AI_API_KEY is the Egaki / AI Studio
+# live_verification. GOOGLE_GENERATIVE_AI_API_KEY is the Storygen / AI Studio
 # path. GOOGLE_API_KEY is the same material under the older name.
 LIVE_VERIFICATION_CREDENTIALS: Final[frozenset[str]] = frozenset(
     {

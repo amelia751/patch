@@ -52,7 +52,7 @@ def _row() -> job.RunRow:
     return job.RunRow(
         run_id=str(uuid4()),
         state=RunState.PATCHING,
-        repository="amelia751/egaki",
+        repository="amelia751/storygen",
         base_sha="a" * 40,
         project_id=uuid4(),
         change_event_id=uuid4(),
@@ -97,7 +97,7 @@ def _opened() -> Any:
             {
                 "result": {
                     "number": 7,
-                    "html_url": "https://github.com/amelia751/egaki/pull/7",
+                    "html_url": "https://github.com/amelia751/storygen/pull/7",
                 }
             }
         )

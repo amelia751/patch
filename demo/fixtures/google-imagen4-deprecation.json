@@ -31,14 +31,14 @@
     "imagen_family": [
       "Dedicated image-generation endpoint (Vertex predict / AI SDK image model surface).",
       "Documents image-specific options such as seed, aspect ratio, and number of images.",
-      "Reachable through both Google AI Studio and Vertex routing in Egaki (`vertex/imagen-4.0-generate-001`)."
+      "Reachable through both Google AI Studio and Vertex routing in Storygen (`vertex/imagen-4.0-generate-001`)."
     ],
     "gemini_image_family": [
       "Generative multimodal surface: image bytes arrive as response parts of a content generation call.",
       "Does not expose the same Imagen-specific option set; PatchAPI must decide per-option whether to map, drop, or escalate.",
       "Any option with no Gemini equivalent is a HUMAN_REQUIRED signal, not a silent drop."
     ],
-    "consequence": "A migration that only rewrites model-ID strings is incorrect. See demo/egaki/expected-findings.yaml."
+    "consequence": "A migration that only rewrites model-ID strings is incorrect. See demo/storygen/expected-findings.yaml."
   },
   "verification_requirements": {
     "build": true,

@@ -14,8 +14,8 @@ import type { ChangeKind } from "@/components/interface/provider/data";
 
 export type DetectionStatus = "needs_you" | "watching" | "dismissed";
 
-/** Pinned Egaki fork SHA. Shared by every `amelia751/egaki` fixture row. */
-export const EGAKI_PINNED_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1";
+/** Pinned Storygen fork SHA. Shared by every `amelia751/storygen` fixture row. */
+export const STORYGEN_PINNED_SHA = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2";
 
 export type FileHitKind = "runtime" | "documentation" | "changelog";
 
@@ -94,8 +94,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     },
     replacement: "gemini-3.1-flash-image",
     migration: "semantic",
-    repo: "amelia751/egaki",
-    baseSha: EGAKI_PINNED_SHA,
+    repo: "amelia751/storygen",
+    baseSha: STORYGEN_PINNED_SHA,
     fileHits: 47,
     fileCount: 14,
     files: [
@@ -156,7 +156,7 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     product: "Gemini",
     title: "gemini-3.1-flash-image-preview no longer resolves",
     summary:
-      "The pinned Egaki catalog still names the preview id. The provider replacement is a claim — the installed SDK must resolve it before a patch writes it.",
+      "The pinned Storygen catalog still names the preview id. The provider replacement is a claim — the installed SDK must resolve it before a patch writes it.",
     kind: "replacement",
     status: "needs_you",
     effectiveAt: "2026-07-17",
@@ -164,8 +164,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     identifierCounts: { "gemini-3.1-flash-image-preview": 4 },
     replacement: "gemini-3.1-flash-image",
     migration: "mechanical",
-    repo: "amelia751/egaki",
-    baseSha: EGAKI_PINNED_SHA,
+    repo: "amelia751/storygen",
+    baseSha: STORYGEN_PINNED_SHA,
     fileHits: 4,
     fileCount: 2,
     files: [
@@ -229,8 +229,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     status: "dismissed",
     identifiers: ["fal-ai/imagen4/preview"],
     identifierCounts: { "fal-ai/imagen4/preview": 1 },
-    repo: "amelia751/egaki",
-    baseSha: EGAKI_PINNED_SHA,
+    repo: "amelia751/storygen",
+    baseSha: STORYGEN_PINNED_SHA,
     fileHits: 1,
     fileCount: 1,
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 1, kind: "runtime" }],
@@ -279,8 +279,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
       "vertex/imagen-4.0-fast-generate-001": 1,
     },
     migration: "semantic",
-    repo: "amelia751/egaki",
-    baseSha: EGAKI_PINNED_SHA,
+    repo: "amelia751/storygen",
+    baseSha: STORYGEN_PINNED_SHA,
     fileHits: 5,
     fileCount: 1,
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 5, kind: "runtime" }],
@@ -299,8 +299,8 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     status: "watching",
     identifiers: ["imagen-4.0-generate-001"],
     identifierCounts: { "imagen-4.0-generate-001": 7 },
-    repo: "amelia751/egaki",
-    baseSha: EGAKI_PINNED_SHA,
+    repo: "amelia751/storygen",
+    baseSha: STORYGEN_PINNED_SHA,
     fileHits: 7,
     fileCount: 1,
     files: [{ path: "cli/CHANGELOG.md", hits: 7, kind: "changelog" }],
@@ -409,9 +409,9 @@ export const HARDCODED_PROJECT_CHANGES: ProjectChange[] = [
     identifiers: ["seed", "numberOfImages", "aspectRatio"],
     fileHits: 3,
     fileCount: 1,
-    repo: "amelia751/egaki",
-    repos: ["amelia751/egaki", "example-org/localization-site"],
-    baseSha: EGAKI_PINNED_SHA,
+    repo: "amelia751/storygen",
+    repos: ["amelia751/storygen", "example-org/localization-site"],
+    baseSha: STORYGEN_PINNED_SHA,
     files: [{ path: "cli/src/cli/model-catalog.ts", hits: 3, kind: "runtime" }],
     sourceUrls: [
       "https://ai.google.dev/gemini-api/docs/models/imagen",

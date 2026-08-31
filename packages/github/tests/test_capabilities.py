@@ -14,8 +14,8 @@ from packages.github import (
     resolve_capability,
 )
 
-EGAKI = RepositoryRef(owner="amelia751", name="egaki")
-PINNED_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1"
+STORYGEN = RepositoryRef(owner="amelia751", name="storygen")
+PINNED_SHA = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
 
 
 def test_read_capability_resolves():
@@ -45,21 +45,21 @@ def test_unknown_capability_fails_closed():
 
 
 def test_commit_ref_requires_a_full_sha():
-    assert CommitRef(repo=EGAKI, sha=PINNED_SHA).sha == PINNED_SHA
+    assert CommitRef(repo=STORYGEN, sha=PINNED_SHA).sha == PINNED_SHA
     with pytest.raises(ValueError):
-        CommitRef(repo=EGAKI, sha="c09e1a4")
+        CommitRef(repo=STORYGEN, sha="c09e1a4")
     with pytest.raises(ValueError):
-        CommitRef(repo=EGAKI, sha="main")
+        CommitRef(repo=STORYGEN, sha="main")
 
 
 def test_repository_ref_round_trip():
-    assert RepositoryRef.parse("amelia751/egaki") == EGAKI
-    assert EGAKI.full_name == "amelia751/egaki"
+    assert RepositoryRef.parse("amelia751/storygen") == STORYGEN
+    assert STORYGEN.full_name == "amelia751/storygen"
     with pytest.raises(ValueError):
-        RepositoryRef.parse("egaki")
+        RepositoryRef.parse("storygen")
 
 
 def test_pull_request_url():
-    assert PullRequestRef(repo=EGAKI, number=7).url == "https://github.com/amelia751/egaki/pull/7"
+    assert PullRequestRef(repo=STORYGEN, number=7).url == "https://github.com/amelia751/storygen/pull/7"
     with pytest.raises(ValueError):
-        PullRequestRef(repo=EGAKI, number=0)
+        PullRequestRef(repo=STORYGEN, number=0)

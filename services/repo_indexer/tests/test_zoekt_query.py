@@ -26,7 +26,7 @@ from patchapi_repo_indexer.zoekt.patterns import (
 from patchapi_repo_indexer.zoekt.query import build_query, repository_file_count, search_shards
 from patchapi_repo_indexer.zoekt.shard import ShardRef
 
-REPOSITORY = "amelia751/egaki"
+REPOSITORY = "amelia751/storygen"
 SHARD = ShardRef(REPOSITORY, "main")
 
 GA_MODEL = "imagen-4.0-generate-001"

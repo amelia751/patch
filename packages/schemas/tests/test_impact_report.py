@@ -7,7 +7,7 @@ from packages.schemas import ImpactFinding, ImpactReport, UsageKind
 
 
 def test_affected_without_findings_is_rejected(load_golden):
-    document = load_golden("impact_report.egaki.json")
+    document = load_golden("impact_report.storygen.json")
     document["findings"] = []
 
     with pytest.raises(ValidationError, match="at least one finding"):
@@ -15,7 +15,7 @@ def test_affected_without_findings_is_rejected(load_golden):
 
 
 def test_unaffected_with_findings_is_rejected(load_golden):
-    document = load_golden("impact_report.egaki.json")
+    document = load_golden("impact_report.storygen.json")
     document["affected"] = False
 
     with pytest.raises(ValidationError, match="must carry no findings"):
@@ -23,7 +23,7 @@ def test_unaffected_with_findings_is_rejected(load_golden):
 
 
 def test_affected_without_migration_character_is_rejected(load_golden):
-    document = load_golden("impact_report.egaki.json")
+    document = load_golden("impact_report.storygen.json")
     del document["migration_character"]
 
     with pytest.raises(ValidationError, match="must state a migration_character"):
@@ -31,7 +31,7 @@ def test_affected_without_migration_character_is_rejected(load_golden):
 
 
 def test_affected_without_required_checks_is_rejected(load_golden):
-    document = load_golden("impact_report.egaki.json")
+    document = load_golden("impact_report.storygen.json")
     document["required_checks"] = []
 
     with pytest.raises(ValidationError, match="checks a patch has to pass"):
@@ -39,7 +39,7 @@ def test_affected_without_required_checks_is_rejected(load_golden):
 
 
 def test_unaffected_report_is_valid(load_golden):
-    document = load_golden("impact_report.egaki.json")
+    document = load_golden("impact_report.storygen.json")
     document.update(affected=False, findings=[], required_checks=[], confidence=0.99)
     del document["migration_character"]
 
@@ -51,7 +51,7 @@ def test_unaffected_report_is_valid(load_golden):
 
 @pytest.mark.parametrize("confidence", [-0.1, 1.1])
 def test_confidence_outside_the_unit_interval_is_rejected(confidence, load_golden):
-    document = load_golden("impact_report.egaki.json")
+    document = load_golden("impact_report.storygen.json")
     document["confidence"] = confidence
 
     with pytest.raises(ValidationError):

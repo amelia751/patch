@@ -36,7 +36,7 @@ def test_the_catalog_is_served_without_credentials(unwired_client):
 def test_every_capability_fails_closed_without_credentials(unwired_client, capability):
     response = unwired_client.post(
         f"/v1/capabilities/{capability}",
-        json={"repo": "amelia751/egaki"},
+        json={"repo": "amelia751/storygen"},
         headers={"X-PatchAPI-Agent": "patchapi.pr"},
     )
     assert response.status_code == 503

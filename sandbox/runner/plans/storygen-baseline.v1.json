@@ -1,0 +1,29 @@
+{
+  "schema_version": "sandbox.plan.v1",
+  "plan_id": "storygen-baseline",
+  "description": "Deterministic checks for the pinned Storygen demo target. Commands match the repository profile in slices.py.",
+  "source": {
+    "kind": "git",
+    "location": "https://github.com/amelia751/storygen",
+    "sha": "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
+  },
+  "patch": {
+    "kind": "none",
+    "location": null,
+    "strip": 1
+  },
+  "steps": [
+    {
+      "name": "build",
+      "argv": ["python3", "generate.py"],
+      "phase": "none",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "test",
+      "argv": ["python3", "-m", "unittest", "test_generate.py"],
+      "phase": "none",
+      "timeout_seconds": 300
+    }
+  ]
+}

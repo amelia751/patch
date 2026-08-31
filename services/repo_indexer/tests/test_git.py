@@ -15,7 +15,7 @@ import pytest
 from patchapi_repo_indexer import config, git
 from patchapi_repo_indexer.errors import UnsafePathError
 
-REPOSITORY = "patchapi-fixtures/egaki"
+REPOSITORY = "patchapi-fixtures/storygen"
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -224,7 +224,7 @@ def test_ensure_checkout_refuses_non_sha_revisions(sha: str) -> None:
 
 
 def test_clone_url_is_derived_from_the_full_name() -> None:
-    assert git.clone_url_for("remorses/egaki") == "https://github.com/remorses/egaki.git"
+    assert git.clone_url_for("amelia751/storygen") == "https://github.com/amelia751/storygen.git"
 
 
 def test_no_credential_is_written_into_the_mirror_config(

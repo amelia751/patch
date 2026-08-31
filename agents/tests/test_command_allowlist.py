@@ -51,7 +51,7 @@ def test_near_misses_are_refused(argv):
         match_command(argv)
 
 
-def test_the_existing_egaki_shapes_still_match():
+def test_the_existing_storygen_shapes_still_match():
     """The Python shapes are additions; the pnpm allowlist is unchanged."""
     assert match_command(["pnpm", "install", "--frozen-lockfile"]).timeout_seconds == 900
     assert match_command(["pnpm", "--dir", "cli", "build"]).argv[-1] == "build"

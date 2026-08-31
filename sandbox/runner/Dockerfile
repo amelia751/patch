@@ -13,7 +13,7 @@
 # the image.
 
 # The pinned demo target is a pnpm/TypeScript CLI on Node 22, matching the
-# toolchain recorded in demo/egaki/baseline.json.
+# toolchain recorded in demo/storygen/baseline.json.
 FROM node:22.16.0-bookworm-slim
 
 # git materialises the pinned base SHA; python3 hosts the runner itself, which

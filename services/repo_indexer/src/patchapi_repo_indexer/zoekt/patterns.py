@@ -29,7 +29,7 @@ GOOGLE_VERTEX_ROUTED: Final[str] = r"vertex/(?:imagen|gemini|veo)-\d[\w.-]*"
 GOOGLE_IMAGEN_FAMILY: Final[str] = r"imagen-\d+\.\d+-(fast-|ultra-)?generate-\d+"
 
 # The retired preview identifier is its own finding in
-# `demo/egaki/expected-findings.yaml`, not a variant of the GA one: it has its
+# `demo/storygen/expected-findings.yaml`, not a variant of the GA one: it has its
 # own replacement and its own deprecation date, so it gets its own pattern.
 GOOGLE_IMAGEN_PREVIEW: Final[str] = r"imagen-[\d.]+-[\w-]*preview[\w-]*"
 

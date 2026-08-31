@@ -227,25 +227,25 @@ def test_aggregate_hits_groups_by_path() -> None:
         [
             {
                 "identifier": "imagen-4.0-generate-001",
-                "repository": "amelia751/egaki",
+                "repository": "amelia751/storygen",
                 "file_path": "cli/src/cli/model-catalog.ts",
                 "usage_kind": "runtime_source",
             },
             {
                 "identifier": "imagen-4.0-generate-001",
-                "repository": "amelia751/egaki",
+                "repository": "amelia751/storygen",
                 "file_path": "cli/src/cli/model-catalog.ts",
                 "usage_kind": "runtime_source",
             },
             {
                 "identifier": "imagen-4.0-generate-001",
-                "repository": "amelia751/egaki",
+                "repository": "amelia751/storygen",
                 "file_path": "README.md",
                 "usage_kind": "documentation_example",
             },
         ]
     )
-    assert repos == ["amelia751/egaki"]
+    assert repos == ["amelia751/storygen"]
     assert file_hits == 3
     assert file_count == 2
     assert counts["imagen-4.0-generate-001"] == 3

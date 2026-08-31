@@ -6,7 +6,7 @@
 **Hackathon:** All Things Agentic Hackathon — Fortified Enterprise Fleet  
 **Roadmap version:** 2026-08-12  
 **Submission deadline:** 2026-08-31 8:00 PM EDT  
-**Primary demo target:** [`remorses/egaki`](https://github.com/remorses/egaki)  
+**Primary demo target:** [`amelia751/storygen`](https://github.com/amelia751/storygen)  
 **Primary live migration:** Google Imagen 4 → Gemini 3.x Image (three retired IDs onto two replacement models)  
 **Reasoning model for PatchAPI agents:** Gemini 3.5 Flash or newer, with Gemini 3.5 Flash as the default hackathon configuration  
 **Agent framework:** Google Agent Development Kit (ADK), Python
@@ -57,7 +57,7 @@ For the hackathon, the flagship scenario uses a real and unusually timely Google
   `negativePrompt` and `imageFormat` are gone, `numberOfImages` requires a loop,
   `aspectRatio` moves into a nested `ImageConfig`, and SynthID watermarking is
   unconditional.
-- Egaki contains Imagen 4 usages across runtime, configuration, tests, and docs,
+- Storygen contains Imagen 4 usages across runtime, configuration, tests, and docs,
   and distinguishes Imagen capabilities from Gemini image-model capabilities.
 
 This is a three-to-two model mapping with per-identifier configuration and a
@@ -75,15 +75,15 @@ Official Google source:
 Google's own pages disagree. The Imagen model page's migration prose says to use
 `gemini-2.5-flash-image`, while the deprecation table and the Firebase migration
 guide both say `gemini-3.1-flash-image`. Separately,
-`gemini-3.1-flash-image-preview` — the identifier Egaki's model catalog points at
+`gemini-3.1-flash-image-preview` — the identifier Storygen's model catalog points at
 at the pinned SHA — was **retired on July 17, 2026** and no longer resolves.
 
 Do not paper over this. It is a live, citable instance of exactly the condition
 hard constraint #10 exists for. The Change Intelligence Agent must corroborate
 across sources and escalate rather than pick a winner silently.
 
-Egaki:
-- https://github.com/remorses/egaki
+Storygen:
+- https://github.com/amelia751/storygen
 
 ---
 
@@ -432,31 +432,31 @@ It contains:
 ## Repository B — the demo fork
 
 ```text
-github.com/patchapi-demo/egaki-demo
+github.com/amelia751/storygen
 ```
 
-### ⚠ The actual fork is `amelia751/egaki`
+### ⚠ The actual fork is `amelia751/storygen`
 
-`demo/egaki/baseline.json` records the real fork as
-`https://github.com/amelia751/egaki`, because the `patchapi-demo` organization
-was not creatable through the API. `amelia751/egaki-demo` exists but is empty.
+`demo/storygen/baseline.json` records the real fork as
+`https://github.com/amelia751/storygen`, because the `patchapi-demo` organization
+was not creatable through the API. `amelia751/storygen` exists but is empty.
 
-`patchapi-demo/egaki-demo` remains the aspirational name and appears throughout
+`amelia751/storygen` remains the aspirational name and appears throughout
 this document as a placeholder. **The pinned baseline is authoritative.** Either
 create the organization and re-fork before Phase 2, or accept the user-namespace
 fork and update this document — but do not let code read the placeholder.
 
-Base SHA at the pinned revision: `c09e1a44200ff5e951746e013035e68aeb3a14b1`.
+Base SHA at the pinned revision: `c5428cdcdcd12204e1f4cc47c393dc6e738d88b2`.
 
 This repository is a **fork of**:
 
 ```text
-https://github.com/remorses/egaki
+https://github.com/amelia751/storygen
 ```
 
 At demo setup time:
 
-1. Fork Egaki.
+1. Fork Storygen.
 2. Choose and record a specific upstream commit that still contains the Imagen 4 usages.
 3. Keep `main` at that known pre-migration state.
 4. Record:
@@ -487,7 +487,7 @@ Stretch only.
 
 Fork a compact Google Gemini image-generation web example to demonstrate browser E2E testing with Agent Platform Computer Use + Playwright.
 
-Do **not** build this until the Egaki path is completely reliable.
+Do **not** build this until the Storygen path is completely reliable.
 
 ---
 
@@ -576,7 +576,7 @@ patchapi/
 ├── demo/
 │   ├── fixtures/
 │   │   └── google-imagen4-deprecation.json
-│   ├── egaki/
+│   ├── storygen/
 │   │   ├── baseline.json
 │   │   ├── expected-findings.yaml
 │   │   ├── verification-plan.yaml
@@ -606,11 +606,11 @@ patchapi/
 | Database access | SQLAlchemy + Alembic, or lightweight async Postgres client |
 | Package management | `uv` for Python |
 | Frontend | Next.js + TypeScript |
-| Frontend package manager | `npm` (Egaki demo work uses the pinned fork's `pnpm`) |
+| Frontend package manager | `npm` (Storygen demo work uses the pinned fork's `pnpm`) |
 | Infrastructure | Terraform |
 | Telemetry | OpenTelemetry |
 | Sandbox runner | Python + shell/git tooling |
-| Demo target | Egaki: TypeScript + pnpm + Vercel AI SDK |
+| Demo target | Storygen: TypeScript + pnpm + Vercel AI SDK |
 
 Do not introduce Kafka, Temporal, Kubernetes operators of our own, a vector DB, or five extra databases unless a real blocker appears.
 
@@ -1028,7 +1028,7 @@ Determine:
 
 ```json
 {
-  "repo": "patchapi-demo/egaki-demo",
+  "repo": "amelia751/storygen",
   "base_sha": "...",
   "affected": true,
   "confidence": 0.98,
@@ -1182,7 +1182,7 @@ exit_code != 0? read stderr, revise, repeat
 converged, or the orchestrator's step budget is exhausted
 ```
 
-§15.6 requires the agent to inspect the installed Egaki and Vercel AI SDK
+§15.6 requires the agent to inspect the installed Storygen and Vercel AI SDK
 interfaces before choosing a migration. That is impossible without reading files
 in the sandbox after `pnpm install`, so sandbox access is a requirement of the
 contract, not an extra privilege.
@@ -1211,7 +1211,7 @@ arbitrary code execution unless something bounds it. The agent **proposes**;
 only allowlisted commands execute. Enforce it in an ADK `before_tool_callback`,
 which is where `agents/guardrails.py` already performs allowlist checks.
 
-For the Egaki demo the allowlist is roughly:
+For the Storygen demo the allowlist is roughly:
 
 ```text
 pnpm install --frozen-lockfile
@@ -1601,7 +1601,7 @@ PatchAPI has no end users in the chatbot sense, so per-user scoping is the wrong
 model. Scope by the thing that actually accrues institutional context:
 
 ```python
-SCOPE = {"repo": "amelia751/egaki", "provider": "google"}
+SCOPE = {"repo": "amelia751/storygen", "provider": "google"}
 
 client.agent_engines.memories.create(
     name=MEMORY_BANK,
@@ -1777,8 +1777,8 @@ One row per occurrence, in Postgres, authoritative:
 
 | Repo | Team | Provider | Identifier/API surface | File | SHA | Layer | Confidence |
 |---|---|---|---|---|---|---|---|
-| egaki-demo | media | Google | `imagen-4.0-generate-001` | README.md | abc | A | 1.0 |
-| egaki-demo | media | Google | `imagen-*` family handling | source file | abc | B | 0.9 |
+| storygen-demo | media | Google | `imagen-4.0-generate-001` | README.md | abc | A | 1.0 |
+| storygen-demo | media | Google | `imagen-*` family handling | source file | abc | B | 0.9 |
 
 `detection_layer` records which tier produced the row, so a reviewer can tell a
 literal byte match from a structural inference from a model's opinion.
@@ -2527,7 +2527,7 @@ PatchAPI Demo
 Install it **only** on:
 
 ```text
-patchapi-demo/egaki-demo
+amelia751/storygen
 ```
 
 Suggested permissions:
@@ -2578,26 +2578,26 @@ This produces a much stronger zero-trust story.
 
 ---
 
-# 15. The Egaki demo
+# 15. The Storygen demo
 
-## 15.1 Why Egaki
+## 15.1 Why Storygen
 
 Current repository:
-- https://github.com/remorses/egaki
+- https://github.com/amelia751/storygen
 
-Egaki is a TypeScript CLI for image/video/speech generation. It is large enough to feel real but small enough for a hackathon integration.
+Storygen is a TypeScript CLI for image/video/speech generation. It is large enough to feel real but small enough for a hackathon integration.
 
 Its current README includes commands such as:
 
 ```bash
-egaki image "isometric floating city, detailed, soft colors" \
+storygen image "isometric floating city, detailed, soft colors" \
   -m imagen-4.0-generate-001
 ```
 
 and Vertex routing such as:
 
 ```bash
-egaki image "editorial sneaker photo on white seamless" \
+storygen image "editorial sneaker photo on white seamless" \
   -m vertex/imagen-4.0-generate-001 \
   -o sneaker.png
 ```
@@ -2608,7 +2608,7 @@ It also documents an Imagen seed example and explicitly distinguishes model-fami
 
 That distinction is essential: **PatchAPI must reason about semantics, not merely search-and-replace strings.**
 
-## 15.2 Egaki build/test facts
+## 15.2 Storygen build/test facts
 
 The current `cli/package.json` defines:
 
@@ -2640,15 +2640,15 @@ Upstream may migrate Imagen 4 before submission.
 Create:
 
 ```text
-demo/egaki/baseline.json
+demo/storygen/baseline.json
 ```
 
 Example:
 
 ```json
 {
-  "upstream": "https://github.com/remorses/egaki",
-  "fork": "https://github.com/patchapi-demo/egaki-demo",
+  "upstream": "https://github.com/amelia751/storygen",
+  "fork": "https://github.com/amelia751/storygen",
   "captured_at": "2026-08-11T...",
   "upstream_sha": "<record exact SHA>",
   "fork_base_sha": "<record exact SHA>",
@@ -2720,12 +2720,12 @@ evidence and must fail closed.
 `recommended_replacement: "gemini-3.1-flash-image"` for all three identifiers.
 That is a one-to-one mapping of a three-to-two change, and it would drive an
 incorrect migration for `imagen-4.0-ultra-generate-001`. Correct it before
-Phase 1, along with `demo/egaki/expected-findings.yaml`.
+Phase 1, along with `demo/storygen/expected-findings.yaml`.
 
 ### A second, independent exposure in the same repository
 
-`gemini-3.1-flash-image-preview` — the identifier Egaki's model catalog points at
-at the pinned SHA, recorded in `demo/egaki/baseline.json` — was **retired on
+`gemini-3.1-flash-image-preview` — the identifier Storygen's model catalog points at
+at the pinned SHA, recorded in `demo/storygen/baseline.json` — was **retired on
 July 17, 2026** and no longer resolves. So the pinned fork depends on two dead
 model families at once: Imagen 4 (dying Aug 17) and an already-dead preview
 endpoint.
@@ -2797,13 +2797,13 @@ Differences the Patch Agent must resolve, each with a documented answer:
 | `imageFormat` | removed; always PNG |
 | `aspectRatio` | moves into a nested `ImageConfig` |
 | `addWatermark` | removed; SynthID always applied |
-| `--seed` | Egaki-specific behavior tied to the Imagen surface |
-| AI Studio vs Vertex routing | Egaki's `vertex/` prefix path |
+| `--seed` | Storygen-specific behavior tied to the Imagen surface |
+| AI Studio vs Vertex routing | Storygen's `vertex/` prefix path |
 | Catalog entries, tests, docs | must move together or the CLI breaks |
 
 Any option with no equivalent is a `HUMAN_REQUIRED` signal, not a silent drop.
 
-The Patch Agent must inspect the installed Egaki/Vercel AI SDK interfaces before
+The Patch Agent must inspect the installed Storygen/Vercel AI SDK interfaces before
 deciding the concrete migration.
 
 Do **not** pre-program the answer “replace every Imagen ID with one Gemini
@@ -2817,7 +2817,7 @@ Vercel AI SDK reference:
 Google image docs:
 - https://ai.google.dev/gemini-api/docs/image-generation
 
-## 15.7 Egaki sandbox verification plan
+## 15.7 Storygen sandbox verification plan
 
 First, deterministic local checks:
 
@@ -2830,8 +2830,8 @@ pnpm --dir cli test
 Alternative workspace form if more reliable in the pinned revision:
 
 ```bash
-pnpm --filter egaki build
-pnpm --filter egaki test
+pnpm --filter storygen build
+pnpm --filter storygen test
 ```
 
 PatchAPI should discover/store the commands in the repository profile rather than assume them globally.
@@ -2841,18 +2841,18 @@ Then live smoke test the patched CLI.
 Target command shape:
 
 ```bash
-egaki image \
+storygen image \
   "a tiny orange cat wearing a space helmet on a plain background" \
   -m gemini-3.1-flash-image \
   -o verification.png
 ```
 
-This only works **after** the patch adds `gemini-3.1-flash-image` to Egaki's
+This only works **after** the patch adds `gemini-3.1-flash-image` to Storygen's
 model catalog. At the pinned SHA the catalog knows only the retired
 `-preview` identifier, so this command failing pre-patch is expected and is
 itself useful demo evidence.
 
-The exact invocation must be validated against the patched Egaki CLI and installed provider SDK.
+The exact invocation must be validated against the patched Storygen CLI and installed provider SDK.
 
 Pass criteria:
 - process exits 0,
@@ -2874,7 +2874,7 @@ Preferred final narrative:
 
 ```text
 1. Here is Google's official retirement notice.
-2. Here is the pinned Egaki code that still depends on Imagen 4.
+2. Here is the pinned Storygen code that still depends on Imagen 4.
 3. PatchAPI detects the exposure.
 4. PatchAPI migrates the repo.
 5. The new path builds/tests.
@@ -3002,7 +3002,7 @@ Replacement: Gemini 3.1 Flash Image
 ```text
 patchapi-demo
 
-egaki-demo           AFFECTED
+storygen-demo           AFFECTED
 3 runtime/doc groups
 Risk: MEDIUM
 Status: VERIFYING
@@ -3081,7 +3081,7 @@ Example:
   "actor_id": "patchapi-patch",
   "actor_spiffe_id": "principal://agents.global.org-.../reasoningEngines/patchapi-patch",
   "action": "sandbox.apply_patch",
-  "resource": "amelia751/egaki",
+  "resource": "amelia751/storygen",
   "base_sha": "...",
   "policy_verdict": "ALLOW",
   "semantic_governance_verdict": "ALLOW",
@@ -3461,7 +3461,7 @@ Two corrections:
 
 ### ⚠ This gate has not passed
 
-`demo/egaki/baseline.json` records `live_verification: BLOCKED`. Install, build,
+`demo/storygen/baseline.json` records `live_verification: BLOCKED`. Install, build,
 and test all pass, but the live replacement-model call has never succeeded —
 because of billing, not engineering: AI Studio credits are depleted and the
 pinned CLI gates Vertex behind `GOOGLE_VERTEX_API_KEY` rather than reading
@@ -3472,16 +3472,16 @@ works."* Until that call succeeds, every downstream phase rests on an unproven
 assumption. **Unblock this before writing anything else.**
 
 - [ ] Create `patchapi-demo` GitHub org/namespace.
-- [ ] Fork `remorses/egaki`.
+- [ ] Fork `amelia751/storygen`.
 - [ ] Record exact upstream SHA.
 - [ ] Confirm Imagen 4 usages in pinned fork.
 - [ ] Confirm clean `pnpm install`.
 - [ ] Confirm `pnpm --dir cli build`.
 - [ ] Confirm `pnpm --dir cli test`.
 - [ ] **Restore billing** — AI Studio prepayment credits or a Vertex express key exported as `GOOGLE_VERTEX_API_KEY`.
-- [ ] Manually prove a viable `gemini-3.1-flash-image` invocation with the pinned Egaki SDK stack.
+- [ ] Manually prove a viable `gemini-3.1-flash-image` invocation with the pinned Storygen SDK stack.
 - [ ] Manually prove a `gemini-3-pro-image` invocation, since Ultra maps there.
-- [ ] Write `demo/egaki/baseline.json`.
+- [ ] Write `demo/storygen/baseline.json`.
 - [ ] Write the official Google deprecation fixture.
 - [ ] Decide exactly which source files a correct migration should touch.
 
@@ -3499,7 +3499,7 @@ Cheap, independent of every preview feature, and each item is a named track
 requirement. None of it blocks on Phase 0.
 
 - [ ] Correct `demo/fixtures/google-imagen4-deprecation.json` to the per-identifier `replacements` array (§15.4).
-- [ ] Correct `demo/egaki/expected-findings.yaml` to match, and record the retired `-preview` identifier as its own finding.
+- [ ] Correct `demo/storygen/expected-findings.yaml` to match, and record the retired `-preview` identifier as its own finding.
 - [ ] Create the `patchapi-provider-intake` Model Armor template.
 - [ ] Call `sanitizeUserPrompt` on the ingested provider document; fail closed at `SANITIZED` on detection.
 - [ ] Set project-level Model Armor floor settings.
@@ -3522,7 +3522,7 @@ Build locally:
 ```text
 Google fixture
 → Change Manifest
-→ scan Egaki
+→ scan Storygen
 → Impact Report
 → policy
 → Patch Agent
@@ -3580,7 +3580,7 @@ Also close out standing repo debt that will otherwise compound:
 - [ ] Create SandboxTemplate.
 - [ ] enforce non-root/gVisor/no SA token/limits.
 - [ ] default-deny network.
-- [ ] clone pinned Egaki base.
+- [ ] clone pinned Storygen base.
 - [ ] run install/build/test inside sandbox.
 - [ ] run live Gemini image test inside sandbox.
 - [ ] save `verification.png` and logs to Cloud Storage.
@@ -3752,7 +3752,7 @@ If time gets tight, protect this exact order.
 The product spine:
 
 1. real Google Imagen change, with the correct three-to-two replacement mapping
-2. pinned Egaki fork
+2. pinned Storygen fork
 3. Change Manifest
 4. Impact Agent
 5. deterministic policy decision
@@ -3866,7 +3866,7 @@ Show PatchAPI scanning the demo organization.
 Result:
 
 ```text
-patchapi-demo/egaki-demo
+amelia751/storygen
 AFFECTED
 ```
 
@@ -4044,7 +4044,7 @@ convincing than a label.
 
 Before recording:
 
-- [ ] pin Egaki SHA,
+- [ ] pin Storygen SHA,
 - [ ] pin PatchAPI commit,
 - [ ] pin container image digest,
 - [ ] verify Google credential,
@@ -4353,8 +4353,8 @@ the real change and would produce a wrong migration for the Ultra variant. See �
   https://cloud.google.com/storage/docs
 
 ## GitHub
-- Egaki:  
-  https://github.com/remorses/egaki
+- Storygen:  
+  https://github.com/amelia751/storygen
 - GitHub App installation authentication:  
   https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation
 - Pull Requests API:  
@@ -4362,7 +4362,7 @@ the real change and would produce a wrong migration for the Ultra variant. See �
 - GitHub MCP server:  
   https://github.com/github/github-mcp-server
 
-## Egaki's AI SDK layer
+## Storygen's AI SDK layer
 - Vercel AI SDK Google provider:  
   https://ai-sdk.dev/providers/ai-sdk-providers/google
 - Vercel AI SDK Google Vertex provider:  

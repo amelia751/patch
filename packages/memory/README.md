@@ -18,8 +18,8 @@ read is not a repository with no prohibitions.
 from packages.memory import LocalMemoryBank, RepositoryProfile
 
 bank = LocalMemoryBank(path="/tmp/patchapi-memory.json")
-bank.remember(RepositoryProfile(repo="amelia751/egaki", approval_rules=("human_review_required",)))
-bank.recall("amelia751/egaki").requires_human_review  # True
+bank.remember(RepositoryProfile(repo="amelia751/storygen", approval_rules=("human_review_required",)))
+bank.recall("amelia751/storygen").requires_human_review  # True
 bank.recall("someone/unknown")                        # None
 ```
 

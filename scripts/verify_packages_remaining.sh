@@ -174,7 +174,7 @@ step "event envelope refuses to carry source code"
 "${RUN[@]}" python - <<'PY'
 from packages.events import ActionType, EventEnvelope, EventType, PayloadError, TrustLevel, idempotency_key
 
-base_sha = "c09e1a44200ff5e951746e013035e68aeb3a14b1"
+base_sha = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
 envelope = EventEnvelope(
     event_type=EventType.PROVIDER_CHANGE_DETECTED,
     event_id="evt-verify",

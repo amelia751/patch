@@ -244,7 +244,7 @@ npm install -g @sourcegraph/scip-typescript
 scip-typescript index --pnpm-workspaces
 ```
 
-Gives true cross-package references in the Egaki pnpm workspace. **Not**
+Gives true cross-package references in the Storygen pnpm workspace. **Not**
 fleet-wide, for one reason that matters more than speed: when install or
 type-check fails it emits a *silently incomplete* index. At scale, a degraded
 index and "this repository is unaffected" look identical, and that is the one
@@ -416,7 +416,7 @@ GOOGLE_IMAGEN_PREVIEW = r"imagen-[\d.]+-[\w-]*preview[\w-]*"
 ```
 
 The preview pattern exists because the retired `-preview` identifier is its own
-finding in `demo/egaki/expected-findings.yaml`, not a variant of the GA one.
+finding in `demo/storygen/expected-findings.yaml`, not a variant of the GA one.
 
 ### 5.3 ast-grep integration
 
@@ -732,7 +732,7 @@ be reviewed.
 | 2 | `store.py`, including `indexable_targets` / `projects_for` / `indexing_for_project` | 1 | Multi-repo projects resolve to a deduplicated `(repo, branch)` work list. Banner has a read model. |
 | 3 | `git.py` mirror clones and diffing | 2 | Changed paths from a real push. |
 | 4 | Zoekt in the Dockerfile, `zoekt/shard.py` with refcounts | 3 | Shard built once, shared by projects. |
-| 5 | `zoekt/query.py` + `patterns.py` | 4 | Regex recall beats the literal watchlist on the Egaki fixture. |
+| 5 | `zoekt/query.py` + `patterns.py` | 4 | Regex recall beats the literal watchlist on the Storygen fixture. |
 | 6 | `build_inventory_zoekt()` + fallback | 5 | Backend swap with unchanged output contract. |
 | 7 | ast-grep rules + `astgrep/runner.py` | 6 | Layer B precision, prose hits dropped. |
 | 8 | `ProjectRepoAdded` / `Removed` from `packages/state/projects.py` | 2, 4 | Importing a repo indexes it; removing it releases the shard. Worker writes `set_index_progress`. |
@@ -765,14 +765,14 @@ writes progress, even if Zoekt is still the literal fallback.
 | `packages/state/tests/test_indexing_route.py` | `GET /api/projects/{id}/indexing` shape matches what `CodebaseTab` polls. |
 | `tests/integration/test_push_to_inventory.py` | Push webhook to `provider_usages` rows against a fixture repo. Push to an unimported branch is dropped before any fetch. |
 | `tests/integration/test_manifest_fanout.py` | One manifest, one project with a frontend and a backend repo both affected → two `ImpactAnalysisRequested` events, two runs, two PRs. |
-| `tests/integration/test_egaki_inventory.py` | Inventory at the pinned SHA equals `demo/egaki/expected-findings.yaml`. |
+| `tests/integration/test_storygen_inventory.py` | Inventory at the pinned SHA equals `demo/storygen/expected-findings.yaml`. |
 
 ```bash
 uv run pytest services/repo_indexer packages/repo_scan
 uv run pytest tests/integration -k index
 ```
 
-The Egaki test is the one that gates the demo. It must also cover the corrected
+The Storygen test is the one that gates the demo. It must also cover the corrected
 fixture — three GA identifiers mapping to two replacements, plus the retired
 `-preview` identifier as its own finding.
 

@@ -20,7 +20,7 @@
 | `services/`, `agents/`, `packages/`, `skills/`, `sandbox/`, `db/`, `infra/`, `tests/` | missing |
 | `.secrets/` | SA key + Gemini API key + smoke artifacts (gitignored) |
 
-**Layout note:** `roadmap.md` §6 places the dashboard at `apps/web/`. The Next app has been relocated from root `web/` → `apps/web/` and stays on **npm** (project choice; overrides the roadmap’s pnpm preference for the dashboard). Egaki demo work may still use whatever the pinned fork uses.
+**Layout note:** `roadmap.md` §6 places the dashboard at `apps/web/`. The Next app has been relocated from root `web/` → `apps/web/` and stays on **npm** (project choice; overrides the roadmap’s pnpm preference for the dashboard). Storygen demo work may still use whatever the pinned fork uses.
 
 Where [`CLAUDE.md`](./CLAUDE.md) says `apps/dashboard/`, prefer `apps/web/` from the roadmap; update `CLAUDE.md` when conventions are synced.
 
@@ -108,7 +108,7 @@ patchapi/
 │
 ├── demo/
 │   ├── fixtures/
-│   ├── egaki/
+│   ├── storygen/
 │   └── adversarial/
 │
 ├── docs/
@@ -357,7 +357,7 @@ Each task block is fleet-ready: role, owns, does, verify, pass criteria.
 | **Owns** | `sandbox/gke/**`, sandbox runner Dockerfile publish scripts under `sandbox/runner/`, `scripts/verify_sandbox_gke.sh` |
 | **Depends** | T-sandbox-local, T-infra-terraform (cluster or documented existing cluster) |
 | **Does** | SandboxTemplate + network-policy YAML from roadmap §13; runner image buildable; document gVisor/non-root/no SA token posture. |
-| **Dynamic verify** | `./scripts/verify_sandbox_gke.sh` → build image → (if `GKE_CONTEXT` set) apply template to a **dev** namespace → create one sandbox claim → exec `echo ok` or run Egaki install/build if demo pin ready → delete sandbox → assert destroyed |
+| **Dynamic verify** | `./scripts/verify_sandbox_gke.sh` → build image → (if `GKE_CONTEXT` set) apply template to a **dev** namespace → create one sandbox claim → exec `echo ok` or run Storygen install/build if demo pin ready → delete sandbox → assert destroyed |
 | **Pass** | image builds always; cluster path PASS or `SKIP: GKE_CONTEXT unset` with instructions. Never report PASS without kubectl evidence |
 
 ---
@@ -367,14 +367,10 @@ Each task block is fleet-ready: role, owns, does, verify, pass criteria.
 | | |
 |---|---|
 | **Role** | `demo-engineer` |
-| **Owns** | `demo/**`, `scripts/verify_demo_egaki.sh` |
-| **Does** | Create `demo/fixtures/google-imagen4-deprecation.json` (roadmap §15.4). Create `demo/egaki/baseline.json` with real SHAs once fork exists. Add `expected-findings.yaml`, `verification-plan.yaml`, `demo-script.md` stubs filled with known facts. Adversarial fixtures from roadmap §16. Optionally vendor a shallow clone of the pinned Egaki SHA under `demo/egaki/checkout/` (gitignored) **or** document clone-by-SHA in the verify script. |
-| **Dynamic verify** | `./scripts/verify_demo_egaki.sh`:  
-| | 1. Confirm baseline SHA still contains Imagen 4 identifiers (`rg imagen-4.0-generate-001`).  
-| | 2. `pnpm install --frozen-lockfile` in checkout.  
-| | 3. `pnpm --dir cli build` and `pnpm --dir cli test` (or filter form).  
-| | 4. Live: `egaki image ... -m gemini-3.1-flash-image -o demo/egaki/artifacts/verification.png` when `GOOGLE_API_KEY` set — assert file non-empty image. |
-| **Pass** | steps 1–3 required for PASS; step 4 PASS or `SKIP: no API key`. Post-Aug-17: do **not** require Imagen 4 live success |
+| **Owns** | `demo/**` |
+| **Does** | Pin `amelia751/storygen`. Provider fixtures live in `demo/fixtures/`. |
+| **Dynamic verify** | `uv run --all-packages python scripts/smoke_patch_loop.py --deterministic` |
+| **Pass** | deterministic patch-loop smoke exits 0 |
 
 ---
 
@@ -412,7 +408,7 @@ Each task block is fleet-ready: role, owns, does, verify, pass criteria.
 | **Does** | Cross-cutting live proofs required by hackathon rules. |
 | **Dynamic verify** | | 
 | | A. **Reasoning model:** call Gemini **3.5 Flash**, assert reply + model identity. |
-| | B. **Image model:** call **`gemini-3.1-flash-image`** (or SDK path Egaki will use), write `demo/egaki/artifacts/gemini-image-smoke.png`, assert bytes look like an image (`file` / PIL). |
+| | B. **Image model:** call **`gemini-3.1-flash-image`** (or SDK path Storygen will use), write `demo/storygen/artifacts/gemini-image-smoke.png`, assert bytes look like an image (`file` / PIL). |
 | **Pass** | both A and B exit 0 when credentials present; otherwise fail the task as blocked (do not mark setup complete) |
 
 ---
@@ -423,8 +419,8 @@ Each task block is fleet-ready: role, owns, does, verify, pass criteria.
 |---|---|
 | **Role** | `github-tools-engineer` |
 | **Owns** | `scripts/verify_github_app_live.sh` only (uses `services/github_tools`) |
-| **Does** | End-to-end read against `patchapi-demo/egaki-demo` (or configured fork): metadata + list tree at pinned SHA. |
-| **Dynamic verify** | installation token path works; response SHA matches `demo/egaki/baseline.json` |
+| **Does** | End-to-end read against `amelia751/storygen` (or configured fork): metadata + list tree at pinned SHA. |
+| **Dynamic verify** | installation token path works; response SHA matches `demo/storygen/baseline.json` |
 | **Pass** | PASS / `SKIP: fork or App not ready` |
 
 ---
@@ -470,7 +466,7 @@ Each task block is fleet-ready: role, owns, does, verify, pass criteria.
 | Postgres | `./scripts/verify_db.sh` | migrate/seed against Docker Postgres |
 | Sandbox local | `./scripts/verify_sandbox_local.sh` | isolated build of testdata |
 | Sandbox GKE | `./scripts/verify_sandbox_gke.sh` | image build; optional live claim |
-| Egaki demo pin | `./scripts/verify_demo_egaki.sh` | SHA has Imagen 4; pnpm build/test; optional live image |
+| Storygen demo pin | `scripts/smoke_patch_loop.py --deterministic` | isolated patch-loop smoke |
 | Terraform | `./scripts/verify_infra_terraform.sh` | init/validate/plan |
 | Docs | `./scripts/verify_docs.sh` | files + links |
 | Aggregate | `./scripts/verify_all.sh` | full ledger |
@@ -530,7 +526,7 @@ Credentials: `.secrets/gcp-service-account.json` (Owner) + optional `.secrets/ge
 | Cloud Run / GKE clusters | **empty** | APIs on; no services/clusters yet — **GKE live is in this setup batch** |
 | Model Armor `us-central1` list | **FAIL (403)** | ~~Use `global` instead~~ — **wrong diagnosis.** The probe called the global host `modelarmor.googleapis.com` for a regional collection. Templates are served only from `modelarmor.LOCATION.rep.googleapis.com`; the global host carries floor settings and answers a template call with a permission error that reads like IAM and is not. Pinned in `packages/policy/config.py` as `ARMOR_ENDPOINT_HOST`. |
 | Model Armor `global` list | **PASS** | Empty because floor settings, not templates, live there. Template `patchapi-untrusted-intake` now exists on the `us-central1` regional host. |
-| Demo fork | **PASS** | Real fork [`amelia751/egaki`](https://github.com/amelia751/egaki) @ `c09e1a44200ff5e951746e013035e68aeb3a14b1` — Imagen 4 IDs present. Recorded in `demo/egaki/baseline.json` |
+| Demo fork | **PASS** | [`amelia751/storygen`](https://github.com/amelia751/storygen) @ `c5428cdcdcd12204e1f4cc47c393dc6e738d88b2` |
 | Agent Runtime (`reasoningEngines`) | **PASS** | List API 200; empty then created instance. Not used for agent *execution* — PatchAPI runs its own Cloud Run worker pool. The one Agent Engine on this project is the Memory Bank. |
 | Agent Registry API | **PASS** | `agentregistry.googleapis.com` enabled; `.../services` list 200 |
 | Memory Bank | **PASS** | Created via Agent Platform SDK `client.agent_engines.create`. The engine is now configured through `PATCHAPI_MEMORY_BANK_ENGINE` / `PATCHAPI_MEMORY_BANK_LOCATION`; nothing reads `.secrets/memory_bank_name.txt`. |
@@ -561,13 +557,9 @@ Reference: https://docs.cloud.google.com/gemini-enterprise-agent-platform/machin
 
 ### What you may still need to do manually
 
-1. **Delete empty shell repo** [`amelia751/egaki-demo`](https://github.com/amelia751/egaki-demo) — created by mistake; push blocked by repo rules. Needs `delete_repo` scope:  
-   `gh auth refresh -h github.com -s delete_repo` then `gh repo delete amelia751/egaki-demo --yes`  
-   Demo target is the real fork **`amelia751/egaki`**.
-2. **Optional:** create GitHub org `patchapi-demo` in the web UI if you want the roadmap name; otherwise `amelia751/egaki` is fine for the hackathon.
-3. **GitHub App** — later (as decided).
-4. **AI Studio credits** — optional; Vertex path already works.
-5. **GKE Agent Sandbox** — no extra enrollment found; we will create the cluster in this batch and install Agent Sandbox per https://docs.cloud.google.com/kubernetes-engine/docs/how-to/how-install-agent-sandbox
+1. **GitHub App** — later (as decided).
+2. **AI Studio credits** — optional; Vertex path already works.
+3. **GKE Agent Sandbox** — no extra enrollment found; we will create the cluster in this batch and install Agent Sandbox per https://docs.cloud.google.com/kubernetes-engine/docs/how-to/how-install-agent-sandbox
 
 ### Gemini CLI (local agent tooling)
 
@@ -589,7 +581,7 @@ Tracked template: `.gemini.example/`. Smoke verified: `gemini -p "…OK…" -m g
 |---|---|
 | Dashboard | `apps/web/`, **npm** |
 | GCP | `patch-505223`, regional `us-central1`, Gemini models on **`global`** |
-| Demo fork | **`amelia751/egaki`** @ SHA above |
+| Demo fork | **`amelia751/storygen`** @ SHA above |
 | GitHub App | **SKIP** this batch |
 | GKE Agent Sandbox | **LIVE this batch** |
 | Agent Platform | **Already working** — no enroll needed |
@@ -598,7 +590,7 @@ Tracked template: `.gemini.example/`. Smoke verified: `gemini -p "…OK…" -m g
 
 ## 9. Open decisions (remaining)
 
-1. ~~Demo fork~~ → **`amelia751/egaki`** pinned.
+1. ~~Demo fork~~ → **`amelia751/storygen`** pinned.
 2. ~~GitHub App~~ → later / SKIP.
 3. ~~GKE live~~ → **yes, this batch**.
 4. ~~Browser E2E~~ → **Playwright now** (this batch).
@@ -613,7 +605,7 @@ Setup is complete when:
 2. `./scripts/verify_all.sh` reports **no FAIL**.
 3. Gemini 3.5 Flash live smoke is **PASS** (credentials configured).
 4. Gemini 3.1 Flash Image live smoke is **PASS** (credentials configured).
-5. Egaki pinned baseline build/test is **PASS**.
+5. Storygen pinned baseline build/test is **PASS**.
 6. Local sandbox runner is **PASS**.
 7. GKE sandbox is **PASS** or an explicit, human-accepted **SKIP** with a dated follow-up batch.
 8. `apps/web` HTTP + (if approved) browser smoke are **PASS**.

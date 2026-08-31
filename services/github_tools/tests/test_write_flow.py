@@ -6,7 +6,7 @@ through the HTTP surface with the PR Agent's identity.
 """
 
 BRANCH = "patchapi/google-imagen4-shutdown-2026-08-17"
-REPO = "amelia751/egaki"
+REPO = "amelia751/storygen"
 
 
 def invoke(client, capability, payload, headers):

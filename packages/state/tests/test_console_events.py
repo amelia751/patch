@@ -131,7 +131,7 @@ async def test_event_stream_opens_with_a_snapshot_then_stops() -> None:
             "progress_percent": 47,
             "repositories": [
                 {
-                    "full_name": "amelia751/egaki",
+                    "full_name": "amelia751/storygen",
                     "branch": "main",
                     "status": "indexing",
                     "progress_percent": 47,
@@ -166,7 +166,7 @@ async def test_emit_from_notify_pushes_indexing_when_subscribed() -> None:
         owner_id=OWNER_ID,
         rows=[
             {
-                "repository": "amelia751/egaki",
+                "repository": "amelia751/storygen",
                 "branch": "main",
                 "status": "indexing",
                 "progress_percent": 25,

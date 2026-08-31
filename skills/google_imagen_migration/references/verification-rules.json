@@ -11,7 +11,7 @@
     {
       "id": "V-01",
       "name": "sandbox build",
-      "detail": "The patched tree builds inside the isolated workspace. In the Egaki baseline the compile-time model union makes this a real tripwire rather than a formality.",
+      "detail": "The patched tree builds inside the isolated workspace. In the Storygen baseline the compile-time model union makes this a real tripwire rather than a formality.",
       "blocking": true
     },
     {

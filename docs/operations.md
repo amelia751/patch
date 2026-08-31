@@ -39,7 +39,7 @@ Pinned values that must not be inlined at a call site:
 | `PATCHAPI_IMAGE_MODEL` | `gemini-3.1-flash-image` | demo replacement model |
 | `GCP_VERTEX_LOCATION` | `global` | both model IDs 404 on `us-central1` |
 | `GCP_REGION` | `us-central1` | everything else |
-| `DEMO_FORK` / `DEMO_FORK_SHA` | pinned fork + SHA | mirrored in `demo/egaki/baseline.json` |
+| `DEMO_FORK` / `DEMO_FORK_SHA` | pinned fork + SHA | mirrored in `demo/storygen/baseline.json` |
 
 Platform variables that decide whether a run reaches Google Cloud at all:
 

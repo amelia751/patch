@@ -50,7 +50,7 @@ OTHER_ID = UUID("22222222-2222-4222-8222-222222222222")
 PROJECT_ID = UUID("33333333-3333-4333-8333-333333333333")
 SESSION_SECRET = "test-session-secret"
 WEBHOOK_SECRET = "test-webhook-secret"
-AFTER_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1"
+AFTER_SHA = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
 BEFORE_SHA = "a" * 40
 
 
@@ -140,7 +140,7 @@ def test_indexing_route_returns_the_project_rollup(monkeypatch: pytest.MonkeyPat
     connection = FakeConnection(
         owner_id=OWNER_ID,
         rows=[
-            repo_row("amelia751/egaki", "main", "indexing", 20),
+            repo_row("amelia751/storygen", "main", "indexing", 20),
             repo_row("amelia751/patch", "main", "indexing", 80),
         ],
     )
@@ -153,7 +153,7 @@ def test_indexing_route_returns_the_project_rollup(monkeypatch: pytest.MonkeyPat
         "progress_percent": 50,
         "repositories": [
             {
-                "full_name": "amelia751/egaki",
+                "full_name": "amelia751/storygen",
                 "branch": "main",
                 "status": "indexing",
                 "progress_percent": 20,
@@ -336,7 +336,7 @@ def push_body(*, ref: str = "refs/heads/main", after: str = AFTER_SHA) -> bytes:
             "ref": ref,
             "before": BEFORE_SHA,
             "after": after,
-            "repository": {"full_name": "amelia751/egaki", "private": False},
+            "repository": {"full_name": "amelia751/storygen", "private": False},
             "installation": {"id": 90210},
             # Present in a real delivery and deliberately not carried into the
             # event: commit content is not a scalar the transport may hold.
@@ -386,19 +386,19 @@ def test_push_is_accepted_and_published(
     published = json.loads(data)
     assert published["event_type"] == EventType.REPO_PUSH.value
     assert published["payload"] == {
-        "repository": "amelia751/egaki",
+        "repository": "amelia751/storygen",
         "branch": "main",
         "before_sha": BEFORE_SHA,
         "after_sha": AFTER_SHA,
         "installation_id": 90210,
     }
-    assert published["idempotency_key"] == f"repo-push:amelia751/egaki:main:{AFTER_SHA}"
+    assert published["idempotency_key"] == f"repo-push:amelia751/storygen:main:{AFTER_SHA}"
     assert published["trust"] == TrustLevel.INTERNAL_ANALYSIS.value
 
 
 def test_a_replayed_delivery_is_the_same_unit_of_work(publisher: FakePublisher) -> None:
     first = repo_push_event(
-        repository="amelia751/egaki",
+        repository="amelia751/storygen",
         branch="main",
         before_sha=BEFORE_SHA,
         after_sha=AFTER_SHA,
@@ -406,7 +406,7 @@ def test_a_replayed_delivery_is_the_same_unit_of_work(publisher: FakePublisher) 
         occurred_at="2026-08-13T00:00:00+00:00",
     )
     later = repo_push_event(
-        repository="amelia751/egaki",
+        repository="amelia751/storygen",
         branch="main",
         before_sha=BEFORE_SHA,
         after_sha=AFTER_SHA,
@@ -555,7 +555,7 @@ def test_topics_are_derived_from_the_configured_prefix() -> None:
 def test_publishing_without_a_project_fails_soft() -> None:
     result = publish(
         repo_push_event(
-            repository="amelia751/egaki",
+            repository="amelia751/storygen",
             branch="main",
             before_sha=BEFORE_SHA,
             after_sha=AFTER_SHA,
@@ -598,7 +598,7 @@ def test_branch_is_read_only_from_a_branch_ref(ref: str, expected: str | None) -
 async def test_importing_a_repository_announces_it(publisher: FakePublisher) -> None:
     from packages.state.projects import announce_repository_added
 
-    published = await announce_repository_added(uuid4(), "amelia751/egaki", "main")
+    published = await announce_repository_added(uuid4(), "amelia751/storygen", "main")
 
     assert published is True
     topic, data = publisher.messages[0]
@@ -606,7 +606,7 @@ async def test_importing_a_repository_announces_it(publisher: FakePublisher) -> 
     event = json.loads(data)
     assert event["event_type"] == EventType.PROJECT_REPO_ADDED.value
     assert set(event["payload"]) == {"project_id", "repository", "branch"}
-    assert event["payload"]["repository"] == "amelia751/egaki"
+    assert event["payload"]["repository"] == "amelia751/storygen"
     assert event["payload"]["branch"] == "main"
 
 
@@ -617,4 +617,4 @@ async def test_an_import_survives_a_broken_transport(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("packages.events.publisher._client", lambda: FakePublisher(fail=True))
     monkeypatch.setenv("GCP_PROJECT", "patch-505223")
 
-    assert await announce_repository_added(uuid4(), "amelia751/egaki", "main") is False
+    assert await announce_repository_added(uuid4(), "amelia751/storygen", "main") is False

@@ -204,7 +204,7 @@ for capability in "${FORBIDDEN[@]}"; do
   CODE="$(probe POST "$BASE/v1/capabilities/$capability" \
     -H 'Content-Type: application/json' \
     -H 'X-PatchAPI-Agent: patchapi.pr' \
-    -d '{"repo":"amelia751/egaki"}')"
+    -d '{"repo":"amelia751/storygen"}')"
   [[ "$CODE" == "403" ]] || fail "$capability returned $CODE, expected 403"
   "${RUN[@]}" python -c '
 import json, sys
@@ -232,13 +232,13 @@ print("unknown capability refused")
 step "unrecognised caller is refused"
 CODE="$(probe POST "$BASE/v1/capabilities/get_repository_metadata" \
   -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: attacker.agent' \
-  -d '{"repo":"amelia751/egaki"}')"
+  -d '{"repo":"amelia751/storygen"}')"
 [[ "$CODE" == "401" ]] || fail "unknown agent returned $CODE, expected 401"
 
 step "read-only agent cannot reach a write capability"
 CODE="$(probe POST "$BASE/v1/capabilities/open_pull_request" \
   -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.impact' \
-  -d '{"repo":"amelia751/egaki"}')"
+  -d '{"repo":"amelia751/storygen"}')"
 [[ "$CODE" == "403" ]] || fail "ungranted write returned $CODE, expected 403"
 "${RUN[@]}" python -c '
 import json
@@ -252,7 +252,7 @@ print("write refused for", detail["agent"])
 step "a granted capability fails closed without credentials"
 CODE="$(probe POST "$BASE/v1/capabilities/get_repository_metadata" \
   -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.impact' \
-  -d '{"repo":"amelia751/egaki"}')"
+  -d '{"repo":"amelia751/storygen"}')"
 [[ "$CODE" == "503" ]] || fail "unwired invocation returned $CODE, expected 503"
 "${RUN[@]}" python -c '
 import json
@@ -331,7 +331,7 @@ print("mcp forbidden:", error["code"], error["data"]["capability"])
 
 CODE="$(probe POST "$BASE/mcp" \
   -H 'Content-Type: application/json' -H 'X-PatchAPI-Agent: patchapi.impact' \
-  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"open_pull_request","arguments":{"repo":"amelia751/egaki"}}}')"
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"open_pull_request","arguments":{"repo":"amelia751/storygen"}}}')"
 [[ "$CODE" == "200" ]] || fail "mcp ungranted write returned $CODE, expected a 200 JSON-RPC error"
 "${RUN[@]}" python -c '
 import json
@@ -395,7 +395,7 @@ fi
 SERVER_PID=""
 
 step "live GitHub App read"
-DEMO_REPO="${PATCHAPI_DEMO_REPO:-amelia751/egaki}"
+DEMO_REPO="${PATCHAPI_DEMO_REPO:-amelia751/storygen}"
 if [[ -z "${GITHUB_APP_ID:-}" || -z "${GITHUB_APP_INSTALLATION_ID:-}" ]] ||
   [[ -z "${GITHUB_APP_PRIVATE_KEY_PATH:-}" && -z "${GITHUB_APP_PRIVATE_KEY_SECRET:-}" ]]; then
   echo "SKIP: GitHub App not configured."

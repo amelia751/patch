@@ -16,7 +16,7 @@
 #   ./scripts/verify_all.sh                 # everything
 #   ./scripts/verify_all.sh --list          # show the plan, run nothing
 #   ./scripts/verify_all.sh --only gemini --only docs
-#   ./scripts/verify_all.sh --skip sandbox_gke --skip demo_egaki
+#   ./scripts/verify_all.sh --skip sandbox_gke
 #   ./scripts/verify_all.sh --no-scan       # skip the credential scan
 #   ./scripts/verify_all.sh --self-test     # prove the credential scan can fail
 #
@@ -95,7 +95,6 @@ T-control-api-reads|verify_control_api_reads.sh|yes|1200|dashboard read path aga
 T-sandbox-local|verify_sandbox_local.sh|yes|1800|needs a running Docker daemon
 T-apps-web|verify_apps_web.sh|yes|1800|npm ci + next build + HTTP probe
 T-apps-web-browser|verify_apps_web_browser.sh|yes|1800|Playwright against a local Next server
-T-demo-baseline|verify_demo_egaki.sh|yes|2400|pnpm install/build/test at the pinned Egaki SHA
 T-infra-terraform|verify_infra_terraform.sh|yes|1800|terraform init/validate/plan against GCP
 T-sandbox-gke|verify_sandbox_gke.sh|yes|2700|builds the runner image; claims and destroys a live sandbox when a cluster is reachable
 T-github-app-live|-|no|0|deferred by setup.md §8 — no verifier in this batch

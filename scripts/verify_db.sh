@@ -233,8 +233,8 @@ BEGIN
 
     SELECT r.full_name INTO full_name FROM project_repositories r
     WHERE r.project_id = '5eedda7a-0004-4000-8000-000000000001';
-    IF full_name <> 'amelia751/egaki' THEN
-        RAISE EXCEPTION 'imported repo is %, expected amelia751/egaki', full_name;
+    IF full_name <> 'amelia751/storygen' THEN
+        RAISE EXCEPTION 'imported repo is %, expected amelia751/storygen', full_name;
     END IF;
 
     SELECT EXISTS (
@@ -275,7 +275,7 @@ BEGIN
             project_id, name, full_name
         ) VALUES (
             '5eedda7a-0004-4000-8000-000000000001',
-            'egaki',
+            'storygen',
             'not-a-full-name'
         );
         RAISE EXCEPTION 'project_repositories accepted a full_name without owner/repo';

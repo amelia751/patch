@@ -210,7 +210,7 @@ def test_read_only_agent_cannot_call_a_write_tool(client, fake_github, impact_he
         rpc(
             client,
             "tools/call",
-            {"name": capability, "arguments": {"repo": "amelia751/egaki"}},
+            {"name": capability, "arguments": {"repo": "amelia751/storygen"}},
             headers=impact_headers,
         )
     )
@@ -229,7 +229,7 @@ def test_change_intelligence_agent_cannot_call_a_read_tool(client, fake_github):
             "tools/call",
             {
                 "name": "get_file",
-                "arguments": {"repo": "amelia751/egaki", "path": "a", "ref": "a" * 40},
+                "arguments": {"repo": "amelia751/storygen", "path": "a", "ref": "a" * 40},
             },
             headers={"X-PatchAPI-Agent": "patchapi.change_intelligence"},
         )
@@ -280,7 +280,7 @@ def test_bad_arguments_are_refused_before_github_is_called(client, fake_github, 
             "tools/call",
             {
                 "name": "get_file",
-                "arguments": {"repo": "amelia751/egaki", "path": "a", "ref": "main"},
+                "arguments": {"repo": "amelia751/storygen", "path": "a", "ref": "main"},
             },
             headers=impact_headers,
         )
@@ -295,7 +295,7 @@ def test_a_granted_call_fails_closed_without_credentials(unwired_client, impact_
         rpc(
             unwired_client,
             "tools/call",
-            {"name": "get_repository_metadata", "arguments": {"repo": "amelia751/egaki"}},
+            {"name": "get_repository_metadata", "arguments": {"repo": "amelia751/storygen"}},
             headers=impact_headers,
         )
     )
@@ -305,7 +305,7 @@ def test_a_granted_call_fails_closed_without_credentials(unwired_client, impact_
 
 
 def test_a_granted_call_returns_the_same_envelope_as_the_rest_route(client, impact_headers):
-    arguments = {"repo": "amelia751/egaki"}
+    arguments = {"repo": "amelia751/storygen"}
     rest = client.post(
         "/v1/capabilities/get_repository_metadata", json=arguments, headers=impact_headers
     )
@@ -330,7 +330,7 @@ def test_no_response_body_contains_an_installation_token(client, pr_headers):
         rpc(
             client,
             "tools/call",
-            {"name": "get_repository_metadata", "arguments": {"repo": "amelia751/egaki"}},
+            {"name": "get_repository_metadata", "arguments": {"repo": "amelia751/storygen"}},
             headers=pr_headers,
         ),
     ):

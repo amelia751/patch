@@ -84,25 +84,25 @@ def test_public_repository_projects_the_import_list_fields() -> None:
     projected = public_repository(
         {
             "id": 42,
-            "name": "egaki",
-            "full_name": "amelia751/egaki",
+            "name": "storygen",
+            "full_name": "amelia751/storygen",
             "private": True,
             "language": "TypeScript",
             "stargazers_count": 3,
             "updated_at": "2026-08-12T00:00:00Z",
-            "html_url": "https://github.com/amelia751/egaki",
+            "html_url": "https://github.com/amelia751/storygen",
             "permissions": {"admin": True},
         }
     )
     assert projected == {
         "id": 42,
-        "name": "egaki",
-        "full_name": "amelia751/egaki",
+        "name": "storygen",
+        "full_name": "amelia751/storygen",
         "private": True,
         "language": "TypeScript",
         "stargazers_count": 3,
         "updated_at": "2026-08-12T00:00:00Z",
-        "html_url": "https://github.com/amelia751/egaki",
+        "html_url": "https://github.com/amelia751/storygen",
     }
     assert "permissions" not in projected
 

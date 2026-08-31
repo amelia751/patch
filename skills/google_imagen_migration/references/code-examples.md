@@ -1,7 +1,7 @@
 # Call shapes — Imagen 4 versus Gemini native image generation
 
-Both excerpts are reduced from the pinned Egaki baseline
-(`amelia751/egaki` @ `c09e1a44200ff5e951746e013035e68aeb3a14b1`,
+Both excerpts are reduced from the pinned Storygen baseline
+(`amelia751/storygen` @ `c5428cdcdcd12204e1f4cc47c393dc6e738d88b2`,
 `cli/src/cli/generate.ts` and `cli/src/cli/model-catalog.ts`). They are here to
 show why the two surfaces are not interchangeable, not to be pasted into a patch:
 the shape a given repository uses is whatever its own dispatch does.

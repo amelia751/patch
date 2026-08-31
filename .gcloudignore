@@ -27,7 +27,7 @@
 # Credentials and pinned checkouts. Everything under demo/ except the notices.
 demo/*.json
 demo/*.pem
-demo/egaki
+demo/storygen
 demo/storygen
 demo/adversarial
 demo/setup-ledger.ndjson

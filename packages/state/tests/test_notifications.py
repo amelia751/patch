@@ -18,7 +18,7 @@ def test_public_notification_maps_kind_to_type() -> None:
             "project_id": "5eedda7a-0004-4000-8000-000000000001",
             "kind": "info",
             "title": "Imported",
-            "message": "egaki is ready to review",
+            "message": "storygen is ready to review",
             "priority": "normal",
             "read_at": None,
             "dismissed_at": None,
@@ -48,7 +48,7 @@ def test_change_notification_uses_finding_copy() -> None:
             "replacements": [{"to": "gemini-3.1-flash-image"}],
             "file_hits": 47,
             "file_count": 14,
-            "repos": ["amelia751/egaki"],
+            "repos": ["amelia751/storygen"],
         }
     )
     assert card["dedupe_key"] == change_dedupe_key("imagen4-retirement-2026-08-17")

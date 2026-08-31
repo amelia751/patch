@@ -4,7 +4,7 @@ from packages.repo_scan.classify import UsageKind, classify_path
 from packages.repo_scan.dependencies import GO, NPM, PYPI, is_manifest, parse_manifest
 
 PACKAGE_JSON = """{
-  "name": "egaki",
+  "name": "storygen",
   "dependencies": {
     "@google/genai": "^1.4.0",
     "next": "15.0.0"

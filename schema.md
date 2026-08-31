@@ -635,7 +635,7 @@ GET /api/projects/{id}/indexing (poll fallback)
   "status": "indexing" | "ready" | "idle" | "error",
   "progress_percent": 47,
   "repositories": [
-    {"full_name": "amelia751/egaki", "branch": "main",
+    {"full_name": "amelia751/storygen", "branch": "main",
      "status": "indexing", "progress_percent": 47}
   ]
 }

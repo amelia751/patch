@@ -11,14 +11,14 @@ from packages.events import (
     key_digest,
 )
 
-BASE_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1"
+BASE_SHA = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
 
 
 def make_envelope(**overrides):
     fields = {
         "event_type": EventType.PROVIDER_CHANGE_DETECTED,
         "event_id": "evt-0001",
-        "run_id": "run-egaki-001",
+        "run_id": "run-storygen-001",
         "occurred_at": "2026-08-11T23:00:00Z",
         "trust": TrustLevel.UNTRUSTED_PROVIDER_INPUT,
         "payload": {
@@ -102,10 +102,10 @@ def test_topic_vocabulary_matches_the_roadmap():
 
 
 def test_idempotency_key_is_the_documented_triple():
-    key = idempotency_key("run-egaki-001", ActionType.OPEN_PULL_REQUEST, BASE_SHA)
+    key = idempotency_key("run-storygen-001", ActionType.OPEN_PULL_REQUEST, BASE_SHA)
 
-    assert key == f"run-egaki-001:open_pull_request:{BASE_SHA}"
-    assert key == idempotency_key("run-egaki-001", "open_pull_request", BASE_SHA)
+    assert key == f"run-storygen-001:open_pull_request:{BASE_SHA}"
+    assert key == idempotency_key("run-storygen-001", "open_pull_request", BASE_SHA)
     assert len(key_digest(key)) == 64
 
 

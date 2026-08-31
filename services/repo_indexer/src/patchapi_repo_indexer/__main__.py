@@ -27,7 +27,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="patchapi-repo-indexer", description=_DESCRIPTION)
     parser.add_argument("--root", required=True, type=Path, help="checkout to index")
     parser.add_argument(
-        "--repository", required=True, help="repository full name, e.g. amelia751/egaki"
+        "--repository", required=True, help="repository full name, e.g. amelia751/storygen"
     )
     parser.add_argument(
         "--sha",

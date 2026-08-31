@@ -21,7 +21,7 @@ from packages.memory.config import (
 )
 from packages.memory.vertex import VertexMemoryBank, memory_bank_unavailable_reason
 
-REPO = "amelia751/egaki"
+REPO = "amelia751/storygen"
 ENGINE = "projects/p/locations/us-central1/reasoningEngines/123"
 
 

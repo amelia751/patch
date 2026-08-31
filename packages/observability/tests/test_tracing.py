@@ -53,14 +53,14 @@ def test_attributes_and_resource_are_exported():
 
     with span(
         SPAN_POLICY,
-        attributes={ATTR_RUN_ID: "run-egaki-001", ATTR_POLICY_OUTCOME: "blocked"},
+        attributes={ATTR_RUN_ID: "run-storygen-001", ATTR_POLICY_OUTCOME: "blocked"},
         provider=provider,
     ):
         pass
     provider.force_flush()
 
     (record,) = emitted_spans(buffer)
-    assert record["attributes"][ATTR_RUN_ID] == "run-egaki-001"
+    assert record["attributes"][ATTR_RUN_ID] == "run-storygen-001"
     assert record["attributes"][ATTR_POLICY_OUTCOME] == "blocked"
     assert record["resource"]["attributes"]["service.name"] == "patchapi-test"
     assert record["resource"]["attributes"]["service.version"] == TRACING_SCHEMA_VERSION

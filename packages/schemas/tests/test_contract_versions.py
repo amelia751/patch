@@ -21,10 +21,10 @@ CONTRACTS = [ChangeManifest, ImpactReport, PolicyDecision, PatchPlan, Verificati
 
 GOLDEN_BY_CONTRACT = {
     ChangeManifest: "change_manifest.imagen4.json",
-    ImpactReport: "impact_report.egaki.json",
-    PolicyDecision: "policy_decision.egaki.json",
-    PatchPlan: "patch_plan.egaki.json",
-    VerificationReport: "verification_report.egaki.json",
+    ImpactReport: "impact_report.storygen.json",
+    PolicyDecision: "policy_decision.storygen.json",
+    PatchPlan: "patch_plan.storygen.json",
+    VerificationReport: "verification_report.storygen.json",
 }
 
 SEMVER_LITERAL = re.compile(r'"\d+\.\d+\.\d+"')

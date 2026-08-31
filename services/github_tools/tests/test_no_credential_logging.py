@@ -68,7 +68,7 @@ def test_reveal_is_only_called_where_a_credential_is_used(path):
 def test_error_payloads_never_include_upstream_bodies(client, fake_github, impact_headers):
     response = client.post(
         "/v1/capabilities/get_file",
-        json={"repo": "amelia751/egaki", "path": "README.md", "ref": "c" * 40},
+        json={"repo": "amelia751/storygen", "path": "README.md", "ref": "c" * 40},
         headers=impact_headers,
     )
     assert response.status_code == 502

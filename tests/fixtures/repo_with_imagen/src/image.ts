@@ -1,4 +1,4 @@
-// Runtime call site. The model ID carries the Vertex routing prefix Egaki uses,
+// Runtime call site. The model ID carries the Vertex routing prefix Storygen uses,
 // which is why the scanner matches on substrings rather than whole tokens.
 const IMAGE_MODEL = "vertex/imagen-4.0-generate-001";
 

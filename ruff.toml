@@ -8,7 +8,7 @@ line-length = 100
 extend-exclude = [
     ".venv",
     "apps",
-    "demo/egaki/checkout",
+    "demo/storygen/checkout",
     "node_modules",
 ]
 

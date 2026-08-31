@@ -69,7 +69,7 @@ class TestUsageMapping:
                 "line_end": None,
                 "detection_layer": "A_DETERMINISTIC",
                 "confidence": Decimal("0.90"),
-                "observed_sha": "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+                "observed_sha": "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2",
             }
         )
 
@@ -92,7 +92,7 @@ class TestUsageMapping:
                     "line_end": None,
                     "detection_layer": "A_DETERMINISTIC",
                     "confidence": 1.0,
-                    "observed_sha": "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+                    "observed_sha": "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2",
                 }
             )
 

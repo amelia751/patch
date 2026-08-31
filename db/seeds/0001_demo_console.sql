@@ -1,7 +1,7 @@
 -- DEMO SEED DATA — not production truth.
 --
 -- Console tenancy only: one user, a GitHub App connection, one imported
--- project pointing at the pinned Egaki fork. No password hashes, no GitHub
+-- project pointing at the pinned Storygen fork. No password hashes, no GitHub
 -- tokens, no secret values.
 --
 -- Every row uses a UUID in the reserved `5eedda7a-` prefix.
@@ -63,7 +63,7 @@ INSERT INTO projects (
 VALUES (
     '5eedda7a-0004-4000-8000-000000000001',
     '5eedda7a-0001-4000-8000-000000000001',
-    'egaki',
+    'storygen',
     'Pinned demo fork (seed data)',
     'draft',
     'gcp'
@@ -82,11 +82,11 @@ VALUES (
     '5eedda7a-0005-4000-8000-000000000001',
     '5eedda7a-0004-4000-8000-000000000001',
     'backend',
-    'egaki',
-    'amelia751/egaki',
+    'storygen',
+    'amelia751/storygen',
     'main',
     false,
-    'https://github.com/amelia751/egaki'
+    'https://github.com/amelia751/storygen'
 )
 ON CONFLICT (id) DO UPDATE
 SET full_name = EXCLUDED.full_name,
@@ -101,8 +101,8 @@ VALUES (
     '5eedda7a-0006-4000-8000-000000000001',
     '5eedda7a-0004-4000-8000-000000000001',
     '5eedda7a-0005-4000-8000-000000000001',
-    'egaki Workspace',
-    'https://github.com/amelia751/egaki.git',
+    'storygen Workspace',
+    'https://github.com/amelia751/storygen.git',
     'main',
     NULL,
     'dev'

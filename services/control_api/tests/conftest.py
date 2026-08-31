@@ -28,9 +28,9 @@ from patchapi_control_api.ports import (
 from packages.schemas.run_state import RunState
 
 FIXTURE_RUN_ID = "run-000000000001"
-FIXTURE_BASE_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1"
+FIXTURE_BASE_SHA = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
 FIXTURE_CHANGE_ID = "imagen4-retirement-2026-08-17"
-FIXTURE_REPOSITORY = "amelia751/egaki"
+FIXTURE_REPOSITORY = "amelia751/storygen"
 
 
 class RecordingDispatcher:
@@ -210,7 +210,7 @@ def run_record() -> RunRecord:
     return RunRecord(
         run_id=FIXTURE_RUN_ID,
         state=RunState.VERIFYING,
-        repository="amelia751/egaki",
+        repository="amelia751/storygen",
         base_sha=FIXTURE_BASE_SHA,
         updated_at=datetime(2026, 8, 11, 23, 0, tzinfo=UTC),
     )

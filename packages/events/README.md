@@ -18,11 +18,11 @@ from packages.events import ActionType, EventEnvelope, EventType, TrustLevel, id
 envelope = EventEnvelope(
     event_type=EventType.PROVIDER_CHANGE_DETECTED,
     event_id="evt-1",
-    run_id="run-egaki-001",
+    run_id="run-storygen-001",
     occurred_at="2026-08-11T23:00:00Z",
     trust=TrustLevel.UNTRUSTED_PROVIDER_INPUT,
     payload={"change_id": "google-imagen4-retirement", "source_uri": "https://…"},
-).with_idempotency_key(idempotency_key("run-egaki-001", ActionType.OPEN_PULL_REQUEST, sha))
+).with_idempotency_key(idempotency_key("run-storygen-001", ActionType.OPEN_PULL_REQUEST, sha))
 ```
 
 `occurred_at` is passed in rather than read from the clock, so an envelope is a

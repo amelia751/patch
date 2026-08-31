@@ -38,7 +38,7 @@ from packages.events.repo_events import (
 from packages.repo_scan import SCANNER_VERSION
 from packages.repo_scan.classify import UsageKind
 
-REPOSITORY = "patchapi-test/egaki"
+REPOSITORY = "patchapi-test/storygen"
 BRANCH = "main"
 BEFORE_SHA = "a" * 40
 AFTER_SHA = "b" * 40
@@ -296,7 +296,7 @@ def ready_state(sha: str = BEFORE_SHA, **overrides: Any) -> store.RepoIndexState
         status="ready",
         progress_percent=100,
         indexed_sha=sha,
-        shard_path="/var/zoekt/egaki",
+        shard_path="/var/zoekt/storygen",
         indexer_version=INDEXER_VERSION,
         scanner_version=SCANNER_VERSION,
         last_full_index=NOW,
@@ -455,7 +455,7 @@ async def test_push_delta_indexes_retires_and_fans_out(
     assert recorded.last_delta_index == NOW
     # A delta scanned the pushed files, not the repository.
     assert recorded.file_count == 42
-    assert recorded.shard_path == "/var/zoekt/egaki"
+    assert recorded.shard_path == "/var/zoekt/storygen"
 
     assert [entry[2:4] for entry in fake_store.progress] == [
         ("indexing", 0),

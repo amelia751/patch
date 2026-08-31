@@ -10,16 +10,16 @@ PROJECT_ROUTES_PY = Path(__file__).resolve().parents[1] / "project_routes.py"
 
 def test_full_name_from_https_git_url() -> None:
     assert (
-        full_name_from_repo_url("https://github.com/amelia751/egaki.git") == "amelia751/egaki"
+        full_name_from_repo_url("https://github.com/amelia751/storygen.git") == "amelia751/storygen"
     )
 
 
 def test_full_name_from_bare_owner_repo() -> None:
-    assert full_name_from_repo_url("amelia751/egaki") == "amelia751/egaki"
+    assert full_name_from_repo_url("amelia751/storygen") == "amelia751/storygen"
 
 
 def test_full_name_rejects_a_non_github_url() -> None:
-    assert full_name_from_repo_url("https://gitlab.com/amelia751/egaki") is None
+    assert full_name_from_repo_url("https://gitlab.com/amelia751/storygen") is None
 
 
 def test_update_cloud_provider_writes_the_enum_column() -> None:

@@ -263,8 +263,8 @@ def test_impact_cannot_report_affected_without_a_scan_hit(tmp_path, repo_root):
 
     result = tools["record_impact_report"](
         change_id=DEMO_CHANGE_ID,
-        repo="amelia751/egaki",
-        base_sha="c09e1a44200ff5e951746e013035e68aeb3a14b1",
+        repo="amelia751/storygen",
+        base_sha="c5428cdcdcd12204e1f4cc47c393dc6e738d88b2",
         affected=True,
         confidence=0.9,
         migration_character="semantic",
@@ -289,8 +289,8 @@ def test_impact_findings_come_from_the_scanner(tmp_path, repo_root):
 
     result = tools["record_impact_report"](
         change_id=DEMO_CHANGE_ID,
-        repo="amelia751/egaki",
-        base_sha="c09e1a44200ff5e951746e013035e68aeb3a14b1",
+        repo="amelia751/storygen",
+        base_sha="c5428cdcdcd12204e1f4cc47c393dc6e738d88b2",
         affected=True,
         confidence=0.95,
         migration_character="semantic",
@@ -331,7 +331,7 @@ def test_policy_cannot_be_recorded_before_it_is_evaluated(run_context):
     tools = {f.__name__: f for f in build_policy_tools(run_context)}
     result = tools["record_policy_decision"](
         change_id=DEMO_CHANGE_ID,
-        repo="amelia751/egaki",
+        repo="amelia751/storygen",
         risk="medium",
         reason="looks fine",
         escalate_to_human=False,
@@ -346,7 +346,7 @@ def test_a_forbidden_path_cannot_be_permitted_by_the_agent(run_context):
 
     result = tools["record_policy_decision"](
         change_id=DEMO_CHANGE_ID,
-        repo="amelia751/egaki",
+        repo="amelia751/storygen",
         risk="low",
         reason="the workflow edit is harmless",
         escalate_to_human=False,
@@ -377,7 +377,7 @@ def test_missing_provider_evidence_forces_human_review(run_context):
     policy["evaluate_policy"](["cli/src/image.ts"])
     policy["record_policy_decision"](
         change_id=DEMO_CHANGE_ID,
-        repo="amelia751/egaki",
+        repo="amelia751/storygen",
         risk="medium",
         reason="ordinary source edit",
         escalate_to_human=False,
@@ -619,7 +619,7 @@ def test_run_command_refuses_anything_off_the_allowlist(tmp_path, repo_root):
         assert result["reason_code"] == "policy_denied"
 
 
-def test_command_allowlist_accepts_the_egaki_shapes():
+def test_command_allowlist_accepts_the_storygen_shapes():
     assert match_command(["pnpm", "install", "--frozen-lockfile"]).timeout_seconds == 900
     assert match_command(["pnpm", "--dir", "cli", "build"]).argv[-1] == "build"
     assert match_command(["pnpm", "--dir", "cli", "test", "--", "src/a.test.ts"])

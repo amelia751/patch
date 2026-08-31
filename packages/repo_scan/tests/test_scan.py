@@ -13,7 +13,7 @@ IMAGEN = "imagen-4.0-generate-001"
 
 @pytest.fixture
 def checkout(tmp_path):
-    """A miniature repository shaped like the Egaki demo target."""
+    """A miniature repository shaped like the Storygen demo target."""
     (tmp_path / "cli" / "src").mkdir(parents=True)
     (tmp_path / "cli" / "src" / "image.ts").write_text(
         'const MODEL = "imagen-4.0-generate-001";\nexport function generate() {}\n',

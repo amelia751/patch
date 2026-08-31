@@ -9,7 +9,7 @@ from patchapi_github_tools.pr_body import (
 )
 from pydantic import ValidationError
 
-BASE_SHA = "c09e1a44200ff5e951746e013035e68aeb3a14b1"
+BASE_SHA = "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2"
 
 
 def render(evidence_payload, *, run_id="run-000000000001", title="Migrate Imagen 4"):
@@ -103,7 +103,7 @@ def test_a_failed_verification_blocks_the_pull_request_route(
     response = client.post(
         "/v1/capabilities/open_pull_request",
         json={
-            "repo": "amelia751/egaki",
+            "repo": "amelia751/storygen",
             "head_branch": "patchapi/migrate",
             "base_branch": "main",
             "title": "Migrate Imagen 4",

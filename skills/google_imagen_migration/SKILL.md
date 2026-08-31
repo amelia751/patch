@@ -58,7 +58,7 @@ Provider recommendation: `gemini-3.1-flash-image`.
 
 That identifier is a claim, not a usable constant. Resolve it against the target
 repository's own model catalog and installed SDK before writing it into code — at
-the pinned Egaki baseline the resolvable id is `gemini-3.1-flash-image-preview`
+the pinned Storygen baseline the resolvable id is `gemini-3.1-flash-image-preview`
 and the bare provider id exits with `Unknown model`.
 
 ## Why this is not a string replace
@@ -152,6 +152,6 @@ is the honest state, not a defect in the checks.
 ## Related
 
 - `demo/fixtures/google-imagen4-deprecation.json` — the change fixture.
-- `demo/egaki/expected-findings.yaml` — the graded findings for the flagship run.
+- `demo/storygen/expected-findings.yaml` — the graded findings for the flagship run.
   It is a rubric for evaluating agents, never an input to them.
 - `roadmap.md` §12.2 — Skill Registry direction.

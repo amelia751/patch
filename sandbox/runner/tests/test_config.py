@@ -40,7 +40,7 @@ def test_git_source_must_pin_a_sha():
         SandboxPlan.from_json(data)
 
 
-def test_egaki_live_key_is_on_the_allowlist():
+def test_storygen_live_key_is_on_the_allowlist():
     data = plan_with(
         steps=[
             {

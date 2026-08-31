@@ -31,15 +31,15 @@ identical bytes; when a row was first or last seen belongs to Postgres.
 ```bash
 # Full index of a checkout, using the pinned Google watchlist.
 uv run --package patchapi-repo-indexer python -m patchapi_repo_indexer \
-  --root demo/egaki/checkout \
-  --repository amelia751/egaki \
-  --sha c09e1a44200ff5e951746e013035e68aeb3a14b1 \
+  --root demo/storygen/checkout \
+  --repository amelia751/storygen \
+  --sha c5428cdcdcd12204e1f4cc47c393dc6e738d88b2 \
   --out /tmp/usages.json
 
 # Push-driven update: only the files a webhook says changed. The result is
 # marked `scope: changed_paths` so it is never read as the whole repository.
 uv run --package patchapi-repo-indexer python -m patchapi_repo_indexer \
-  --root . --repository amelia751/egaki --sha <sha> \
+  --root . --repository amelia751/storygen --sha <sha> \
   --changed-path src/image.ts
 
 # Cloud Run worker (Pub/Sub push). Two repositories queue independently.

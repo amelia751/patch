@@ -114,7 +114,7 @@ def resolve_codebase_file(
 ) -> tuple[str, str, str, str] | None:
     """`(owner, repo, branch, repo-relative path)` for a Codebase tab path.
 
-    Trees prefix every node with `owner/repo`, so `amelia751/egaki/src/index.ts`
+    Trees prefix every node with `owner/repo`, so `amelia751/storygen/src/index.ts`
     is a file in that import and not a path inside the first repository.
     A single import still accepts a repo-relative path without the prefix.
     """

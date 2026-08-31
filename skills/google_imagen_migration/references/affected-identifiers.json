@@ -11,7 +11,7 @@
   "route_prefixes": ["", "vertex/"],
   "route_note": "A `vertex/` prefix is a routing decision inside the consumer repository, not a distinct model. Both routes retire together, so a migration that only fixes the bare identifiers leaves Vertex-routed callers broken.",
   "recommended_replacement": "gemini-3.1-flash-image",
-  "replacement_resolution_rule": "The provider identifier is a claim, not a usable constant. Resolve it against the target repository's own model catalog and its installed SDK before writing it into code. At the pinned Egaki baseline the resolvable identifier is `gemini-3.1-flash-image-preview`; the bare provider identifier exits with `Unknown model`.",
+  "replacement_resolution_rule": "The provider identifier is a claim, not a usable constant. Resolve it against the target repository's own model catalog and its installed SDK before writing it into code. At the pinned Storygen baseline the resolvable identifier is `gemini-3.1-flash-image-preview`; the bare provider identifier exits with `Unknown model`.",
   "not_covered": [
     {
       "identifier": "fal-ai/imagen4/preview",

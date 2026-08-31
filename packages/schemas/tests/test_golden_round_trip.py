@@ -14,10 +14,10 @@ from packages.schemas import (
 
 GOLDEN_CASES = [
     (ChangeManifest, "change_manifest.imagen4.json"),
-    (ImpactReport, "impact_report.egaki.json"),
-    (PolicyDecision, "policy_decision.egaki.json"),
-    (PatchPlan, "patch_plan.egaki.json"),
-    (VerificationReport, "verification_report.egaki.json"),
+    (ImpactReport, "impact_report.storygen.json"),
+    (PolicyDecision, "policy_decision.storygen.json"),
+    (PatchPlan, "patch_plan.storygen.json"),
+    (VerificationReport, "verification_report.storygen.json"),
 ]
 
 
@@ -61,7 +61,7 @@ def test_change_manifest_golden_matches_the_pinned_demo_change(golden_dir):
 
 def test_impact_report_golden_separates_runtime_from_documentation(golden_dir):
     report = ImpactReport.model_validate_json(
-        (golden_dir / "impact_report.egaki.json").read_text(encoding="utf-8")
+        (golden_dir / "impact_report.storygen.json").read_text(encoding="utf-8")
     )
 
     assert report.affected is True
@@ -72,7 +72,7 @@ def test_impact_report_golden_separates_runtime_from_documentation(golden_dir):
 
 def test_verification_golden_permits_a_pull_request(golden_dir):
     report = VerificationReport.model_validate_json(
-        (golden_dir / "verification_report.egaki.json").read_text(encoding="utf-8")
+        (golden_dir / "verification_report.storygen.json").read_text(encoding="utf-8")
     )
 
     assert report.permits_pull_request is True

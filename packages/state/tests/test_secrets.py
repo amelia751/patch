@@ -11,7 +11,7 @@ from packages.state.secret_manager import is_managed_resource, secret_id_for
 from packages.state.secrets import SecretInputError, validate_secret_name, validate_secret_value
 
 
-def test_secret_name_accepts_the_egaki_key() -> None:
+def test_secret_name_accepts_the_storygen_key() -> None:
     assert validate_secret_name("GOOGLE_GENERATIVE_AI_API_KEY") == "GOOGLE_GENERATIVE_AI_API_KEY"
 
 

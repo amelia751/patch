@@ -24,7 +24,7 @@ PATCH_BRANCH_PREFIX: Final[str] = "patchapi/"
 
 _SHA_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$")
 
-RepoName = Annotated[str, Field(min_length=3, max_length=140, examples=["amelia751/egaki"])]
+RepoName = Annotated[str, Field(min_length=3, max_length=140, examples=["amelia751/storygen"])]
 Sha = Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
 
 

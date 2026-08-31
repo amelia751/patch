@@ -5,7 +5,7 @@
 
 Companion to `scripts/smoke_gemini_vertex.py`, which proves the reasoning model.
 Together they are the two live checks setup.md T-gemini-live requires before the
-Egaki migration can claim it has a replacement for Imagen 4.
+Storygen migration can claim it has a replacement for Imagen 4.
 
 Three outcomes, and only three. `PASS` means Vertex returned inline bytes that
 carry an image file signature and those bytes are now on disk. `SKIP` means

@@ -7,9 +7,7 @@ and opens an evidence-backed pull request for normal human review.
 Built for the [All Things Agentic Hackathon](https://allthingsagentichackathon.devpost.com/)
 — Fortified Enterprise Fleet track.
 
-Flagship demo: pinned fork of [`remorses/egaki`](https://github.com/remorses/egaki),
-Google Imagen 4 → Gemini 3.1 Flash Image. Second demo:
-[`amelia751/storygen`](https://github.com/amelia751/storygen).
+Demo: [`amelia751/storygen`](https://github.com/amelia751/storygen).
 
 ## How it works
 
@@ -76,7 +74,7 @@ skills/                   Provider migration skills
 sandbox/                  GKE Agent Sandbox image
 db/                       Migrations and seeds
 infra/terraform/          GCP provisioning
-demo/                     Egaki baseline and fixtures
+demo/                     Provider notice fixtures
 docs/                     Architecture and operations
 ```
 

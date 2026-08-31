@@ -7,14 +7,14 @@ from packages.memory import (
     RepositoryProfile,
 )
 
-EGAKI = "amelia751/egaki"
+STORYGEN = "amelia751/storygen"
 
 
 @pytest.fixture
 def profile():
     """The roadmap §10.2 example, as a profile."""
     return RepositoryProfile(
-        repo=EGAKI,
+        repo=STORYGEN,
         owner_team="media-platform",
         criticality="medium",
         provider_dependencies=("google",),
@@ -26,7 +26,7 @@ def profile():
                 reason="compatibility issue",
             ),
         ),
-        canonical_test_commands=("pnpm --dir cli build", "pnpm --dir cli test"),
+        canonical_test_commands=("python3 generate.py", "python3 -m unittest test_generate.py"),
         prohibited_paths=(".github/workflows/**",),
     )
 
@@ -43,15 +43,15 @@ def test_remember_then_recall(profile):
     bank = LocalMemoryBank()
     bank.remember(profile)
 
-    assert bank.recall(EGAKI) == profile
-    assert bank.recall(EGAKI).requires_human_review
+    assert bank.recall(STORYGEN) == profile
+    assert bank.recall(STORYGEN).requires_human_review
 
 
 def test_previous_rejection_is_recalled(profile):
     bank = LocalMemoryBank()
     bank.remember(profile)
 
-    (rejected,) = bank.recall(EGAKI).rejected_migrations()
+    (rejected,) = bank.recall(STORYGEN).rejected_migrations()
     assert rejected.migration_id == "google-image-migration-2026-05"
     assert rejected.reason == "compatibility issue"
 
@@ -60,7 +60,7 @@ def test_record_migration_appends_without_losing_history(profile):
     bank = LocalMemoryBank()
     bank.remember(profile)
     bank.record_migration(
-        EGAKI,
+        STORYGEN,
         PreviousMigration(
             migration_id="google-image-migration-2026-08",
             decision="pr_opened",
@@ -68,13 +68,13 @@ def test_record_migration_appends_without_losing_history(profile):
         ),
     )
 
-    history = bank.recall(EGAKI).previous_migrations
+    history = bank.recall(STORYGEN).previous_migrations
     assert [m.migration_id for m in history] == [
         "google-image-migration-2026-05",
         "google-image-migration-2026-08",
     ]
     # The earlier rejection stays visible; that is the part worth recalling.
-    assert len(bank.recall(EGAKI).rejected_migrations()) == 1
+    assert len(bank.recall(STORYGEN).rejected_migrations()) == 1
 
 
 def test_record_migration_for_an_unknown_repo_creates_a_profile():
@@ -90,7 +90,7 @@ def test_persistence_survives_a_new_client(tmp_path, profile):
     path = tmp_path / "memory.json"
     LocalMemoryBank(path).remember(profile)
 
-    assert LocalMemoryBank(path).recall(EGAKI) == profile
+    assert LocalMemoryBank(path).recall(STORYGEN) == profile
 
 
 def test_profile_round_trips_through_plain_data(profile):
@@ -111,6 +111,6 @@ def test_forget(profile):
     bank = LocalMemoryBank()
     bank.remember(profile)
 
-    assert bank.forget(EGAKI)
-    assert not bank.forget(EGAKI)
-    assert bank.recall(EGAKI) is None
+    assert bank.forget(STORYGEN)
+    assert not bank.forget(STORYGEN)
+    assert bank.recall(STORYGEN) is None

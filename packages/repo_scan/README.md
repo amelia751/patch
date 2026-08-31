@@ -10,7 +10,7 @@ No model runs here. The same checkout always produces the same inventory.
 ```python
 from packages.repo_scan import scan_tree
 
-result = scan_tree("demo/egaki/checkout", ["imagen-4.0-generate-001"])
+result = scan_tree("demo/storygen/checkout", ["imagen-4.0-generate-001"])
 result.matched_identifiers  # ('imagen-4.0-generate-001',)
 result.runtime_hits         # docs-only hits excluded
 ```

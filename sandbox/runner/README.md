@@ -44,12 +44,12 @@ the environment without destroying the reason it timed out.
 ```json
 {
   "schema_version": "sandbox.plan.v1",
-  "plan_id": "egaki-baseline",
-  "source": {"kind": "git", "location": "https://…/egaki", "sha": "c09e1a44…"},
+  "plan_id": "storygen-baseline",
+  "source": {"kind": "git", "location": "https://…/storygen", "sha": "c5428cdc…"},
   "patch": {"kind": "file", "location": "…/candidate.patch", "strip": 1},
   "steps": [
-    {"name": "install", "argv": ["pnpm", "install", "--frozen-lockfile"],
-     "phase": "dependencies", "timeout_seconds": 900}
+    {"name": "build", "argv": ["python3", "generate.py"],
+     "phase": "none", "timeout_seconds": 120}
   ]
 }
 ```
@@ -64,10 +64,10 @@ the environment without destroying the reason it timed out.
   network posture the environment applies and is the only way a step can request
   a credential.
 
-Shipped plans live in `plans/`. `egaki-baseline.v1.json` mirrors the commands
-recorded in `demo/egaki/baseline.json`; the live image smoke is a separate
-`live_verification` plan issued only when a narrow Google credential is brokered
-for that one step.
+Shipped plans live in `plans/`. `storygen-baseline.v1.json` mirrors the
+commands on the pinned `amelia751/storygen` profile. The live image smoke is a
+separate `live_verification` plan issued only when a narrow Google credential
+is brokered for that one step.
 
 ## Result record (`sandbox.result.v1`)
 

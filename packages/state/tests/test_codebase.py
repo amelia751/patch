@@ -26,17 +26,17 @@ def test_imported_repo_prefers_project_repositories() -> None:
     source = imported_repo(
         {
             "repositories": [
-                {"full_name": "amelia751/egaki", "default_branch": "main"},
+                {"full_name": "amelia751/webapp", "default_branch": "main"},
             ],
             "workspaces": [
                 {
-                    "repo_url": "https://github.com/amelia751/egaki",
+                    "repo_url": "https://github.com/amelia751/webapp",
                     "repo_branch": "main",
                 }
             ],
         }
     )
-    assert source == ("amelia751", "egaki", "main")
+    assert source == ("amelia751", "webapp", "main")
 
 
 def test_imported_repo_falls_back_to_workspace_url() -> None:
@@ -45,13 +45,13 @@ def test_imported_repo_falls_back_to_workspace_url() -> None:
             "repositories": [],
             "workspaces": [
                 {
-                    "repo_url": "https://github.com/amelia751/egaki.git",
+                    "repo_url": "https://github.com/amelia751/webapp.git",
                     "repo_branch": "develop",
                 }
             ],
         }
     )
-    assert source == ("amelia751", "egaki", "develop")
+    assert source == ("amelia751", "webapp", "develop")
 
 
 def test_imported_repo_is_absent_without_a_github_url() -> None:
@@ -62,12 +62,12 @@ def test_imported_repo_selects_a_named_second_import() -> None:
     source = imported_repo(
         {
             "repositories": [
-                {"full_name": "amelia751/egaki", "default_branch": "main"},
+                {"full_name": "amelia751/webapp", "default_branch": "main"},
                 {"full_name": "amelia751/storygen", "default_branch": "main"},
             ],
             "workspaces": [
                 {
-                    "repo_url": "https://github.com/amelia751/egaki.git",
+                    "repo_url": "https://github.com/amelia751/webapp.git",
                     "repo_branch": "develop",
                 },
                 {
@@ -85,12 +85,12 @@ def test_imported_repo_does_not_borrow_another_repo_workspace_branch() -> None:
     source = imported_repo(
         {
             "repositories": [
-                {"full_name": "amelia751/egaki", "default_branch": "main"},
+                {"full_name": "amelia751/webapp", "default_branch": "main"},
                 {"full_name": "amelia751/storygen", "default_branch": "main"},
             ],
             "workspaces": [
                 {
-                    "repo_url": "https://github.com/amelia751/egaki.git",
+                    "repo_url": "https://github.com/amelia751/webapp.git",
                     "repo_branch": "develop",
                 }
             ],
@@ -105,7 +105,7 @@ def test_imported_repo_rejects_a_repo_the_project_did_not_import() -> None:
         imported_repo(
             {
                 "repositories": [
-                    {"full_name": "amelia751/egaki", "default_branch": "main"},
+                    {"full_name": "amelia751/webapp", "default_branch": "main"},
                 ],
                 "workspaces": [],
             },
@@ -154,7 +154,7 @@ def test_imported_repos_lists_every_import_in_order() -> None:
     found = imported_repos(
         {
             "repositories": [
-                {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
+                {"name": "webapp", "full_name": "amelia751/webapp", "default_branch": "main"},
                 {
                     "name": "storygen",
                     "full_name": "amelia751/storygen",
@@ -164,13 +164,13 @@ def test_imported_repos_lists_every_import_in_order() -> None:
             "workspaces": [],
         }
     )
-    assert [item[0] for item in found] == ["amelia751/egaki", "amelia751/storygen"]
+    assert [item[0] for item in found] == ["amelia751/webapp", "amelia751/storygen"]
 
 
 def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> None:
     project = {
         "repositories": [
-            {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
+            {"name": "webapp", "full_name": "amelia751/webapp", "default_branch": "main"},
             {
                 "name": "storygen",
                 "full_name": "amelia751/storygen",
@@ -192,13 +192,13 @@ def test_resolve_codebase_file_strips_the_repo_prefix_when_there_are_two() -> No
 def test_resolve_codebase_file_is_flat_for_a_single_import() -> None:
     project = {
         "repositories": [
-            {"name": "egaki", "full_name": "amelia751/egaki", "default_branch": "main"},
+            {"name": "webapp", "full_name": "amelia751/webapp", "default_branch": "main"},
         ],
         "workspaces": [],
     }
     assert resolve_codebase_file(project, "src/index.ts") == (
         "amelia751",
-        "egaki",
+        "webapp",
         "main",
         "src/index.ts",
     )
@@ -208,7 +208,7 @@ def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
     payload = codebase_payload_from_repos(
         [
             (
-                "amelia751/egaki",
+                "amelia751/webapp",
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main", "sha": "aaa"},
             ),
             (
@@ -223,7 +223,7 @@ def test_combined_payload_wraps_each_repo_as_a_directory_root() -> None:
     )
     assert [node["type"] for node in payload["file_tree"]] == ["directory", "directory"]
     assert [node["name"] for node in payload["file_tree"]] == [
-        "amelia751/egaki",
+        "amelia751/webapp",
         "amelia751/storygen",
     ]
     assert payload["file_tree"][1]["children"][0]["path"] == "amelia751/storygen/generate.py"
@@ -234,14 +234,14 @@ def test_combined_payload_keeps_an_empty_second_repo_as_a_directory() -> None:
     payload = codebase_payload_from_repos(
         [
             (
-                "amelia751/egaki",
+                "amelia751/webapp",
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main"},
             ),
             ("amelia751/storygen", {"entries": [], "ref": "main"}),
         ]
     )
     assert [node["name"] for node in payload["file_tree"]] == [
-        "amelia751/egaki",
+        "amelia751/webapp",
         "amelia751/storygen",
     ]
     assert payload["file_tree"][1]["type"] == "directory"
@@ -252,20 +252,20 @@ def test_combined_payload_wraps_a_single_import_as_a_directory() -> None:
     payload = codebase_payload_from_repos(
         [
             (
-                "amelia751/egaki",
+                "amelia751/webapp",
                 {"entries": [{"path": "README.md", "type": "blob"}], "ref": "main", "sha": "aaa"},
             ),
         ]
     )
-    assert [node["name"] for node in payload["file_tree"]] == ["amelia751/egaki"]
+    assert [node["name"] for node in payload["file_tree"]] == ["amelia751/webapp"]
     assert payload["file_tree"][0]["type"] == "directory"
-    assert payload["file_tree"][0]["children"][0]["path"] == "amelia751/egaki/README.md"
+    assert payload["file_tree"][0]["children"][0]["path"] == "amelia751/webapp/README.md"
 
 
 def test_codebase_payload_matches_the_dashboard_shape() -> None:
     payload = codebase_payload(
         {
-            "full_name": "amelia751/egaki",
+            "full_name": "amelia751/webapp",
             "sha": "abcdef1234567890",
             "ref": "main",
             "default_branch": "main",
@@ -278,7 +278,7 @@ def test_codebase_payload_matches_the_dashboard_shape() -> None:
         }
     )
     assert payload["branch"] == "main"
-    assert payload["repository"] == "amelia751/egaki"
+    assert payload["repository"] == "amelia751/webapp"
     assert payload["current_version"] == "abcdef1"
     assert payload["source"] == "github"
     assert payload["stats"]["total_files"] == 1

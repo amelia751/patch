@@ -89,7 +89,7 @@ def _decision(outcome: str, **overrides: object) -> PolicyDecision:
     fields: dict[str, object] = {
         "run_id": "run-denials",
         "change_id": "imagen4-retirement-2026-09-01",
-        "repo": "amelia751/egaki",
+        "repo": "amelia751/storygen",
         "risk": "high",
         "outcome": outcome,
         "auto_patch": False,
@@ -312,7 +312,7 @@ def test_a_blocked_policy_verdict_is_a_denial_carrying_its_rule_ids():
     assert denial is not None
     assert denial.actor == GATE_POLICY
     assert denial.action == ACTION_PATCH_REPOSITORY
-    assert denial.target == "amelia751/egaki"
+    assert denial.target == "amelia751/storygen"
     assert "policy.path.ci_definition" in denial.reason
     # The decision's prose stays with the decision.
     assert "would have edited" not in denial.reason

@@ -1,8 +1,8 @@
 {
-  "run_id": "run-egaki-imagen4-0001",
+  "run_id": "run-storygen-imagen4-0001",
   "change_id": "imagen4-retirement-2026-08-17",
-  "repo": "amelia751/egaki",
-  "base_sha": "c09e1a44200ff5e951746e013035e68aeb3a14b1",
+  "repo": "amelia751/storygen",
+  "base_sha": "c5428cdcdcd12204e1f4cc47c393dc6e738d88b2",
   "affected": true,
   "confidence": 0.98,
   "findings": [

@@ -43,7 +43,7 @@ const INITIAL: ProviderRow[] = [
     id: "gemini-api",
     name: "gemini-api",
     kind: "api_key",
-    usedBy: "Egaki live verification",
+    usedBy: "Storygen live verification",
     principal: "verification",
   },
   {
@@ -138,7 +138,7 @@ export function AuthManagerTab() {
               <Input
                 value={usedBy}
                 onChange={(e) => setUsedBy(e.target.value)}
-                placeholder="e.g. Egaki live verification"
+                placeholder="e.g. Storygen live verification"
                 className="h-8 text-xs bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]"
               />
             </div>

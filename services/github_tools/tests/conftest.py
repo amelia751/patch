@@ -39,7 +39,7 @@ from patchapi_github_tools.wiring import build_github_client
 
 APP_ID = "123456"
 INSTALLATION_ID = "78901234"
-REPO = "amelia751/egaki"
+REPO = "amelia751/storygen"
 
 
 # Shaped like a real installation token so the auth path is exercised, but
@@ -395,7 +395,7 @@ def impact_headers() -> dict[str, str]:
 
 @pytest.fixture
 def evidence() -> dict[str, object]:
-    """The §8.6 evidence payload for the pinned Egaki migration."""
+    """The §8.6 evidence payload for the pinned Storygen migration."""
     return {
         "why": "Google retires Imagen 4 on 2026-08-17.",
         "affected_usage": ["cli/src/image.ts uses imagen-4.0-generate-001"],
