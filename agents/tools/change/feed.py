@@ -23,8 +23,8 @@ from agents.context import RunContext
 from agents.tools.results import ReasonCode, ok, refusal
 from packages.policy.armor import screen_untrusted_text
 from packages.policy.injection import normalize_untrusted_text
-from packages.providers.google.errors import GoogleProviderError
-from packages.providers.google.normalize import load_notice_file, manifest_from_feed_file
+from packages.providers.errors import ProviderRegistryError
+from packages.providers.notice import load_notice_file, manifest_from_notice_file
 from packages.schemas.change_manifest import ChangeManifest
 
 CONTRACT: Final[str] = "change_manifest"
@@ -113,7 +113,7 @@ def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
         # Fixture snapshot paths are repository-relative (`demo/fixtures/...`).
         # Resolving them against the feed directory doubled the prefix and
         # made a captured Gemini 2.0 excerpt look missing.
-        return manifest_from_feed_file(path, base_dir=context.repo_root)
+        return manifest_from_notice_file(path, base_dir=context.repo_root)
 
     def list_provider_notices() -> dict[str, Any]:
         """List the provider change notices available to this run.
@@ -202,7 +202,7 @@ def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
             )
         try:
             manifest = _manifest(path)
-        except GoogleProviderError as exc:
+        except ProviderRegistryError as exc:
             return refusal(ReasonCode.EVIDENCE_UNVERIFIABLE, str(exc))
         except ValueError as exc:
             return refusal(
@@ -247,7 +247,7 @@ def build_provider_feed_tools(context: RunContext) -> list[Callable[..., Any]]:
             )
         try:
             manifest = _manifest(path)
-        except (GoogleProviderError, ValueError) as exc:
+        except (ProviderRegistryError, ValueError) as exc:
             return refusal(ReasonCode.EVIDENCE_UNVERIFIABLE, str(exc))
 
         expected = _manifest_summary(manifest)

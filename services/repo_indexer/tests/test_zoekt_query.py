@@ -18,10 +18,10 @@ from patchapi_repo_indexer.zoekt.patterns import (
     GOOGLE_IMAGEN_FAMILY,
     GOOGLE_IMAGEN_PREVIEW,
     GOOGLE_VERTEX_ROUTED,
-    PROVIDER_PATTERNS,
     compile_patterns,
     match_identifiers,
     patterns_for,
+    provider_patterns,
 )
 from patchapi_repo_indexer.zoekt.query import build_query, repository_file_count, search_shards
 from patchapi_repo_indexer.zoekt.shard import ShardRef
@@ -144,7 +144,7 @@ def test_an_identifier_outside_the_family_is_added_as_a_literal():
 
 
 def test_a_watchlist_identifier_the_family_covers_is_not_duplicated():
-    assert patterns_for("google", [GA_MODEL]) == PROVIDER_PATTERNS["google"]
+    assert patterns_for("google", [GA_MODEL]) == provider_patterns()["google"]
 
 
 def test_a_service_host_is_indexed_as_its_own_identifier():

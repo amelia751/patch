@@ -10,54 +10,64 @@ and compiled locally to name the identifier a matched line actually contains.
 """
 
 import re
-from collections.abc import Sequence
-from types import MappingProxyType
+from collections.abc import Mapping, Sequence
 from typing import Final
 
+from packages.providers import registry
+from packages.providers.errors import UnknownProviderError as RegistryUnknownProviderError
 from patchapi_repo_indexer.config import DEFAULT_PROVIDER
 from patchapi_repo_indexer.errors import UnknownProviderError
 
-# Bumped whenever a pattern's meaning changes. Recorded alongside the watchlist
-# version so a stored finding can be traced to the regex that produced it.
-PATTERNS_VERSION: Final[str] = "1.3.0"
+# Bumped whenever the *composition* of a query changes — how family patterns and
+# manifest literals are combined. The patterns themselves are versioned by the
+# descriptor that declares them, and `ProviderDescriptor.search_intent` is what
+# a stored finding is traced to.
+PATTERNS_VERSION: Final[str] = "2.0.0"
+
+
+def _google_pattern(name: str) -> str:
+    """One family regex from Google's descriptor, by the name it is declared under."""
+    return registry.descriptor_for(DEFAULT_PROVIDER).pattern_named(name)
+
 
 # Vertex-routed ids are a different inventory key than the bare model id.
-# Listed first so a `vertex/imagen-…` line records the prefix, not the suffix.
-GOOGLE_VERTEX_ROUTED: Final[str] = r"vertex/(?:imagen|gemini|veo)-\d[\w.-]*"
+# Declared first in the descriptor so a `vertex/imagen-…` line records the
+# prefix, not the suffix.
+GOOGLE_VERTEX_ROUTED: Final[str] = _google_pattern("vertex_routed")
 
 # The GA Imagen family plus later members with the same shape.
-GOOGLE_IMAGEN_FAMILY: Final[str] = r"imagen-\d+\.\d+-(fast-|ultra-)?generate-\d+"
+GOOGLE_IMAGEN_FAMILY: Final[str] = _google_pattern("imagen_family")
 
 # The retired preview identifier is its own finding in
 # `demo/storygen/expected-findings.yaml`, not a variant of the GA one: it has its
 # own replacement and its own deprecation date, so it gets its own pattern.
-GOOGLE_IMAGEN_PREVIEW: Final[str] = r"imagen-[\d.]+-[\w-]*preview[\w-]*"
+GOOGLE_IMAGEN_PREVIEW: Final[str] = _google_pattern("imagen_preview")
 
 # Any Gemini generation id. The inbox join decides which of these are retired;
 # the index only names what the tree contains.
-GOOGLE_GEMINI_FAMILY: Final[str] = r"gemini-\d+\.\d+[\w.-]*"
+GOOGLE_GEMINI_FAMILY: Final[str] = _google_pattern("gemini_family")
 
 # Retired 2026-06-01. Kept as a tighter alias of GOOGLE_GEMINI_FAMILY so older
-# tests and stored findings can still name the regex that produced them.
-GOOGLE_GEMINI20_FAMILY: Final[str] = r"gemini-2\.0-flash(-lite)?(-\d+)?"
+# tests and stored findings can still name the regex that produced them; the
+# descriptor marks it `queried: false`, so it is not sent to the index.
+GOOGLE_GEMINI20_FAMILY: Final[str] = _google_pattern("gemini_20_family")
 
 # The service a call goes to, not the model it names. A shutdown announcement
 # for `dialogflow.googleapis.com` names no model, so a model-only index has
 # nothing for it to join against and the release note stays invisible. This is
 # the inventory key that lets a whole-service deprecation find its call sites.
-GOOGLE_SERVICE_HOST: Final[str] = r"[a-z0-9][a-z0-9-]*\.googleapis\.com"
+GOOGLE_SERVICE_HOST: Final[str] = _google_pattern("service_host")
 
-PROVIDER_PATTERNS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyType(
-    {
-        DEFAULT_PROVIDER: (
-            GOOGLE_VERTEX_ROUTED,
-            GOOGLE_IMAGEN_FAMILY,
-            GOOGLE_IMAGEN_PREVIEW,
-            GOOGLE_GEMINI_FAMILY,
-            GOOGLE_SERVICE_HOST,
-        ),
+
+def provider_patterns() -> Mapping[str, tuple[str, ...]]:
+    """Every registered provider's queried family patterns, by slug.
+
+    A live read of the registry: a descriptor loaded from Postgres widens what
+    an index is asked for without a redeploy.
+    """
+    return {
+        descriptor.provider_id: descriptor.patterns() for descriptor in registry.descriptors()
     }
-)
 
 
 def patterns_for(provider: str, identifiers: Sequence[str] | None = None) -> tuple[str, ...]:
@@ -68,16 +78,13 @@ def patterns_for(provider: str, identifiers: Sequence[str] | None = None) -> tup
     naming an identifier outside the known families must still be searched for —
     dropping it would report an affected repository as clean.
 
-    Fails closed on an unknown provider for the same reason `watchlist_for`
+    Fails closed on an unregistered provider for the same reason `watchlist_for`
     does: an empty pattern set finds nothing and looks exactly like good news.
     """
     try:
-        family = PROVIDER_PATTERNS[provider]
-    except KeyError as exc:
-        known = ", ".join(sorted(PROVIDER_PATTERNS))
-        raise UnknownProviderError(
-            f"no pinned patterns for provider {provider!r}; known providers: {known}"
-        ) from exc
+        family = registry.descriptor_for(provider).patterns()
+    except RegistryUnknownProviderError as exc:
+        raise UnknownProviderError(str(exc)) from exc
 
     if not identifiers:
         return family
@@ -138,8 +145,8 @@ __all__ = [
     "GOOGLE_SERVICE_HOST",
     "GOOGLE_VERTEX_ROUTED",
     "PATTERNS_VERSION",
-    "PROVIDER_PATTERNS",
     "compile_patterns",
     "match_identifiers",
     "patterns_for",
+    "provider_patterns",
 ]

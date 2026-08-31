@@ -1,0 +1,77 @@
+{
+  "descriptor_version": "1.0.0",
+  "provider_id": "stripe",
+  "display_name": "Stripe",
+  "identifier_families": [
+    {
+      "name": "legacy_stripejs_method",
+      "pattern": "stripe\\.(handleCardPayment|confirmPaymentIntent|handleFpxPayment|handleCardSetup|confirmSetupIntent|createSource|retrieveSource)\\b",
+      "note": "Stripe.js methods removed in 2026-03-25.dahlia. Anchored on the client receiver so a same-named helper in application code is not reported as a call site."
+    },
+    {
+      "name": "api_version",
+      "pattern": "\\d{4}-\\d{2}-\\d{2}\\.(acacia|basil|clover|dahlia)",
+      "note": "A pinned Stripe API version. Stripe names releases after a plant and dates them, so a pin is readable in source and in config without a lookup."
+    },
+    {
+      "name": "service_host",
+      "pattern": "(?:api|js|files)\\.stripe\\.com",
+      "note": "The Stripe surface a call reaches. A change scoped to Stripe.js names no server-side identifier, so the js.stripe.com key is what lets it find its call sites."
+    }
+  ],
+  "watched_identifiers": {
+    "legacy_payment_intents_methods": [
+      "stripe.handleCardPayment",
+      "stripe.confirmPaymentIntent",
+      "stripe.handleFpxPayment"
+    ],
+    "legacy_setup_intents_methods": [
+      "stripe.handleCardSetup",
+      "stripe.confirmSetupIntent"
+    ],
+    "legacy_sources_methods": [
+      "stripe.createSource",
+      "stripe.retrieveSource"
+    ],
+    "pinned_api_versions": [
+      "2026-03-25.dahlia",
+      "2025-08-27.basil",
+      "2024-09-30.acacia"
+    ]
+  },
+  "packages": [
+    {
+      "ecosystem": "npm",
+      "name": "stripe",
+      "service_hosts": ["api.stripe.com"]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@stripe/stripe-js",
+      "service_hosts": ["js.stripe.com"]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@stripe/react-stripe-js",
+      "service_hosts": ["js.stripe.com"]
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "stripe",
+      "service_hosts": ["api.stripe.com"]
+    },
+    {
+      "ecosystem": "go",
+      "name": "github.com/stripe/stripe-go",
+      "service_hosts": ["api.stripe.com"]
+    },
+    {
+      "ecosystem": "go",
+      "name": "github.com/stripe/stripe-go/v82",
+      "service_hosts": ["api.stripe.com"]
+    }
+  ],
+  "replacement_surfaces": ["replacement_surface"],
+  "rule_namespace": "stripe",
+  "skill_packages": ["api-migration"]
+}

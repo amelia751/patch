@@ -29,8 +29,8 @@ REJECTED: dict[str, str] = {
     "snapshot-captured-without-hash.json": "must carry sha256",
     "trust-claims-internal-analysis.json": "untrusted input",
     "unknown-change-type.json": "vibes_shift",
-    "unknown-feed-version.json": "unsupported deprecation feed version",
-    "wrong-provider.json": "cannot read a 'acme-cloud' feed",
+    "unknown-feed-version.json": "unsupported provider notice version",
+    "wrong-provider.json": "no provider descriptor is registered for a 'acme-cloud' notice",
 }
 
 

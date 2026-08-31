@@ -1,0 +1,119 @@
+{
+  "descriptor_version": "1.0.0",
+  "provider_id": "google",
+  "display_name": "Google Cloud",
+  "identifier_families": [
+    {
+      "name": "vertex_routed",
+      "pattern": "vertex/(?:imagen|gemini|veo)-\\d[\\w.-]*",
+      "note": "Vertex-routed ids are a different inventory key than the bare model id. Declared first so a `vertex/imagen-...` line records the prefix, not the suffix."
+    },
+    {
+      "name": "imagen_family",
+      "pattern": "imagen-\\d+\\.\\d+-(fast-|ultra-)?generate-\\d+",
+      "note": "The GA Imagen family plus later members with the same shape."
+    },
+    {
+      "name": "imagen_preview",
+      "pattern": "imagen-[\\d.]+-[\\w-]*preview[\\w-]*",
+      "note": "The retired preview identifier is its own finding, not a variant of the GA one: it has its own replacement and its own deprecation date."
+    },
+    {
+      "name": "gemini_family",
+      "pattern": "gemini-\\d+\\.\\d+[\\w.-]*",
+      "note": "Any Gemini generation id. The inbox join decides which of these are retired; the index only names what the tree contains."
+    },
+    {
+      "name": "gemini_20_family",
+      "pattern": "gemini-2\\.0-flash(-lite)?(-\\d+)?",
+      "queried": false,
+      "note": "Retired 2026-06-01. Kept as a tighter alias of gemini_family, not queried separately, so older stored findings can still name the regex that produced them."
+    },
+    {
+      "name": "service_host",
+      "pattern": "[a-z0-9][a-z0-9-]*\\.googleapis\\.com",
+      "note": "The service a call goes to, not the model it names. A shutdown announcement for `dialogflow.googleapis.com` names no model, so a model-only index has nothing to join against."
+    }
+  ],
+  "watched_identifiers": {
+    "imagen_4": [
+      "imagen-4.0-generate-001",
+      "imagen-4.0-fast-generate-001",
+      "imagen-4.0-ultra-generate-001"
+    ],
+    "gemini_20": [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-001",
+      "gemini-2.0-flash-lite",
+      "gemini-2.0-flash-lite-001"
+    ],
+    "gemini_image": [
+      "gemini-3.1-flash-image-preview",
+      "gemini-3.1-flash-image",
+      "gemini-3.5-flash"
+    ],
+    "vertex_imagen": [
+      "vertex/imagen-4.0-generate-001",
+      "vertex/imagen-4.0-ultra-generate-001",
+      "vertex/imagen-4.0-fast-generate-001"
+    ],
+    "false_positive": [
+      "fal-ai/imagen4/preview"
+    ]
+  },
+  "packages": [
+    {
+      "ecosystem": "npm",
+      "name": "@google/genai",
+      "service_hosts": ["generativelanguage.googleapis.com", "aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@google/generative-ai",
+      "service_hosts": ["generativelanguage.googleapis.com"]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@google-cloud/aiplatform",
+      "service_hosts": ["aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@google-cloud/vertexai",
+      "service_hosts": ["aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "google-genai",
+      "service_hosts": ["generativelanguage.googleapis.com", "aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "google-generativeai",
+      "service_hosts": ["generativelanguage.googleapis.com"]
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "google-cloud-aiplatform",
+      "service_hosts": ["aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "vertexai",
+      "service_hosts": ["aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "go",
+      "name": "google.golang.org/genai",
+      "service_hosts": ["generativelanguage.googleapis.com", "aiplatform.googleapis.com"]
+    },
+    {
+      "ecosystem": "go",
+      "name": "cloud.google.com/go/aiplatform",
+      "service_hosts": ["aiplatform.googleapis.com"]
+    }
+  ],
+  "replacement_surfaces": ["gemini_image_family"],
+  "rule_namespace": "google",
+  "skill_packages": ["api-migration", "google-genai-migration"]
+}

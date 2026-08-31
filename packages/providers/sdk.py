@@ -32,6 +32,7 @@ from urllib.parse import quote
 
 import httpx
 
+from packages.providers import registry
 from packages.providers.live_result import LiveResult, LiveStatus
 
 NPM: Final[str] = "npm"
@@ -47,42 +48,36 @@ NPM_REGISTRY: Final[str] = "https://registry.npmjs.org"
 PYPI_REGISTRY: Final[str] = "https://pypi.org/pypi"
 GO_PROXY: Final[str] = "https://proxy.golang.org"
 
-# Packages that are the provider's own client library. Anything outside this map
-# is somebody else's dependency and is not PatchAPI's business.
-PROVIDER_PACKAGES: Final[Mapping[str, tuple[tuple[str, str], ...]]] = {
-    "google": (
-        (NPM, "@google/genai"),
-        (NPM, "@google/generative-ai"),
-        (NPM, "@google-cloud/aiplatform"),
-        (NPM, "@google-cloud/vertexai"),
-        (PYPI, "google-genai"),
-        (PYPI, "google-generativeai"),
-        (PYPI, "google-cloud-aiplatform"),
-        (PYPI, "vertexai"),
-        (GO, "google.golang.org/genai"),
-        (GO, "cloud.google.com/go/aiplatform"),
-    ),
-}
+# Which packages are a provider's own client library, and which hosts each of
+# them calls, come from that provider's descriptor. Anything outside the
+# registered descriptors is somebody else's dependency and is not PatchAPI's
+# business.
+#
+# Read through the registry on every call rather than snapshotted at import: a
+# descriptor loaded from Postgres after startup must widen the watched set
+# without a restart, and a stale snapshot would report a repository as having no
+# SDK dependency on a provider it had just subscribed to.
 
-# The API host each client library talks to. A tree that depends on
-# `google-genai` calls Vertex AI whether or not the hostname appears in its
-# source, so a whole-service shutdown reaches it through the manifest when
-# nothing in the code names the host.
-PACKAGE_SERVICE_HOSTS: Final[Mapping[str, tuple[str, ...]]] = {
-    "npm:@google/genai": ("generativelanguage.googleapis.com", "aiplatform.googleapis.com"),
-    "npm:@google/generative-ai": ("generativelanguage.googleapis.com",),
-    "npm:@google-cloud/aiplatform": ("aiplatform.googleapis.com",),
-    "npm:@google-cloud/vertexai": ("aiplatform.googleapis.com",),
-    "pypi:google-genai": ("generativelanguage.googleapis.com", "aiplatform.googleapis.com"),
-    "pypi:google-generativeai": ("generativelanguage.googleapis.com",),
-    "pypi:google-cloud-aiplatform": ("aiplatform.googleapis.com",),
-    "pypi:vertexai": ("aiplatform.googleapis.com",),
-    "go:google.golang.org/genai": (
-        "generativelanguage.googleapis.com",
-        "aiplatform.googleapis.com",
-    ),
-    "go:cloud.google.com/go/aiplatform": ("aiplatform.googleapis.com",),
-}
+
+def provider_packages() -> Mapping[str, tuple[tuple[str, str], ...]]:
+    """Provider slug -> the `(ecosystem, name)` pairs it publishes."""
+    return {
+        descriptor.provider_id: descriptor.package_refs()
+        for descriptor in registry.descriptors()
+    }
+
+
+def package_service_hosts() -> Mapping[str, tuple[str, ...]]:
+    """SDK identifier -> the API hosts that client library talks to.
+
+    A tree that depends on `google-genai` calls Vertex AI whether or not the
+    hostname appears in its source, so a whole-service shutdown reaches it
+    through the manifest when nothing in the code names the host.
+    """
+    hosts: dict[str, tuple[str, ...]] = {}
+    for descriptor in registry.descriptors():
+        hosts.update(descriptor.service_hosts())
+    return hosts
 
 _MAJOR: Final[re.Pattern[str]] = re.compile(r"(\d+)")
 
@@ -133,23 +128,29 @@ def is_sdk_identifier(identifier: str) -> bool:
 def provider_for_package(ecosystem: str, name: str) -> str | None:
     """The provider whose client library this is, or None when nobody's."""
     wanted = (ecosystem.strip().lower(), name.strip())
-    for provider, entries in PROVIDER_PACKAGES.items():
+    for provider, entries in provider_packages().items():
         if wanted in entries:
             return provider
     return None
 
 
 def watched_packages(provider: str) -> tuple[str, ...]:
-    """Every SDK identifier tracked for `provider`."""
+    """Every SDK identifier tracked for `provider`.
+
+    An unregistered provider tracks nothing rather than raising: this answers
+    "which of the provider's packages should be polled", and a provider with no
+    descriptor has no packages, which is a true and harmless answer. The
+    fail-closed reads are the ones that decide whether a repository is affected.
+    """
     return tuple(
         sdk_identifier(ecosystem, name)
-        for ecosystem, name in PROVIDER_PACKAGES.get(provider, ())
+        for ecosystem, name in provider_packages().get(provider, ())
     )
 
 
 def service_hosts_for_package(identifier: str) -> tuple[str, ...]:
     """The API hosts this client library calls, or nothing when it is unmapped."""
-    return PACKAGE_SERVICE_HOSTS.get(identifier.strip(), ())
+    return package_service_hosts().get(identifier.strip(), ())
 
 
 def packages_calling(hosts: Iterable[str]) -> tuple[str, ...]:
@@ -159,7 +160,7 @@ def packages_calling(hosts: Iterable[str]) -> tuple[str, ...]:
         return ()
     return tuple(
         identifier
-        for identifier, served in PACKAGE_SERVICE_HOSTS.items()
+        for identifier, served in package_service_hosts().items()
         if wanted.intersection(served)
     )
 
@@ -315,8 +316,6 @@ async def live_packages(
 __all__ = [
     "GO",
     "NPM",
-    "PACKAGE_SERVICE_HOSTS",
-    "PROVIDER_PACKAGES",
     "PYPI",
     "SDK_ECOSYSTEMS",
     "PackageRelease",
@@ -327,8 +326,10 @@ __all__ = [
     "live_packages",
     "major_of",
     "package_live_result",
+    "package_service_hosts",
     "packages_calling",
     "provider_for_package",
+    "provider_packages",
     "sdk_identifier",
     "service_hosts_for_package",
     "split_sdk_identifier",

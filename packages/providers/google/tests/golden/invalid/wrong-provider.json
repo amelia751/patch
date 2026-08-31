@@ -1,10 +1,14 @@
 {
-  "fixture_version": "1.0.0",
+  "fixture_version": "1.1.0",
   "provider": "acme-cloud",
   "change_id": "acme-image-retirement-2026-08-17",
   "change_type": "model_retirement",
   "effective_at": "2026-08-17",
-  "affected_identifiers": ["acme-image-1"],
+  "affected_identifiers": [
+    "acme-image-1"
+  ],
   "recommended_replacement": "acme-image-2",
-  "source_urls": ["https://example.com/acme/deprecations"]
+  "source_urls": [
+    "https://example.com/acme/deprecations"
+  ]
 }

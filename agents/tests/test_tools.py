@@ -56,11 +56,30 @@ async def test_an_unreachable_check_reports_unknown_not_retirement(live_tools, m
             for name in identifiers
         )
 
-    monkeypatch.setattr("agents.tools.change.live.live_identifiers", unreachable)
+    monkeypatch.setattr(
+        "packages.providers.adapter.GoogleAdapter.live_identifiers",
+        staticmethod(unreachable),
+    )
     result = await live_tools["live_identifier"]([RETIRED])
     assert result["status"] == "ok"
     assert result["unknown"] == [RETIRED]
     assert result["not_found"] == []
+
+
+@pytest.mark.asyncio
+async def test_an_identifier_no_provider_claims_is_not_sent_to_a_surface(live_tools):
+    """Routing an unclaimed identifier to a default provider would invent a 404.
+
+    Google's model listing has never heard of `acme-widget-v1`, and the answer
+    it would give is byte-for-byte the answer it gives for a model Google
+    retired last week.
+    """
+    result = await live_tools["live_identifier"](["acme-widget-v1"])
+
+    assert result["status"] == "ok"
+    assert result["unknown"] == ["acme-widget-v1"]
+    assert result["not_found"] == []
+    assert result["results"][0]["surface"] == "none"
 
 
 @pytest.mark.asyncio

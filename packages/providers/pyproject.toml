@@ -32,9 +32,21 @@ only-include = ["__init__.py"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "__init__.py" = "packages/providers/__init__.py"
+"adapter.py" = "packages/providers/adapter.py"
+"descriptor.py" = "packages/providers/descriptor.py"
 "dotenv.py" = "packages/providers/dotenv.py"
+"errors.py" = "packages/providers/errors.py"
 "live_result.py" = "packages/providers/live_result.py"
+"notice.py" = "packages/providers/notice.py"
+"registry.py" = "packages/providers/registry.py"
 "sdk.py" = "packages/providers/sdk.py"
+"snapshot.py" = "packages/providers/snapshot.py"
+# Descriptors are read at runtime, not imported. One missing from the wheel does
+# not crash the service — it starts, finds no patterns for that provider, and
+# reports every repository as unaffected by it. Listed file by file for the same
+# reason the modules are.
+"descriptors/google.json" = "packages/providers/descriptors/google.json"
+"descriptors/stripe.json" = "packages/providers/descriptors/stripe.json"
 "google/__init__.py" = "packages/providers/google/__init__.py"
 "google/config.py" = "packages/providers/google/config.py"
 "google/deprecation_feed.py" = "packages/providers/google/deprecation_feed.py"

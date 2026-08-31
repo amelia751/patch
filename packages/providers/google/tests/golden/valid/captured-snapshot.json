@@ -1,5 +1,5 @@
 {
-  "fixture_version": "1.0.0",
+  "fixture_version": "1.1.0",
   "provider": "google",
   "change_id": "imagen4-retirement-2026-08-17",
   "change_type": "model_retirement",
@@ -25,9 +25,11 @@
   },
   "capability_notes": {
     "statement": "Imagen and Gemini native image generation are different request surfaces.",
-    "gemini_image_family": [
-      "Image bytes arrive as response parts of a content generation call."
-    ],
+    "families": {
+      "gemini_image_family": [
+        "Image bytes arrive as response parts of a content generation call."
+      ]
+    },
     "consequence": "A migration that only rewrites model-ID strings is incorrect."
   }
 }

@@ -3,7 +3,23 @@
 Each one is a distinct fail-closed reason a caller may need to distinguish:
 misconfiguration is an operator problem, missing credentials is a `SKIP`, and a
 rejected model pin is a compliance stop rather than something to retry.
+
+`ProviderEvidenceError` is re-exported rather than defined: an unverifiable
+snapshot is a property of the notice schema, which every provider shares, so
+the class belongs to `packages.providers.errors` and the same object is raised
+whichever adapter read the document.
 """
+
+from packages.providers.errors import ProviderEvidenceError
+
+__all__ = [
+    "GoogleProviderError",
+    "MissingCredentialsError",
+    "ProviderConfigurationError",
+    "ProviderEvidenceError",
+    "UnsupportedModelError",
+    "VertexCallError",
+]
 
 
 class GoogleProviderError(Exception):
@@ -19,14 +35,6 @@ class UnsupportedModelError(ProviderConfigurationError):
 
     Roadmap constraint: reasoning runs on Gemini 3.5 Flash or newer. An older
     pin is refused here rather than silently honoured at a call site.
-    """
-
-
-class ProviderEvidenceError(GoogleProviderError):
-    """The feed claims evidence the adapter cannot verify.
-
-    A snapshot whose bytes are absent or no longer hash to the recorded digest
-    is not evidence. Downstream agents must not see it as one.
     """
 
 

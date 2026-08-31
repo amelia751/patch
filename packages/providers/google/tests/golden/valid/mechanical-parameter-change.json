@@ -1,5 +1,5 @@
 {
-  "fixture_version": "1.0.0",
+  "fixture_version": "1.1.0",
   "provider": "google",
   "change_id": "gemini-safety-parameter-rename-2026-09-01",
   "change_type": "parameter_change",

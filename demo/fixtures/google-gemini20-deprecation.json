@@ -1,5 +1,5 @@
 {
-  "fixture_version": "1.0.0",
+  "fixture_version": "1.1.0",
   "provider": "google",
   "change_id": "gemini20-flash-shutdown-2026-06-01",
   "change_type": "model_retirement",
@@ -31,10 +31,12 @@
   },
   "capability_notes": {
     "statement": "This is a model-ID rewrite. The retired gemini-2.0-flash identifiers and the replacement gemini-3.5-flash are text-generation models on the same generateContent request surface, so replacing the identifier string is the correct and complete migration.",
-    "imagen_family": [
-      "Contrast with change_id imagen4-retirement-2026-08-17, where Imagen 4 and Gemini native image generation are different model families with different request surfaces and a string rewrite is incorrect.",
-      "That contrast is the point of carrying both fixtures: the migration character is a property of the change, not a constant, and the agents must derive it rather than assume it."
-    ],
+    "families": {
+      "imagen_family": [
+        "Contrast with change_id imagen4-retirement-2026-08-17, where Imagen 4 and Gemini native image generation are different model families with different request surfaces and a string rewrite is incorrect.",
+        "That contrast is the point of carrying both fixtures: the migration character is a property of the change, not a constant, and the agents must derive it rather than assume it."
+      ]
+    },
     "consequence": "No option mapping and no capability-loss escalation is expected for this change. The deprecations table names gemini-3.6-flash for the non-lite identifiers while the June 1, 2026 changelog names gemini-3.5-flash; this fixture pins the changelog identifier, and a human re-pins it if the two pages diverge further."
   },
   "verification_requirements": {

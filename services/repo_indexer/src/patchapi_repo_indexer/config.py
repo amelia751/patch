@@ -1,14 +1,22 @@
 """Pinned configuration for the repository indexer.
 
-Every version string, confidence value and watched identifier lives here. A
-call site asks this module for a watchlist; none of them names a model ID, so
-changing what PatchAPI watches for is a deliberate edit to this file.
+Every version string and confidence value lives here. What PatchAPI *watches
+for* does not: identifiers and family patterns belong to a provider, so they
+live in that provider's descriptor (`packages/providers/descriptors/`) and this
+module reads them through the registry. Onboarding a provider is a descriptor,
+not an edit to this file.
+
+The reads still fail closed. An unknown provider raises `UnknownProviderError`
+rather than yielding an empty watchlist, because a scan that looks for nothing
+reports every repository as clean.
 """
 
 import os
-from types import MappingProxyType
+from collections.abc import Mapping
 from typing import Final
 
+from packages.providers import registry
+from packages.providers.errors import UnknownProviderError as RegistryUnknownProviderError
 from packages.repo_scan import SCANNER_VERSION
 from packages.repo_scan.classify import UsageKind
 from patchapi_repo_indexer.errors import UnknownProviderError
@@ -55,56 +63,44 @@ PUBSUB_PROJECT: Final[str] = os.getenv(
 )
 PUBSUB_TOPIC_PREFIX: Final[str] = os.getenv("PATCHAPI_PUBSUB_TOPIC_PREFIX", "patchapi-dev")
 
+# The provider a caller means when it names none. Still Google, because that is
+# the provider the demo subscribes to; it is a default rather than the only
+# option, and `providers_for_target` resolves the real set from what a project
+# subscribed to.
 DEFAULT_PROVIDER: Final[str] = "google"
+
+
+def _google_group(name: str) -> tuple[str, ...]:
+    """One pinned identifier group from Google's descriptor.
+
+    These names are re-exported because stored findings, the demo's expected
+    results and several tests refer to a family by name. The values come from
+    the descriptor so there is one place to widen a watchlist.
+    """
+    return registry.descriptor_for(DEFAULT_PROVIDER).identifier_group(name)
+
 
 # The Imagen 4 family retired by the pinned demo change. Kept in step with
 # `demo/fixtures/google-imagen4-deprecation.json`; the fixture is the provider's
-# claim, this is the list PatchAPI watches for by default when no manifest has
-# been supplied.
-IMAGEN_4_IDENTIFIERS: Final[tuple[str, ...]] = (
-    "imagen-4.0-generate-001",
-    "imagen-4.0-fast-generate-001",
-    "imagen-4.0-ultra-generate-001",
-)
+# claim, the descriptor is the list PatchAPI watches for by default when no
+# manifest has been supplied.
+IMAGEN_4_IDENTIFIERS: Final[tuple[str, ...]] = _google_group("imagen_4")
 
 # The Gemini 2.0 Flash family retired 2026-06-01. Kept in step with
 # `demo/fixtures/google-gemini20-deprecation.json`. Without these, importing
 # `storygen` indexes as ready with 0 usages and the Codebase tab looks
 # like the add failed.
-GEMINI_20_IDENTIFIERS: Final[tuple[str, ...]] = (
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash-lite-001",
-)
+GEMINI_20_IDENTIFIERS: Final[tuple[str, ...]] = _google_group("gemini_20")
 
-GEMINI_IMAGE_IDENTIFIERS: Final[tuple[str, ...]] = (
-    "gemini-3.1-flash-image-preview",
-    "gemini-3.1-flash-image",
-    "gemini-3.5-flash",
-)
+GEMINI_IMAGE_IDENTIFIERS: Final[tuple[str, ...]] = _google_group("gemini_image")
 
-VERTEX_IMAGEN_IDENTIFIERS: Final[tuple[str, ...]] = (
-    "vertex/imagen-4.0-generate-001",
-    "vertex/imagen-4.0-ultra-generate-001",
-    "vertex/imagen-4.0-fast-generate-001",
-)
+VERTEX_IMAGEN_IDENTIFIERS: Final[tuple[str, ...]] = _google_group("vertex_imagen")
 
-FALSE_POSITIVE_IDENTIFIERS: Final[tuple[str, ...]] = ("fal-ai/imagen4/preview",)
+FALSE_POSITIVE_IDENTIFIERS: Final[tuple[str, ...]] = _google_group("false_positive")
 
-GOOGLE_WATCHED_IDENTIFIERS: Final[tuple[str, ...]] = (
-    IMAGEN_4_IDENTIFIERS
-    + GEMINI_20_IDENTIFIERS
-    + GEMINI_IMAGE_IDENTIFIERS
-    + VERTEX_IMAGEN_IDENTIFIERS
-    + FALSE_POSITIVE_IDENTIFIERS
-)
-
-WATCHLISTS: Final[MappingProxyType[str, tuple[str, ...]]] = MappingProxyType(
-    {
-        DEFAULT_PROVIDER: GOOGLE_WATCHED_IDENTIFIERS,
-    }
-)
+GOOGLE_WATCHED_IDENTIFIERS: Final[tuple[str, ...]] = registry.descriptor_for(
+    DEFAULT_PROVIDER
+).all_watched_identifiers()
 
 # Usage kinds whose breakage takes production down, re-exported here so the
 # inventory and the scanner cannot drift apart on what "runtime" means.
@@ -135,23 +131,33 @@ __all__ = [
     "SCOPE_CHANGED_PATHS",
     "SCOPE_FULL_TREE",
     "VERTEX_IMAGEN_IDENTIFIERS",
-    "WATCHLISTS",
     "ZOEKT_INDEX_DIR",
     "ZOEKT_WEBSERVER_URL",
     "watchlist_for",
+    "watchlists",
 ]
 
 
 def watchlist_for(provider: str) -> tuple[str, ...]:
     """Return the pinned identifiers watched for `provider`.
 
-    Fails closed: an unknown provider is a configuration error, never an empty
-    watchlist that would silently report a repository as unaffected.
+    Fails closed: an unregistered provider is a configuration error, never an
+    empty watchlist that would silently report a repository as unaffected.
     """
     try:
-        return WATCHLISTS[provider]
-    except KeyError as exc:
-        known = ", ".join(sorted(WATCHLISTS))
-        raise UnknownProviderError(
-            f"no pinned watchlist for provider {provider!r}; known providers: {known}"
-        ) from exc
+        return registry.descriptor_for(provider).all_watched_identifiers()
+    except RegistryUnknownProviderError as exc:
+        raise UnknownProviderError(str(exc)) from exc
+
+
+def watchlists() -> Mapping[str, tuple[str, ...]]:
+    """Every registered provider's pinned identifiers, by slug.
+
+    A live read of the registry rather than a module constant: a descriptor
+    loaded from Postgres after startup has to widen what a scan looks for
+    without a redeploy, which is the whole point of descriptors being data.
+    """
+    return {
+        descriptor.provider_id: descriptor.all_watched_identifiers()
+        for descriptor in registry.descriptors()
+    }

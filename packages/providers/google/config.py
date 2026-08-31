@@ -9,14 +9,15 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from types import MappingProxyType
 from typing import Final, Self
 
 from pydantic import Field, model_validator
 
 from packages.providers.google.errors import ProviderConfigurationError, UnsupportedModelError
+from packages.providers.notice import SEVERITY_BY_CHANGE_TYPE as SEVERITY_BY_CHANGE_TYPE
+from packages.providers.notice import SUPPORTED_NOTICE_VERSIONS
+from packages.providers.notice import severity_for as severity_for
 from packages.schemas.base import StrictModel
-from packages.schemas.enums import ChangeType, Severity
 
 PROVIDER_ID: Final[str] = "google"
 
@@ -24,10 +25,10 @@ PROVIDER_ID: Final[str] = "google"
 # manifests so a stored manifest can be traced to the adapter that produced it.
 ADAPTER_VERSION: Final[str] = "1.0.0"
 
-# Deprecation-feed document versions this build knows how to read. An unknown
-# version is refused: a feed written by a newer producer may mean something
-# different by the same keys.
-SUPPORTED_FEED_VERSIONS: Final[frozenset[str]] = frozenset({"1.0.0"})
+# Notice document versions this build reads. Shared with every other provider:
+# the notice schema is one contract, so a Google document and a Stripe document
+# are accepted or refused by the same version gate.
+SUPPORTED_FEED_VERSIONS: Final[frozenset[str]] = SUPPORTED_NOTICE_VERSIONS
 
 DEFAULT_REASONING_MODEL: Final[str] = "gemini-3.5-flash"
 DEFAULT_IMAGE_MODEL: Final[str] = "gemini-3.1-flash-image"
@@ -56,33 +57,7 @@ ENV_CREDENTIALS: Final[str] = "GOOGLE_APPLICATION_CREDENTIALS"
 ENV_REASONING_MODEL: Final[str] = "PATCHAPI_REASONING_MODEL"
 ENV_IMAGE_MODEL: Final[str] = "PATCHAPI_IMAGE_MODEL"
 
-# Provider-stated change class → manifest severity. A fixed table, not a
-# judgement: how bad the change is *for a given repository* is Impact and Policy
-# work, and this only records how disruptive the provider's own class of change
-# is in general.
-SEVERITY_BY_CHANGE_TYPE: Final[MappingProxyType[ChangeType, Severity]] = MappingProxyType(
-    {
-        ChangeType.MODEL_RETIREMENT: Severity.CRITICAL,
-        ChangeType.ENDPOINT_REMOVAL: Severity.CRITICAL,
-        ChangeType.AUTH_CHANGE: Severity.HIGH,
-        ChangeType.BREAKING_CHANGE: Severity.HIGH,
-        ChangeType.API_DEPRECATION: Severity.MEDIUM,
-        ChangeType.PARAMETER_CHANGE: Severity.MEDIUM,
-        ChangeType.BEHAVIOR_CHANGE: Severity.LOW,
-    }
-)
-
 _GEMINI_MODEL_RE: Final[re.Pattern[str]] = re.compile(r"^gemini-(\d+)\.(\d+)-[a-z0-9-]+$")
-
-
-def severity_for(change_type: ChangeType) -> Severity:
-    """Return the pinned severity for a provider change class."""
-    try:
-        return SEVERITY_BY_CHANGE_TYPE[change_type]
-    except KeyError as exc:  # pragma: no cover - unreachable while the table is total
-        raise ProviderConfigurationError(
-            f"no pinned severity for change type {change_type!r}"
-        ) from exc
 
 
 def parse_gemini_generation(model_id: str) -> tuple[int, int]:
