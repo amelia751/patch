@@ -57,8 +57,8 @@ const GCP_SERVICE_ICONS: Record<string, string> = {
   
   // Security & Identity
   "identity platform": `${LEGACY_BASE}/identity_platform/identity_platform.svg`,
-  "cloud iam": `${LEGACY_BASE}/cloud_iam/cloud_iam.svg`,
-  "iam": `${LEGACY_BASE}/cloud_iam/cloud_iam.svg`,
+  "cloud iam": `${CATEGORY_BASE}/Security Identity/SVG/SecurityIdentity-512-color.svg`,
+  "iam": `${CATEGORY_BASE}/Security Identity/SVG/SecurityIdentity-512-color.svg`,
   "secret manager": `${LEGACY_BASE}/secret_manager/secret_manager.svg`,
   "cloud kms": `${LEGACY_BASE}/key_management_service/key_management_service.svg`,
   "key management service": `${LEGACY_BASE}/key_management_service/key_management_service.svg`,
