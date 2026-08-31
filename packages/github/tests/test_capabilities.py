@@ -60,6 +60,9 @@ def test_repository_ref_round_trip():
 
 
 def test_pull_request_url():
-    assert PullRequestRef(repo=STORYGEN, number=7).url == "https://github.com/amelia751/storygen/pull/7"
+    assert (
+        PullRequestRef(repo=STORYGEN, number=7).url
+        == "https://github.com/amelia751/storygen/pull/7"
+    )
     with pytest.raises(ValueError):
         PullRequestRef(repo=STORYGEN, number=0)

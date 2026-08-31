@@ -84,7 +84,9 @@ def test_read_only_agent_cannot_reach_a_write_capability(
     client, fake_github, impact_headers, capability
 ):
     response = client.post(
-        f"/v1/capabilities/{capability}", json={"repo": "amelia751/storygen"}, headers=impact_headers
+        f"/v1/capabilities/{capability}",
+        json={"repo": "amelia751/storygen"},
+        headers=impact_headers,
     )
     assert response.status_code == 403
     detail = response.json()["detail"]

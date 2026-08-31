@@ -327,9 +327,7 @@ async def test_imagen_continues_after_the_operator_connects_gcp(
     from agents.tools.credentials import RuntimeCredentialsInventory
 
     parked = Orchestrator(sandboxed_context, ToolTrace(run_id="run-park"))
-    parked.seed_static_manifest(
-        repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json"
-    )
+    parked.seed_static_manifest(repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json")
     await parked.run_impact(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True)
     await parked.run_policy(LIVE_PROOF_SLICE, deterministic=True)
     held = await parked.run_patch(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=False)
@@ -360,9 +358,7 @@ async def test_imagen_continues_after_the_operator_connects_gcp(
 
     monkeypatch.setattr("agents.orchestrator.run_turn", _empty_turn)
     resumed = Orchestrator(resumed_context, ToolTrace(run_id="run-resume"))
-    resumed.seed_static_manifest(
-        repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json"
-    )
+    resumed.seed_static_manifest(repo_root / "agents" / "fixtures" / "change_manifest.imagen4.json")
     await resumed.run_impact(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=True)
     await resumed.run_policy(LIVE_PROOF_SLICE, deterministic=True)
     result = await resumed.run_patch(LIVE_PROOF_SLICE, base_sha=BASE_SHA, deterministic=False)
@@ -387,9 +383,7 @@ async def test_a_resumed_tree_does_not_start_a_second_patch_turn(
         bound=True, gcp_connected=True
     )
     first = Orchestrator(sandboxed_context, ToolTrace(run_id="run-first"))
-    first.seed_static_manifest(
-        repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json"
-    )
+    first.seed_static_manifest(repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json")
     await first.run_impact(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
     await first.run_policy(GEMINI20_SLICE, deterministic=True)
     landed = await first.run_patch(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
@@ -401,9 +395,7 @@ async def test_a_resumed_tree_does_not_start_a_second_patch_turn(
 
     monkeypatch.setattr("agents.orchestrator.run_turn", _must_not_run)
     again = Orchestrator(sandboxed_context, ToolTrace(run_id="run-resume"))
-    again.seed_static_manifest(
-        repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json"
-    )
+    again.seed_static_manifest(repo_root / "agents" / "fixtures" / "change_manifest.gemini20.json")
     await again.run_impact(GEMINI20_SLICE, base_sha=BASE_SHA, deterministic=True)
     await again.run_policy(GEMINI20_SLICE, deterministic=True)
     result = await again.run_patch(

@@ -39,9 +39,7 @@ _TOOL_NAME_ATTR: Final[str] = "name"
 
 _TURN_ENDING: Final[frozenset[str]] = frozenset(str(name) for name in TURN_ENDING_TOOLS)
 
-_REPEAT_IS_A_LOOP: Final[frozenset[str]] = frozenset(
-    str(name) for name in REPEATED_CALL_IS_A_LOOP
-)
+_REPEAT_IS_A_LOOP: Final[frozenset[str]] = frozenset(str(name) for name in REPEATED_CALL_IS_A_LOOP)
 
 
 def _canonical(args: dict[str, Any]) -> str:
