@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -74,6 +75,16 @@ TERMINAL_OK: Final[frozenset[str]] = frozenset({"PR_CREATED"})
 TERMINAL_BAD: Final[frozenset[str]] = frozenset({"FAILED", "BLOCKED", "ABANDONED"})
 HOLD_STATES: Final[frozenset[str]] = frozenset({"WAITING_ON_OPERATOR", "HUMAN_REQUIRED"})
 
+# Bounded so a run that parks on the same missing name forever is a failure
+# rather than a loop that answers it forever.
+MAX_HOLDS: Final[int] = 4
+# "This run is waiting on you. Add GEMINI_API_KEY so the agent can continue."
+SECRET_NAME: Final[re.Pattern[str]] = re.compile(r"\bAdd ([A-Z][A-Z0-9_]{2,})\b")
+# Where an operator's own copy of a runtime secret lives on this machine. The
+# console takes the value from a person; this takes it from the same vault the
+# rest of the tooling reads, and never prints it.
+LOCAL_SECRETS: Final[dict[str, str]] = {"GEMINI_API_KEY": "gemini_api_key.txt"}
+
 
 class Failed(RuntimeError):
     """The flow did not reach a pull request, with the reason a human needs."""
@@ -119,6 +130,17 @@ def secret(name: str) -> str:
     if out.returncode != 0:
         raise Failed(f"could not read secret {name}: {out.stderr.strip()[:200]}")
     return out.stdout
+
+
+def secret_value(name: str) -> str:
+    """One runtime secret the operator would paste into the console."""
+    filename = LOCAL_SECRETS.get(name)
+    if filename is None:
+        raise Failed(f"the run asked for {name}, which this script has no local copy of")
+    path = REPO_ROOT / ".secrets" / filename
+    if not path.is_file():
+        raise Failed(f"the run asked for {name}, expected at {path}")
+    return path.read_text(encoding="utf-8").strip()
 
 
 def psql(dsn: str, sql: str) -> list[str]:
@@ -182,6 +204,39 @@ def poll_until(
     raise Failed(f"still {attempt.states[-1]} after {timeout:.0f}s waiting for {what}")
 
 
+def answer_hold(api: str, token: str, project: str, message: str, credentials: str) -> str:
+    """Do what the console operator would do for the hold `message` describes.
+
+    The hold carries no structured `need`; what reaches the console is the same
+    sentence a person reads, so this reads it the same way. A run can park more
+    than once — storygen asks for a GCP view to resolve the replacement, then
+    for the API key its own route authenticates with — and each is a separate
+    button in the console.
+    """
+    if wanted := SECRET_NAME.search(message):
+        name = wanted.group(1)
+        value = secret_value(name)
+        status, said = request(
+            "POST",
+            f"{api}/api/projects/{project}/secrets",
+            token,
+            {"secret_name": name, "secret_value": value, "type": "api_key"},
+        )
+        if status not in (200, 201):
+            raise Failed(f"adding {name} returned {status}: {said}")
+        return f"added {name}"
+
+    status, said = request(
+        "POST",
+        f"{api}/api/projects/{project}/gcp-connections",
+        token,
+        {"credentials_json": credentials, "region": "us-central1"},
+    )
+    if status not in (200, 201):
+        raise Failed(f"connecting GCP returned {status}: {said}")
+    return "connected GCP"
+
+
 def run_once(api: str, token: str, project: str, change: str, credentials: str) -> Attempt:
     attempt = Attempt(change=change)
     started = time.monotonic()
@@ -211,17 +266,12 @@ def run_once(api: str, token: str, project: str, change: str, credentials: str) 
         what="a credential hold or a pull request",
     )
 
-    if str(detail.get("state")) in HOLD_STATES:
-        attempt.held_for = str(detail.get("failure_reason") or "credentials")
-        print("  supplying the GCP connection", flush=True)
-        status, said = request(
-            "POST",
-            f"{api}/api/projects/{project}/gcp-connections",
-            token,
-            {"credentials_json": credentials, "region": "us-central1"},
-        )
-        if status not in (200, 201):
-            raise Failed(f"connecting GCP returned {status}: {said}")
+    for _ in range(MAX_HOLDS):
+        if str(detail.get("state")) not in HOLD_STATES:
+            break
+        message = str(detail.get("failure_reason") or "credentials")
+        attempt.held_for = message
+        print(f"  {answer_hold(api, token, project, message, credentials)}", flush=True)
 
         # Pressing the same button is the resume: `open_run` finds the parked
         # row, keeps its trace and its diff, and dispatches the same run. A
@@ -242,10 +292,13 @@ def run_once(api: str, token: str, project: str, change: str, credentials: str) 
             project,
             attempt.run_id,
             attempt,
-            want=TERMINAL_OK,
+            want=HOLD_STATES | TERMINAL_OK,
             timeout=COMPLETION_TIMEOUT,
             what="a pull request",
         )
+
+    if str(detail.get("state")) in HOLD_STATES:
+        raise Failed(f"still asking for credentials after {MAX_HOLDS} holds: {attempt.held_for}")
 
     attempt.pull_request = str(detail.get("pull_request_url") or "")
     attempt.seconds = time.monotonic() - started
@@ -454,9 +507,9 @@ def memory_recollections(repo: str) -> int:
 
 
 def reset(dsn: str) -> None:
-    """Return the deployment to 'never connected, never ran'.
+    """Return the deployment to 'never connected, no secrets, never ran'.
 
-    The credential hold only happens when no connection exists, so a repeat pass
+    The credential holds only happen when the vault is empty, so a repeat pass
     that skipped this would prove the resume path once and then stop testing it.
     """
     for statement in (
@@ -470,6 +523,10 @@ def reset(dsn: str) -> None:
         "DELETE FROM idempotency_keys",
         "DELETE FROM remediation_runs",
         "DELETE FROM gcp_connections",
+        # The pointer only. Secret Manager keeps the version, and the console
+        # would too; what this restores is a project that has not been told
+        # about the name yet, which is what makes the run park a second time.
+        "DELETE FROM project_secrets",
     ):
         psql(dsn, statement)
 
