@@ -6,6 +6,7 @@ from patchapi_repo_indexer.astgrep.runner import (
     available,
     configured_rule_dir,
     rule_files,
+    rule_root,
     scan_files,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "available",
     "configured_rule_dir",
     "rule_files",
+    "rule_root",
     "scan_files",
 ]

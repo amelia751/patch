@@ -26,7 +26,10 @@ log = logging.getLogger(__name__)
 AST_GREP_BINARY: Final[str] = "ast-grep"
 
 # Rules ship with the service so the sandbox and the indexer match a call site
-# with the same file (repo-indexer.md §7.5).
+# with the same file (repo-indexer.md §7.5). One subdirectory per provider,
+# named by that provider's descriptor: running every provider's rules against
+# every candidate would confirm a Stripe finding with a Google rule and put
+# cross-provider noise in front of a reviewer.
 DEFAULT_RULE_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "rules"
 
 RULE_SUFFIXES: Final[tuple[str, ...]] = (".yml", ".yaml")
@@ -57,9 +60,23 @@ def available() -> bool:
     return shutil.which(AST_GREP_BINARY) is not None
 
 
-def configured_rule_dir() -> Path:
-    """Return the configured rule directory, or the one shipped with the service."""
+def rule_root() -> Path:
+    """The directory holding every provider's rule subdirectory."""
     return Path(ASTGREP_RULE_DIR) if ASTGREP_RULE_DIR else DEFAULT_RULE_DIR
+
+
+def configured_rule_dir(provider: str) -> Path | None:
+    """The rules for `provider`, or `None` when it ships none.
+
+    `None` rather than an error. Layer B is precision: a provider whose call
+    shapes nobody has written rules for still gets its Layer A findings, just
+    unconfirmed. Raising here would turn "we have not written those rules yet"
+    into a failed index.
+    """
+    from packages.providers import registry
+
+    candidate = rule_root() / registry.descriptor_for(provider).namespace
+    return candidate if candidate.is_dir() else None
 
 
 def rule_files(directory: Path) -> tuple[Path, ...]:
@@ -180,5 +197,6 @@ __all__ = [
     "available",
     "configured_rule_dir",
     "rule_files",
+    "rule_root",
     "scan_files",
 ]

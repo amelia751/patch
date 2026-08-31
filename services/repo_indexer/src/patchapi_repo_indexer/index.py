@@ -321,9 +321,13 @@ def _surface_for(
 
 
 def _confirm_structurally(
-    root: Path, records: Sequence[ApiUsageRecord]
+    root: Path, records: Sequence[ApiUsageRecord], provider: str
 ) -> tuple[ApiUsageRecord, ...]:
     """Annotate the records ast-grep confirms are call sites or configuration.
+
+    Only `provider`'s own rules run. A Google rule matching a Stripe finding
+    would set a `surface` that names a call shape the finding is not, and rank
+    it as confirmed on evidence from the wrong provider.
 
     Confirmation sets `surface` to the rule that matched; an unconfirmed record
     is left exactly as Layer A produced it rather than dropped. A rule cannot
@@ -334,9 +338,14 @@ def _confirm_structurally(
     if not records:
         return tuple(records)
 
+    rule_dir = configured_rule_dir(provider)
+    if rule_dir is None:
+        log.info("no ast-grep rules ship for provider %s; skipping Layer B", provider)
+        return tuple(records)
+
     candidates = sorted({record.file_path for record in records})
     try:
-        matches = scan_files(configured_rule_dir(), [root / path for path in candidates], root)
+        matches = scan_files(rule_dir, [root / path for path in candidates], root)
     except AstGrepRuleError as exc:
         # Layer B is precision. Its failure downgrades the ranking, never the
         # inventory, so the Layer A rows are returned untouched.
@@ -452,7 +461,7 @@ def build_inventory_zoekt(
     # ast-grep confirms call sites, and a dependency table has none to confirm,
     # so the manifest rows are appended after Layer B rather than passed through
     # it. They carry their own evidence: the line that pins the version.
-    usages = list(_confirm_structurally(root_path, records))
+    usages = list(_confirm_structurally(root_path, records, provider))
     usages.extend(_dependency_records(root_path, provider, allowed_paths))
 
     return ApiUsageInventory(

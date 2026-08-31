@@ -1,0 +1,23 @@
+# Confirms that a removed Stripe.js method name is a call on a Stripe client
+# rather than a same-named helper in application code. Layer A finds the string
+# `stripe.createSource`; this decides whether it is the call that now throws.
+#
+# Removed in API version 2026-03-25.dahlia. The methods are listed rather than
+# matched by shape because they have no shape in common — they are a set Stripe
+# chose to retire, not a family with a pattern.
+id: stripe-legacy-stripejs-call
+language: typescript
+severity: info
+message: Removed Stripe.js method in a call position
+# The patterns are quoted because an ast-grep pattern contains `$` and `(`,
+# which unquoted YAML can read as something other than a scalar.
+rule:
+  pattern: '$CLIENT.$METHOD($$$)'
+constraints:
+  # Anchored on a Stripe-named receiver. Without it the rule would confirm any
+  # object with a `createSource` method, and a false confirmation ranks a
+  # finding higher than the evidence supports.
+  CLIENT:
+    regex: '[Ss]tripe'
+  METHOD:
+    regex: '^(handleCardPayment|confirmPaymentIntent|handleFpxPayment|handleCardSetup|confirmSetupIntent|createSource|retrieveSource)$'

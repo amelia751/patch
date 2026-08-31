@@ -1,0 +1,13 @@
+# A pinned Stripe API version as a configured value. The pin is what decides
+# which release's behaviour a repository gets, so a breaking change dated to a
+# version reaches a tree through this string and often through nothing else.
+#
+# JSON only: one ast-grep rule declares one language, and the TypeScript
+# `apiVersion` argument is the call-site rule's business.
+id: stripe-api-version-pin
+language: json
+severity: info
+message: Pinned Stripe API version in configuration
+rule:
+  kind: string
+  regex: '\d{4}-\d{2}-\d{2}\.(acacia|basil|clover|dahlia)'
