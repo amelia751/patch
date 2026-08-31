@@ -103,4 +103,6 @@ only-include = ["__init__.py"]
 "organization_routes.py" = "packages/state/organization_routes.py"
 "data/google_services.json" = "packages/state/data/google_services.json"
 "data/google_models.json" = "packages/state/data/google_models.json"
-"data/google_release_notes.json" = "packages/state/data/google_release_notes.json"
+# `data/google_release_notes.json` is deliberately absent: it is a gitignored
+# bootstrap cache, so a force-include fails the image build. The refresh job
+# reads BigQuery and serving reads Postgres; neither needs the file.
