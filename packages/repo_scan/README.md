@@ -1,6 +1,6 @@
 # `packages/repo_scan`
 
-Deterministic Layer A of impact analysis (`roadmap.md` §7.4, §11.3): find the
+Deterministic Layer A of impact analysis: find the
 literal provider identifiers a change manifest names, classify each hit by path,
 and return them in an order that depends on the commit rather than on the
 filesystem.

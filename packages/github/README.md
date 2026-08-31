@@ -1,6 +1,6 @@
 # `packages/github`
 
-The narrow GitHub capability vocabulary from `roadmap.md` §7.3, plus the
+The narrow GitHub capability vocabulary, plus the
 reference types those capabilities operate on.
 
 This package holds no credentials and makes no network calls. It exists so the

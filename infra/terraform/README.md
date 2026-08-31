@@ -4,7 +4,7 @@
 Gated modules (GKE, Cloud SQL, Cloud Run) are switched off. `demo` is a stub
 that has never been applied.
 
-Terraform for the GCP services in [`roadmap.md`](../../roadmap.md) §20–§21.
+Terraform for the GCP services PatchAPI deploys.
 
 ```
 infra/terraform/
@@ -76,8 +76,8 @@ the combination during plan.
 
 **Region is `us-central1`.** Gemini model calls are the exception: on this
 project `gemini-3.5-flash` and `gemini-3.1-flash-image` resolve under
-`locations/global` and return 404 in `us-central1`
-([`setup.md`](../../setup.md) §8). That is the `vertex_location` variable, and
+`locations/global` and return 404 in `us-central1`.
+That is the `vertex_location` variable, and
 it is not a compute-region setting.
 
 **GKE is Standard, not Autopilot.** The sandbox node pool needs an explicit

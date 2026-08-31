@@ -1,6 +1,6 @@
 # `packages/memory`
 
-The Memory Bank client interface from `roadmap.md` §10.2, with two
+The Memory Bank client interface, with two
 implementations: `VertexMemoryBank` against a Vertex AI Agent Engine, and
 `LocalMemoryBank`, a file-backed fallback for tests and offline runs.
 
@@ -70,8 +70,7 @@ repository unreadable.
 Whether a recollection may be *shown* to an agent, and to which one, is
 `agents/memory.py` and `agents/orchestrator.py`. Recalled content is reduced to
 prose there and the typed profile is dropped, so no deterministic gate can
-branch on a memory; the Verification Agent is never shown one at all. See
-`docs/threat-model.md` T13.
+branch on a memory; the Verification Agent is never shown one at all.
 
 Verified by `./scripts/verify_packages_remaining.sh`, and by
 `./scripts/verify_agent_image_closure.sh`, which asserts this package is present

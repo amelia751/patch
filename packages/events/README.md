@@ -1,6 +1,6 @@
 # `packages/events`
 
-The envelope every PatchAPI Pub/Sub message travels in (`roadmap.md` §10.4) and
+The envelope every PatchAPI Pub/Sub message travels in, and
 the idempotency keys that keep a resumed run from repeating an external action
 (§9).
 

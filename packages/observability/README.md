@@ -1,6 +1,6 @@
 # `packages/observability`
 
-OpenTelemetry setup for PatchAPI agents and services (`roadmap.md` §14).
+OpenTelemetry setup for PatchAPI agents and services.
 
 Instrumentation is standards-based, so the same spans reach Agent Observability
 and Cloud Trace in Google Cloud and a console exporter locally, without the
@@ -84,8 +84,7 @@ unrelated traces.
 Attribute keys are prefixed `patchapi.` so they cannot collide with
 OpenTelemetry semantic conventions, and `agents/observe.py` accepts only those
 keys and only identifier-shaped values. A trace leaves the trust boundary, so
-what may ride on one is deliberately narrow — see
-[`docs/architecture.md`](../../docs/architecture.md).
+what may ride on one is deliberately narrow.
 
 ## Failure posture
 

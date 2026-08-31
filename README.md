@@ -75,14 +75,5 @@ sandbox/                  GKE Agent Sandbox image
 db/                       Migrations and seeds
 infra/terraform/          GCP provisioning
 demo/                     Provider notice fixtures
-docs/                     Architecture and operations
+docs/                     Architecture diagram
 ```
-
-## Docs
-
-| | |
-|---|---|
-| Design of record | [`roadmap.md`](./roadmap.md) |
-| Local and cloud setup | [`setup.md`](./setup.md) |
-| Architecture | [`docs/architecture.md`](./docs/architecture.md) |
-| Provider ingest | [`provider.md`](./provider.md) |

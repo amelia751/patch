@@ -1,6 +1,6 @@
 # `packages/platform`
 
-Google Agent Registry client (`roadmap.md` §12.1). PatchAPI publishes its seven
+Google Agent Registry client. PatchAPI publishes its seven
 agents to the registry so "which agents does this enterprise run, and what does
 each one claim it can do" is answerable from the platform rather than from a
 slide.
