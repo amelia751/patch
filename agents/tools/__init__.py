@@ -17,7 +17,7 @@ from agents.tools.impact import build_repo_inventory_tools
 from agents.tools.index_lookup import build_index_lookup_tools
 from agents.tools.patch import (
     build_computer_use_tools,
-    build_migration_skill_tools,
+    build_patch_plan_tools,
     build_workspace_tools,
 )
 from agents.tools.policy import build_policy_tools
@@ -34,7 +34,7 @@ _BUILDERS: Final[tuple[Callable[[RunContext], list[Callable[..., Any]]], ...]] =
     build_live_tools,
     build_index_lookup_tools,
     build_repo_inventory_tools,
-    build_migration_skill_tools,
+    build_patch_plan_tools,
     build_workspace_tools,
     build_computer_use_tools,
     build_evidence_tools,

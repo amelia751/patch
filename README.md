@@ -108,9 +108,9 @@ Local: `http://localhost:3000` (console) and `http://localhost:8080` (API).
 │   ├── platform/             Agent Registry
 │   └── auth/                 Identity Platform, OAuth
 │
-├── skills/
-│   ├── google_imagen_migration/
-│   └── google_gemini20_migration/
+├── skills/                   ADK Agent Skills the Patch agent loads
+│   ├── api-migration/        method for any provider migration
+│   └── google-genai-migration/  Google request surfaces + traps
 │
 ├── sandbox/
 │   ├── runner/               isolated apply / build / test

@@ -14,11 +14,7 @@ from agents.config import AgentId
 from agents.context import PathOutsideRootError, RunContext, resolve_within
 from agents.tools.change import build_live_tools, build_provider_feed_tools
 from agents.tools.impact import build_repo_inventory_tools
-from agents.tools.patch import (
-    build_migration_skill_tools,
-    build_workspace_tools,
-    paths_in_unified_diff,
-)
+from agents.tools.patch import build_workspace_tools, paths_in_unified_diff
 from agents.tools.policy import build_policy_tools
 from agents.tools.pr import build_pull_request_tools
 from agents.tools.results import is_refusal
@@ -400,20 +396,6 @@ def test_the_pr_body_needs_every_upstream_contract(run_context):
     result = tools["render_pull_request_body"]()
     assert is_refusal(result)
     assert "change_manifest" in result["message"]
-
-
-def test_the_migration_skill_reader_is_bounded_to_the_skills_tree(run_context):
-    tools = {f.__name__: f for f in build_migration_skill_tools(run_context)}
-    result = tools["load_migration_skill"]("../.secrets")
-    assert is_refusal(result)
-    assert result["reason_code"] in {"out_of_scope", "not_found"}
-
-
-def test_the_pinned_google_skill_loads(run_context):
-    tools = {f.__name__: f for f in build_migration_skill_tools(run_context)}
-    result = tools["load_migration_skill"]("google_imagen_migration")
-    assert result["status"] == "ok"
-    assert result["content"].strip()
 
 
 def test_stopping_for_a_human_is_recorded(run_context):

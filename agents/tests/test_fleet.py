@@ -6,6 +6,8 @@ regression — a specialist that can transfer to a peer, or one wired to a model
 outside the pinned generation.
 """
 
+import asyncio
+
 import pytest
 
 from agents.adk import PREAMBLE, adk_unavailable_reason
@@ -62,10 +64,27 @@ def test_every_tool_call_passes_through_the_guardrails(fleet):
         assert agent.after_tool_callback
 
 
+def _tool_names(agent) -> set[str]:
+    """Every tool the model is offered, with toolsets expanded.
+
+    ADK lets an agent hold a `BaseToolset` alongside plain functions, and the
+    skill toolset is one. Reading only the top level would let a toolset smuggle
+    in a tool the allowlist never granted.
+    """
+    from google.adk.tools.base_toolset import BaseToolset
+
+    names: set[str] = set()
+    for tool in agent.tools:
+        if isinstance(tool, BaseToolset):
+            names.update(item.name for item in asyncio.run(tool.get_tools(None)))
+        else:
+            names.add(getattr(tool, "__name__", None) or tool.name)
+    return names
+
+
 def test_each_agent_holds_exactly_its_allowlist(fleet):
     for agent_id, agent in fleet.items():
-        names = {getattr(tool, "__name__", None) or tool.name for tool in agent.tools}
-        assert names == {str(name) for name in tool_allowlist(agent_id)}
+        assert _tool_names(agent) == {str(name) for name in tool_allowlist(agent_id)}
 
 
 def test_request_runtime_credentials_is_a_long_running_tool(fleet):

@@ -50,7 +50,6 @@ from agents.specialists.verification import build as build_verification
 from agents.tools import build_tool_index, is_refusal
 from agents.tools.change.feed import provider_authored_text
 from agents.tools.credentials import live_check_ready, resolve_inventory
-from agents.tools.patch.skill import SKILLS_DIRNAME
 from agents.tools.pr import github_tools_base_url, invoke_github_capability
 from agents.tools.results import ReasonCode
 from agents.trace import ToolStatus, ToolTrace
@@ -141,7 +140,6 @@ class VerticalSlice:
 
     change_id: str
     repo: str
-    skill_id: str
     entrypoint: str
     binding: str
     build_command: str
@@ -162,6 +160,32 @@ def _required_checks(slice_: VerticalSlice) -> list[str]:
 
 def _check_names(slice_: VerticalSlice) -> list[str]:
     return _repo_commands(slice_)
+
+
+def _manifest_facts(manifest: ChangeManifest) -> str:
+    """The change's corroborated facts, for the Patch turn.
+
+    Stated rather than left to the agent to recall. These are the fields a
+    migration skill tells it to look for, and the manifest is the only record
+    of them that was checked against the provider's own pages at intake.
+    """
+    replacement = manifest.recommended_replacement or "none named — do not invent one"
+    lines = [
+        f"Manifest facts for {manifest.change_id!r}:",
+        f"  provider: {manifest.provider}",
+        f"  recommended replacement: {replacement}",
+        f"  provider calls it semantic: {str(manifest.semantic_migration_required).lower()}",
+    ]
+    # A per-identifier replacement is the notice saying the headline ID does not
+    # apply to every retired one — a `-lite` tier, usually. Applying the headline
+    # everywhere is the mechanical error this exists to prevent, so it is stated
+    # per identifier rather than summarised.
+    for entry in manifest.per_identifier:
+        target = entry.replacement or "no replacement named"
+        lines.append(f"  {entry.identifier} -> {target}")
+    for constraint in manifest.migration_constraints:
+        lines.append(f"  constraint: {constraint}")
+    return "\n".join(lines)
 
 
 _SECRET_NAME: Final[re.Pattern[str]] = re.compile(
@@ -1279,13 +1303,15 @@ class Orchestrator:
             f"Provider change {manifest.change_id!r} retires "
             f"{', '.join(manifest.affected_identifiers)}. The Impact agent found these "
             f"usages in the sandbox workspace:\n{findings}\n\n"
+            f"{_manifest_facts(manifest)}\n\n"
             f"This is repository {report.repo!r} at base_sha {report.base_sha!r}; record "
-            f"those verbatim. Load migration skill {slice_.skill_id!r} first. Inspect "
-            "how this app actually calls the provider (API routes and env vars), not "
-            "only the identifier binding. A green local check is not a live call. If "
-            "a live path needs a secret that list_runtime_credentials does not show, "
-            "call request_runtime_credentials and stop — do not invent a key and do "
-            "not record that you cannot test. Then "
+            "those verbatim. Call list_skills and load every skill that applies before "
+            "you plan — the facts above are this change; the skills are how to migrate "
+            "off it. Inspect how this app actually calls the provider (API routes and "
+            "env vars), not only the identifier binding. A green local check is not a "
+            "live call. If a live path needs a secret that list_runtime_credentials "
+            "does not show, call request_runtime_credentials and stop — do not invent a "
+            "key and do not record that you cannot test. Then "
             f"{proof}, and record_patch_plan with what you changed. Do "
             "not edit any file outside the ones listed above.\n\n"
             f"{self.memory_context(AgentId.PATCH)}"
@@ -1300,7 +1326,6 @@ class Orchestrator:
         diff = self._known_good_diff(source, slice_, manifest)
         if diff is None:
             return
-        version = self._skill_version(slice_.skill_id)
         self._call("apply_patch", on_behalf_of=AgentId.PATCH, diff=diff)
         self._call(
             "record_patch_plan",
@@ -1319,23 +1344,12 @@ class Orchestrator:
                 "replacement applied to the pinned binding, with no model in the loop."
             ],
             verification_commands=_required_checks(slice_),
-            # PatchPlan records a skill and its version together or not at all,
-            # so an unreadable skill package yields neither rather than a plan
-            # that names a provenance it cannot support.
-            skill_id=slice_.skill_id if version else "",
-            skill_version=version,
+            # No skill, deliberately. This path applies the manifest's own
+            # replacement to the pinned binding with no model in the loop, so
+            # naming a skill would claim a method that was never consulted.
+            skill_id="",
+            skill_version="",
         )
-
-    def _skill_version(self, skill_id: str) -> str:
-        """The pinned version of a migration skill package, or an empty string."""
-        manifest_path = self._context.repo_root / SKILLS_DIRNAME / skill_id / "skill.json"
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return ""
-        skill = payload.get("skill") if isinstance(payload, dict) else None
-        version = skill.get("version") if isinstance(skill, dict) else None
-        return version if isinstance(version, str) else ""
 
     # -- workspace inspection ---------------------------------------------
 

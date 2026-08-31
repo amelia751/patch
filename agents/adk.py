@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import Any, Final
 
@@ -23,13 +24,17 @@ from agents.config import (
     MAX_OUTPUT_TOKENS,
     MODEL_TEMPERATURE,
     REASONING_MODEL,
+    SKILL_ENTRYPOINT,
+    SKILL_TOOLS,
+    SKILLS_DIRNAME,
     SPECIALISTS,
     AgentId,
     ToolName,
     prompt_version,
+    tool_allowlist,
 )
 from agents.context import RunContext
-from agents.errors import AdkUnavailableError
+from agents.errors import AdkUnavailableError, SkillsUnavailableError
 from agents.guardrails import build_tool_guardrails
 from agents.tools import build_tools
 from agents.tools.results import is_refusal
@@ -159,6 +164,54 @@ def _search_web_tool() -> Any:
     return AgentTool(agent=child)
 
 
+_SKILL_TOOL_NAMES: Final[frozenset[str]] = frozenset(str(name) for name in SKILL_TOOLS)
+
+
+@cache
+def _scriptless_skill_toolset() -> type:
+    """`SkillToolset` without `run_skill_script`.
+
+    ADK builds that fourth tool unconditionally and never consults the base
+    class's `tool_filter`, so dropping it takes an override. It has to go: it
+    executes a skill's own `scripts/` outside the sandbox allowlist that
+    `run_command` enforces, which is a second execution path into a workspace
+    that is only allowed one.
+    """
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    class ScriptlessSkillToolset(SkillToolset):
+        async def get_tools(self, readonly_context: Any = None) -> list[Any]:
+            tools = await super().get_tools(readonly_context)
+            return [tool for tool in tools if tool.name in _SKILL_TOOL_NAMES]
+
+    return ScriptlessSkillToolset
+
+
+def skill_packages(skills_root: Path) -> list[Path]:
+    """Every Agent Skill package under `skills_root`, in a stable order."""
+    if not skills_root.is_dir():
+        return []
+    return sorted(path for path in skills_root.iterdir() if (path / SKILL_ENTRYPOINT).is_file())
+
+
+def build_skill_toolset(skills_root: Path) -> Any:
+    """ADK's skill toolset over every package under `skills_root`.
+
+    Loading the whole directory rather than a selected subset is what removes
+    the routing table this used to need. Which package applies is the model's
+    call, made from the descriptions `list_skills` returns.
+    """
+    from google.adk.skills import load_skill_from_dir
+
+    packages = skill_packages(skills_root)
+    if not packages:
+        raise SkillsUnavailableError(
+            f"no {SKILL_ENTRYPOINT} package under {skills_root}; the Patch agent would "
+            "plan a migration from recall rather than from a method"
+        )
+    return _scriptless_skill_toolset()(skills=[load_skill_from_dir(path) for path in packages])
+
+
 def build_agent(
     agent: AgentId,
     *,
@@ -174,6 +227,8 @@ def build_agent(
     tools: list[Any] = [_as_adk_tool(function) for function in build_tools(context, agent)]
     if agent in SPECIALISTS:
         tools.append(_search_web_tool())
+    if tool_allowlist(agent) & SKILL_TOOLS:
+        tools.append(build_skill_toolset(context.repo_root / SKILLS_DIRNAME))
     return LlmAgent(
         name=str(agent),
         model=REASONING_MODEL,
@@ -502,6 +557,7 @@ __all__ = [
     "adk_unavailable_reason",
     "adk_version",
     "build_agent",
+    "build_skill_toolset",
     "configure_vertex_environment",
     "generate_content_config",
     "new_session_service",
@@ -510,5 +566,6 @@ __all__ = [
     "run_turn",
     "session_hold_reason",
     "session_id_for",
+    "skill_packages",
     "vertex_unavailable_reason",
 ]

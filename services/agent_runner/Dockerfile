@@ -72,9 +72,9 @@ RUN uv sync --frozen --package patchapi-agent-runner --no-dev
 COPY agents agents
 COPY sandbox sandbox
 COPY demo/fixtures demo/fixtures
-# `load_migration_skill` reads these from PATCHAPI_REPO_ROOT. Without them the
-# patch stage has the provider's notice and none of the capability differences
-# that make a migration more than a string replacement.
+# ADK's `SkillToolset` loads these from PATCHAPI_REPO_ROOT at agent build time.
+# Without them the patch stage has the provider's notice and no method for
+# acting on it, and the run fails closed rather than patching from recall.
 COPY skills skills
 
 ENV PATH="/app/.venv/bin:${PATH}" \

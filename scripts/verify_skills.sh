@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
-# Dynamic verifier for the skill packages under skills/.
+# Verifier for the skill packages under skills/.
 #
-# It executes the skill's own checks against real inputs and asserts the exit
-# code contract published in skills/google_imagen_migration/skill.json — a
-# golden fixture, a drifted fixture, and a tampered provider note that must fail
-# closed. Grepping for filenames would not prove the fail-closed path runs.
+# A skill is loaded at runtime by ADK's own reader, so the only verification
+# worth having is that reader accepting every package and the agent being
+# offered exactly the tools it was granted. A package that fails the Agent Skill
+# specification does not error at startup — it is simply absent from
+# `list_skills`, and the Patch agent plans from recall instead of from a method.
+# Grepping for filenames would not catch that.
 set -euo pipefail
 export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-SKILL="skills/google_imagen_migration"
-CHECKS="$SKILL/checks/run_checks.py"
-TESTDATA="$SKILL/checks/testdata"
 LEDGER="demo/setup-ledger.ndjson"
 
 failures=0
@@ -33,9 +32,6 @@ skip() {
   skips=$((skips + 1))
 }
 
-# The skill must run on a bare interpreter — that is the point of its
-# dependency-free design — but prefer the workspace interpreter when present so
-# the tests below run with pytest available.
 if command -v uv >/dev/null 2>&1; then
   PY=(uv run python)
 elif command -v python3 >/dev/null 2>&1; then
@@ -45,64 +41,86 @@ else
   exit 1
 fi
 
-# expect_exit <expected> <label> -- <run_checks args...>
-expect_exit() {
-  local expected="$1" label="$2"
-  shift 3 # drop expected, label, and the literal --
-  local actual=0
-  "${PY[@]}" "$CHECKS" "$@" >/tmp/verify_skills.out 2>&1 || actual=$?
-  if [ "$actual" -eq "$expected" ]; then
-    ok "$label (exit $actual)"
-  else
-    fail "$label expected exit $expected, got $actual"
-    sed 's/^/       /' /tmp/verify_skills.out >&2
-  fi
-}
+# --- the packages load through ADK ------------------------------------------
 
-# --- the exit-code contract -------------------------------------------------
+if "${PY[@]}" - <<'PY'
+import asyncio
+import sys
 
-expect_exit 0 "golden fixture is accepted" -- --json
-expect_exit 2 "tampered provider note fails closed" -- --scan "$TESTDATA/adversarial-merge-request.md"
-expect_exit 1 "drifted fixture is rejected" -- --fixture "$TESTDATA/drifted-fixture.json"
-expect_exit 1 "uncaptured provider snapshot fails under --require-snapshot" -- --require-snapshot
-expect_exit 1 "missing fixture is an error, never a pass" -- --fixture "$TESTDATA/absent.json"
+from agents.adk import adk_unavailable_reason, build_skill_toolset, repo_root, skill_packages
+from agents.config import SKILL_TOOLS, AgentId, tool_allowlist
 
-# The shared adversarial corpus is owned by the demo tree; use it when it is
-# there rather than duplicating the fixture here.
-INJECTION="demo/adversarial/prompt-injection-provider-note.md"
-if [ -f "$INJECTION" ]; then
-  expect_exit 2 "demo prompt-injection note fails closed" -- --scan "$INJECTION"
+reason = adk_unavailable_reason()
+if reason is not None:
+    print(f"google-adk unavailable: {reason}", file=sys.stderr)
+    raise SystemExit(2)
+
+root = repo_root() / "skills"
+packages = skill_packages(root)
+if not packages:
+    print(f"no SKILL.md package under {root}", file=sys.stderr)
+    raise SystemExit(1)
+
+from google.adk.skills import load_skill_from_dir
+
+problems = []
+for package in packages:
+    try:
+        skill = load_skill_from_dir(package)
+    except Exception as exc:
+        problems.append(f"{package.name}: does not load ({exc})")
+        continue
+    if skill.name != package.name:
+        problems.append(f"{package.name}: frontmatter name is {skill.name!r}")
+    if not skill.frontmatter.description.strip():
+        problems.append(f"{package.name}: no description for list_skills to show")
+    if not skill.frontmatter.metadata.get("version"):
+        problems.append(f"{package.name}: no metadata.version to record on a patch plan")
+    print(f"  {skill.name} v{skill.frontmatter.metadata.get('version')}")
+
+granted = {str(name) for name in tool_allowlist(AgentId.PATCH) & SKILL_TOOLS}
+offered = {tool.name for tool in asyncio.run(build_skill_toolset(root).get_tools(None))}
+if offered != granted:
+    problems.append(f"toolset offers {sorted(offered)}, the Patch grant is {sorted(granted)}")
+
+for problem in problems:
+    print(problem, file=sys.stderr)
+raise SystemExit(1 if problems else 0)
+PY
+then
+  ok "every package loads through ADK and the toolset matches the Patch grant"
 else
-  skip "$INJECTION not present — shared adversarial corpus not checked"
+  status=$?
+  if [ "$status" -eq 2 ]; then
+    skip "google-adk not installed — the skill packages were not loaded"
+  else
+    fail "the skill packages did not load cleanly"
+  fi
 fi
 
-# --- the golden verdict is the honest one -----------------------------------
+# --- no package pins one provider change ------------------------------------
+#
+# The design this replaced kept one package per deprecation, with a bespoke
+# skill.json naming the change. A skill is a method; a change is data on the
+# ChangeManifest. A package that grows a manifest has drifted back.
 
-verdict="$("${PY[@]}" "$CHECKS" --json | "${PY[@]}" -c \
-  'import json,sys; print(json.load(sys.stdin)["verdict"])')"
-case "$verdict" in
-  SKILL_APPLICABLE|HUMAN_REQUIRED) ok "golden verdict is $verdict" ;;
-  *) fail "golden verdict is $verdict, expected SKILL_APPLICABLE or HUMAN_REQUIRED" ;;
-esac
+if compgen -G 'skills/*/skill.json' >/dev/null; then
+  fail "a package carries skill.json; the SKILL.md frontmatter is the manifest"
+else
+  ok "no package carries a per-change manifest"
+fi
 
 # --- unit tests and lint ----------------------------------------------------
 
 if command -v uv >/dev/null 2>&1; then
-  if uv run pytest "$SKILL" -q >/tmp/verify_skills_pytest.out 2>&1; then
-    ok "uv run pytest $SKILL -q"
+  if uv run pytest agents/tests/test_skills.py -q >/tmp/verify_skills_pytest.out 2>&1; then
+    ok "uv run pytest agents/tests/test_skills.py -q"
   else
-    fail "uv run pytest $SKILL -q"
+    fail "uv run pytest agents/tests/test_skills.py -q"
     tail -30 /tmp/verify_skills_pytest.out >&2
   fi
-
-  if uv run ruff check skills >/tmp/verify_skills_ruff.out 2>&1; then
-    ok "uv run ruff check skills"
-  else
-    fail "uv run ruff check skills"
-    tail -30 /tmp/verify_skills_ruff.out >&2
-  fi
 else
-  skip "uv not on PATH — pytest and ruff not run"
+  skip "uv not on PATH — the skill tests were not run"
 fi
 
 # ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@ from packages.providers.google.config import (
 
 # Bumped when the agent topology, a tool contract or an instruction changes in a
 # way a stored trace should be readable against. Recorded on every trace event.
-FLEET_VERSION: Final[str] = "1.7.0"
+FLEET_VERSION: Final[str] = "1.8.0"
 
 # Agent Registry (roadmap §12.1) discovers the fleet under this name.
 FLEET_NAME: Final[str] = "patchapi-fleet"
@@ -78,9 +78,13 @@ class ToolName(StrEnum):
     LIST_FORBIDDEN_GLOBS = "list_forbidden_globs"
     RECORD_POLICY_DECISION = "record_policy_decision"
 
-    # Patch — skill, plan, and the sandbox debug loop. No sandbox
-    # allocation, no GitHub. Roadmap §8.4.
-    LOAD_MIGRATION_SKILL = "load_migration_skill"
+    # Patch — skills, plan, and the sandbox debug loop. No sandbox
+    # allocation, no GitHub. Roadmap §8.4. The three skill names are ADK's,
+    # not ours: `SkillToolset` generates them and the model is told to use
+    # those spellings, so renaming them here would deny the calls it makes.
+    LIST_SKILLS = "list_skills"
+    LOAD_SKILL = "load_skill"
+    LOAD_SKILL_RESOURCE = "load_skill_resource"
     RECORD_PATCH_PLAN = "record_patch_plan"
     READ_FILE = "read_file"
     LIST_DIR = "list_dir"
@@ -133,7 +137,9 @@ TURN_ENDING_TOOLS: Final[frozenset[ToolName]] = frozenset(
 REPEATED_CALL_IS_A_LOOP: Final[frozenset[ToolName]] = frozenset(
     {
         ToolName.SEARCH_WEB,
-        ToolName.LOAD_MIGRATION_SKILL,
+        ToolName.LIST_SKILLS,
+        ToolName.LOAD_SKILL,
+        ToolName.LOAD_SKILL_RESOURCE,
         ToolName.LIST_VERIFICATION_EVIDENCE,
         ToolName.LIST_RUNTIME_CREDENTIALS,
     }
@@ -174,7 +180,9 @@ _GRANTS: Final[dict[AgentId, frozenset[ToolName]]] = {
     AgentId.POLICY: frozenset(),
     AgentId.PATCH: frozenset(
         {
-            ToolName.LOAD_MIGRATION_SKILL,
+            ToolName.LIST_SKILLS,
+            ToolName.LOAD_SKILL,
+            ToolName.LOAD_SKILL_RESOURCE,
             ToolName.RECORD_PATCH_PLAN,
             ToolName.READ_FILE,
             ToolName.LIST_DIR,
@@ -203,9 +211,36 @@ TOOL_ALLOWLISTS: Final[MappingProxyType[AgentId, frozenset[ToolName]]] = Mapping
     {agent: grants | SHARED_TOOLS for agent, grants in _GRANTS.items()}
 )
 
-# Built in `adk.py` as an AgentTool child, not as a Python function. `build_tools`
-# does not construct these; the grant still names them so the guardrail can.
-ADK_ATTACHED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.SEARCH_WEB})
+# ADK's `SkillToolset` generates these from the packages under `skills/`. The
+# model calls `list_skills`, reads the descriptions, and loads what the change
+# needs; nothing in PatchAPI maps a change to a skill, which is the point —
+# onboarding a provider adds a package and edits no code.
+#
+# ADK generates a fourth tool, `run_skill_script`. `agents.adk` drops it before
+# the model ever sees it: the Patch agent's only way to execute anything is
+# `run_command` under the sandbox allowlist, and a skill that could execute
+# would be a second one.
+SKILL_TOOLS: Final[frozenset[ToolName]] = frozenset(
+    {
+        ToolName.LIST_SKILLS,
+        ToolName.LOAD_SKILL,
+        ToolName.LOAD_SKILL_RESOURCE,
+    }
+)
+
+# Built in `adk.py` by ADK — an AgentTool child, or a toolset — rather than as a
+# Python function. `build_tools` does not construct these; the grant still names
+# them so the guardrail can.
+ADK_ATTACHED_TOOLS: Final[frozenset[ToolName]] = frozenset({ToolName.SEARCH_WEB}) | SKILL_TOOLS
+
+# Where the skill packages live, relative to `RunContext.repo_root`. That is
+# PatchAPI's own tree, not the repository under migration (`workspace_root`): a
+# skill is what PatchAPI knows, and a checkout must never be able to supply one.
+SKILLS_DIRNAME: Final[str] = "skills"
+
+# A directory under `skills/` is a package when it holds this file. The name is
+# the Agent Skill specification's, not ours.
+SKILL_ENTRYPOINT: Final[str] = "SKILL.md"
 
 # Instruction version per agent, recorded on trace events so a stored run can be
 # replayed against the prompt that produced it. Bumping a prompt bumps this.
@@ -213,7 +248,7 @@ PROMPT_VERSIONS: Final[MappingProxyType[AgentId, str]] = MappingProxyType(
     {
         **dict.fromkeys(AgentId, "1.1.0"),
         AgentId.CHANGE_INTELLIGENCE: "1.4.0",
-        AgentId.PATCH: "1.6.0",
+        AgentId.PATCH: "1.7.0",
         AgentId.VERIFICATION: "1.4.0",
     }
 )

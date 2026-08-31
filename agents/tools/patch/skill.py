@@ -1,8 +1,9 @@
-"""Patch tools: the provider migration skill, and a plan.
+"""The Patch agent's plan contract.
 
-Roadmap §12.2 keeps the Patch agent generic and puts provider knowledge in a
-skill package. `load_migration_skill` reads that package from disk; it does not
-fetch it, and it does not reach a provider.
+Migration knowledge is not here and is not in the Patch prompt. It lives in the
+packages under `skills/`, which ADK's `SkillToolset` exposes to the model
+directly (`agents.adk`). Nothing in PatchAPI decides which package applies:
+the model reads the metadata ADK injects and loads what the change needs.
 
 Workspace edits and allowlisted commands live in `agents.tools.patch.workspace`.
 This module does not write a file, allocate a sandbox, or open a pull request.
@@ -11,54 +12,17 @@ This module does not write a file, allocate a sandbox, or open a pull request.
 from collections.abc import Callable
 from typing import Any, Final
 
-from agents.config import MAX_UNTRUSTED_EXCERPT_CHARS, AgentId
-from agents.context import PathOutsideRootError, RunContext, resolve_within
+from agents.config import AgentId
+from agents.context import RunContext
 from agents.tools.results import ReasonCode, ok, refusal
 from packages.schemas.patch_plan import PatchPlan
 
 CONTRACT: Final[str] = "patch_plan"
 AGENT: Final[AgentId] = AgentId.PATCH
 
-SKILLS_DIRNAME: Final[str] = "skills"
-SKILL_ENTRYPOINT: Final[str] = "SKILL.md"
 
-
-def build_migration_skill_tools(context: RunContext) -> list[Callable[..., Any]]:
-    """Build the Patch tool set bound to `context`."""
-
-    def load_migration_skill(skill_id: str) -> dict[str, Any]:
-        """Load a provider migration skill by directory name.
-
-        The skill states the affected identifiers, the replacement, and the
-        capability differences that make a string rewrite wrong. Read it before
-        planning; do not rely on recalled provider knowledge.
-        """
-        skills_root = context.repo_root / SKILLS_DIRNAME
-        if not skills_root.is_dir():
-            return refusal(ReasonCode.NOT_FOUND, f"no skills directory at {skills_root}")
-        try:
-            skill_dir = resolve_within(skills_root, skill_id)
-        except PathOutsideRootError as exc:
-            return refusal(ReasonCode.OUT_OF_SCOPE, str(exc))
-
-        entrypoint = skill_dir / SKILL_ENTRYPOINT
-        if not entrypoint.is_file():
-            available = sorted(
-                path.name for path in skills_root.iterdir() if (path / SKILL_ENTRYPOINT).is_file()
-            )
-            return refusal(
-                ReasonCode.NOT_FOUND,
-                f"no {SKILL_ENTRYPOINT} for skill {skill_id!r}",
-                available=available,
-            )
-
-        text = entrypoint.read_text(encoding="utf-8")
-        return ok(
-            skill_id=skill_id,
-            path=str(entrypoint.relative_to(context.repo_root)),
-            truncated=len(text) > MAX_UNTRUSTED_EXCERPT_CHARS,
-            content=text[:MAX_UNTRUSTED_EXCERPT_CHARS],
-        )
+def build_patch_plan_tools(context: RunContext) -> list[Callable[..., Any]]:
+    """Build the Patch plan tool bound to `context`."""
 
     def record_patch_plan(
         change_id: str,
@@ -78,6 +42,10 @@ def build_migration_skill_tools(context: RunContext) -> list[Callable[..., Any]]
         the assumptions a reviewer would need to check, and give the commands
         that must pass in the sandbox. A file you do not list here and then
         change is an unexpected file to the Verification agent.
+
+        `skill_id` and `skill_version` name the skill whose method you
+        followed, as `load_skill` reported them. Leave both empty if you
+        followed none; naming one you did not read is a false provenance.
         """
         try:
             plan = PatchPlan(
@@ -105,7 +73,7 @@ def build_migration_skill_tools(context: RunContext) -> list[Callable[..., Any]]
             files_expected=list(plan.files_expected),
         )
 
-    return [load_migration_skill, record_patch_plan]
+    return [record_patch_plan]
 
 
-__all__ = ["AGENT", "CONTRACT", "build_migration_skill_tools"]
+__all__ = ["AGENT", "CONTRACT", "build_patch_plan_tools"]

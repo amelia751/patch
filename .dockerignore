@@ -25,10 +25,9 @@ demo/*
 !demo/fixtures
 docs
 infra
-# `skills` stays in context. The patch stage reads a provider migration skill
-# before it plans, and the skill is where the capability differences live — the
-# part that makes a migration more than a string replacement. Two directories,
-# well under a megabyte.
+# `skills` stays in context. ADK loads these packages when it builds the Patch
+# agent, and they are the only place the migration method lives. Two
+# directories of markdown, well under a megabyte.
 tests
 db
 artifacts
@@ -37,7 +36,7 @@ tmp-patchapi
 *.md
 !packages/**/README.md
 !services/**/README.md
-# A skill *is* markdown — SKILL.md is the file `load_migration_skill` reads.
+# A skill *is* markdown — SKILL.md and its references are the whole package.
 !skills/**/*.md
 .env
 .env.*

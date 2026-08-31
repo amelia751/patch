@@ -205,8 +205,9 @@ function listed(value: string, noun: string): string {
   return value.replace(/^\[|\]$/g, "");
 }
 
-function humanSkill(id: string): string {
-  return id.replace(/^google_/, "").replace(/gemini20/, "gemini 2.0").replace(/_/g, " ");
+/** `google-genai-migration` as `google genai`. Package names, not sentences. */
+function humanSkill(name: string): string {
+  return name.replace(/-migration$/, "").replace(/-/g, " ");
 }
 
 /**
@@ -352,8 +353,14 @@ function fromAction(row: TraceRow): Omit<Step, "id" | "at" | "durationMs"> | nul
       // verdict, the gates that reached it, and what matched live in the audit
       // record either way, which is where an auditor looks rather than here.
       return null;
-    case "load_migration_skill":
-      return { label: "Skill", detail: humanSkill(arg(args, "skill_id")), tone: "neutral", icon: "skill" };
+    case "list_skills":
+      // The agent reading the shelf before it picks. One row for the pick is
+      // the news; two rows for looking and then picking is the same news twice.
+      return null;
+    case "load_skill":
+      return { label: "Skill", detail: humanSkill(arg(args, "skill_name")), tone: "neutral", icon: "skill" };
+    case "load_skill_resource":
+      return { label: "Skill", detail: arg(args, "file_path"), tone: "neutral", icon: "skill" };
     case "read_file":
     case "read_verification_evidence":
       return { label: "Read", detail: arg(args, "path") || arg(args, "name"), tone: "neutral", icon: "read" };

@@ -19,7 +19,7 @@
     "pnpm --dir cli build",
     "pnpm --dir cli test"
   ],
-  "skill_id": "google_imagen_migration",
+  "skill_id": "google-genai-migration",
   "skill_version": "1.0.0",
   "diff_sha256": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 }

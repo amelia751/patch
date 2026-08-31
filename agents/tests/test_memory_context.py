@@ -42,7 +42,6 @@ BASE_SHA = "87e77dc54ac81ac573916db0ec6ceb97474902b0"
 SLICE = VerticalSlice(
     change_id="gemini20-flash-shutdown-2026-06-01",
     repo="amelia751/storygen",
-    skill_id="google_gemini20_migration",
     entrypoint="lib/gemini.ts",
     binding="MODEL",
     build_command="python3 generate.py",

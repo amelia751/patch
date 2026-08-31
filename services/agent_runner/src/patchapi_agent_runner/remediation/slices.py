@@ -22,17 +22,6 @@ from typing import Final
 
 from agents.orchestrator import VerticalSlice
 
-# Which migration skill applies. Keyed by the identifier family a change
-# retires, because a skill encodes how to move off that family — not how one
-# repository is laid out.
-SKILL_BY_PREFIX: Final[tuple[tuple[str, str], ...]] = (
-    ("imagen-", "google_imagen_migration"),
-    ("gemini-2.0", "google_gemini20_migration"),
-)
-# Empty when no registered skill names this identifier family. The run still
-# patches the binding; it does not pretend a Gemini skill applies to Stripe.
-DEFAULT_SKILL: Final[str] = ""
-
 
 @dataclass(frozen=True, slots=True)
 class RepoProfile:
@@ -81,14 +70,6 @@ class SliceDecision:
     @property
     def ok(self) -> bool:
         return self.slice_ is not None
-
-
-def skill_for(identifiers: list[str]) -> str:
-    for identifier in identifiers:
-        for prefix, skill in SKILL_BY_PREFIX:
-            if identifier.startswith(prefix):
-                return skill
-    return DEFAULT_SKILL
 
 
 def binding_name(excerpt: str) -> str:
@@ -247,8 +228,6 @@ def decide(
     pin is a human's verified answer, and silently preferring an inferred one
     would make the demo depend on whatever `package.json` happens to say.
     """
-    skill = skill_for(identifiers)
-
     profile = PINNED_PROFILES.get(repository)
     if profile is not None:
         # The pin fixes how the repository is built, not which constant this
@@ -261,7 +240,6 @@ def decide(
             slice_=VerticalSlice(
                 change_id=change_id,
                 repo=repository,
-                skill_id=skill,
                 entrypoint=profile.entrypoint,
                 binding=bound,
                 build_command=build,
@@ -304,7 +282,6 @@ def decide(
         slice_=VerticalSlice(
             change_id=change_id,
             repo=repository,
-            skill_id=skill,
             entrypoint=entrypoint,
             binding=binding,
             build_command=build,
@@ -314,7 +291,6 @@ def decide(
 
 
 __all__ = [
-    "DEFAULT_SKILL",
     "PINNED_PROFILES",
     "RepoProfile",
     "SliceDecision",
@@ -325,5 +301,4 @@ __all__ = [
     "decide",
     "detect_profile",
     "local_gate_for",
-    "skill_for",
 ]

@@ -19,6 +19,15 @@ class AdkUnavailableError(AgentError):
     """
 
 
+class SkillsUnavailableError(AgentError):
+    """No skill package could be loaded for an agent that is granted them.
+
+    The Patch agent's migration method lives in `skills/` and nowhere else — not
+    in its prompt, not in a tool. An empty or unreadable skills tree would leave
+    a model planning a migration from recall, so the run stops instead.
+    """
+
+
 class ToolDeniedError(AgentError):
     """An agent called a tool outside its allowlist.
 

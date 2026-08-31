@@ -52,7 +52,6 @@ DEFAULT_RUN_ID: Final[str] = "live-patch"
 DEMO_SLICE: Final[VerticalSlice] = VerticalSlice(
     change_id="gemini20-flash-shutdown-2026-06-01",
     repo="amelia751/storygen",
-    skill_id="google_gemini20_migration",
     entrypoint="lib/gemini.ts",
     binding="MODEL",
     build_command="python3 generate.py",

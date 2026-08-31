@@ -31,7 +31,6 @@ def test_gemini20_keeps_the_model_gate(tmp_path: Path) -> None:
     assert decision.ok
     assert decision.slice_ is not None
     assert decision.slice_.binding == "MODEL"
-    assert decision.slice_.skill_id == "google_gemini20_migration"
     assert decision.slice_.build_command == "python3 generate.py"
     assert decision.slice_.test_command == "python3 -m unittest test_generate.py"
 
@@ -47,7 +46,6 @@ def test_imagen_does_not_use_generate_py(tmp_path: Path) -> None:
     assert decision.ok
     assert decision.slice_ is not None
     assert decision.slice_.binding == "IMAGE_MODEL"
-    assert decision.slice_.skill_id == "google_imagen_migration"
     assert "generate.py" not in decision.slice_.build_command
     assert decision.slice_.build_command == ""
     assert decision.slice_.test_command == ""

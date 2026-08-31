@@ -5,12 +5,14 @@ claim a version or a skill the code does not have, the registry entry would be
 marketing. No network — the cards are built from configuration only.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
 
 from agents.catalog import (
+    ADK_TOOL_DESCRIPTIONS,
     AGENT_TITLES,
     PIPELINE_STAGES,
     SEARCH_WEB_DESCRIPTION,
@@ -128,11 +130,26 @@ def test_a_tool_skill_description_is_the_docstring_the_model_is_shown():
     assert skill["description"] == " ".join(docstring.split("\n\n")[0].split())
 
 
-def test_the_adk_attached_search_child_keeps_its_pinned_description():
-    (tool,) = tuple(ADK_ATTACHED_TOOLS)
-    (skill,) = [skill for skill in agent_skills(AgentId.PATCH) if skill["id"] == str(tool)]
+def test_every_adk_attached_tool_keeps_its_pinned_description():
+    """These are built by ADK, so there is no docstring for the catalog to read."""
+    published = {skill["id"]: skill["description"] for skill in agent_skills(AgentId.PATCH)}
 
-    assert skill["description"] == SEARCH_WEB_DESCRIPTION
+    for tool in ADK_ATTACHED_TOOLS & tool_allowlist(AgentId.PATCH):
+        assert published[str(tool)] == ADK_TOOL_DESCRIPTIONS[tool]
+    assert published[str(ToolName.SEARCH_WEB)] == SEARCH_WEB_DESCRIPTION
+
+
+def test_the_pinned_skill_tool_descriptions_still_match_adk():
+    """The catalog pins ADK's prose. An ADK upgrade that reworded it is drift."""
+    pytest.importorskip("google.adk")
+    from agents.adk import build_skill_toolset, repo_root
+    from agents.config import SKILL_TOOLS
+
+    toolset = build_skill_toolset(repo_root() / "skills")
+    live = {tool.name: tool.description for tool in asyncio.run(toolset.get_tools(None))}
+
+    for tool in SKILL_TOOLS:
+        assert live[str(tool)] == ADK_TOOL_DESCRIPTIONS[tool]
 
 
 @pytest.mark.parametrize("agent", list(AgentId))

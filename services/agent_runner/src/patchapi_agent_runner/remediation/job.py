@@ -41,6 +41,7 @@ from uuid import UUID
 from agents import live_check
 from agents.adk import session_hold_reason
 from agents.command_allowlist import CommandNotAllowedError, match_command
+from agents.config import AgentId, prompt_version
 from agents.context import RunContext
 from agents.denials import denials_for_run
 from agents.journal import RunJournal
@@ -350,7 +351,7 @@ async def _run(
                     connection,
                     row.run_id,
                     patch_agent="patch",
-                    prompt_version=slice_.skill_id,
+                    prompt_version=prompt_version(AgentId.PATCH),
                     sandbox_ref=f"{kind}:{getattr(session, 'name', row.run_id)}",
                 )
 

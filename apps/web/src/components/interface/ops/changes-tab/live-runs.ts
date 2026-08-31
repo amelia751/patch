@@ -574,7 +574,12 @@ export function composeWorklog(
       continue;
     }
 
-    if (name === "load_migration_skill" || name === "read_verification_evidence") {
+    if (
+      name === "list_skills" ||
+      name === "load_skill" ||
+      name === "load_skill_resource" ||
+      name === "read_verification_evidence"
+    ) {
       continue;
     }
 
