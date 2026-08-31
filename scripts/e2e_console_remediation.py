@@ -67,6 +67,9 @@ TRACE_REGION: Final[str] = "us-central1"
 POLL_SECONDS: Final[float] = 5.0
 CREDENTIAL_HOLD_TIMEOUT: Final[float] = 420.0
 COMPLETION_TIMEOUT: Final[float] = 1500.0
+# PR_CREATED is recorded before the pull request row is, so the URL can lag the
+# state by a poll. Short: past this it is a missing row, not a slow one.
+PR_ROW_TIMEOUT: Final[float] = 30.0
 # Spans leave in batches, so the last stage of a run reaches the backend after
 # the run does. This bounds how long the report waits for ingestion to catch up.
 TRACE_SETTLE_TIMEOUT: Final[float] = 90.0
@@ -300,10 +303,25 @@ def run_once(api: str, token: str, project: str, change: str, credentials: str) 
     if str(detail.get("state")) in HOLD_STATES:
         raise Failed(f"still asking for credentials after {MAX_HOLDS} holds: {attempt.held_for}")
 
+    # The state flips before the pull request row lands, so reading once at the
+    # moment PR_CREATED appears can catch the gap. The console polls through it;
+    # so does this, rather than reporting a working run as a missing URL.
+    deadline = time.monotonic() + PR_ROW_TIMEOUT
     attempt.pull_request = str(detail.get("pull_request_url") or "")
+    while not attempt.pull_request:
+        if time.monotonic() >= deadline:
+            raise Failed(
+                f"run reached PR_CREATED with no pull request URL after {PR_ROW_TIMEOUT:.0f}s"
+            )
+        time.sleep(POLL_SECONDS)
+        status, detail = request(
+            "GET", f"{api}/api/projects/{project}/runs/{attempt.run_id}", token
+        )
+        if status != 200:
+            raise Failed(f"run read returned {status}: {detail}")
+        attempt.pull_request = str(detail.get("pull_request_url") or "")
+
     attempt.seconds = time.monotonic() - started
-    if not attempt.pull_request:
-        raise Failed("run reached PR_CREATED with no pull request URL recorded")
     return attempt
 
 
