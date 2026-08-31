@@ -94,7 +94,7 @@ def test_a_descriptor_from_a_newer_producer_is_refused():
 def test_a_malformed_document_names_the_file_it_came_from(tmp_path):
     path = tmp_path / "broken.json"
     path.write_text("{not json", encoding="utf-8")
-    with pytest.raises(DescriptorError, match="broken.json"):
+    with pytest.raises(DescriptorError, match=r"broken\.json"):
         registry.load_directory(tmp_path)
 
 

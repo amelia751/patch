@@ -6,12 +6,20 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_REPO = REPO_ROOT / "tests" / "fixtures" / "repo_with_imagen"
+STRIPE_FIXTURE_REPO = REPO_ROOT / "tests" / "fixtures" / "repo_with_stripe"
 
 
 @pytest.fixture(scope="session")
 def fixture_repo() -> Path:
     assert FIXTURE_REPO.is_dir(), f"fixture tree is missing: {FIXTURE_REPO}"
     return FIXTURE_REPO
+
+
+@pytest.fixture(scope="session")
+def stripe_fixture_repo() -> Path:
+    """The same shape of tree for a provider that ships no Python of its own."""
+    assert STRIPE_FIXTURE_REPO.is_dir(), f"fixture tree is missing: {STRIPE_FIXTURE_REPO}"
+    return STRIPE_FIXTURE_REPO
 
 
 @pytest.fixture

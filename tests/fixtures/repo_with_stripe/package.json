@@ -1,0 +1,9 @@
+{
+  "name": "patchapi-fixture-repo-with-stripe",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "@stripe/stripe-js": "^7.9.0",
+    "stripe": "^18.5.0"
+  }
+}

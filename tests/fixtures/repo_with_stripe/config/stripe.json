@@ -1,0 +1,5 @@
+{
+  "apiVersion": "2024-09-30.acacia",
+  "publishableKeyEnv": "STRIPE_PUBLISHABLE_KEY",
+  "webhookToleranceSeconds": 300
+}
