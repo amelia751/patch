@@ -87,7 +87,7 @@ Local: `http://localhost:3000` (console) and `http://localhost:8080` (API).
 │                             checkout, sandbox, PR
 │
 ├── agents/                   Google ADK fleet
-│   ├── orchestrator.py       deterministic state machine
+│   ├── orchestrator.py       orchestrator state machine
 │   ├── specialists/          change_intelligence, impact,
 │   │                         patch, verification
 │   ├── tools/                change, impact, patch, policy, pr
