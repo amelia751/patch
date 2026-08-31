@@ -62,8 +62,7 @@ GO_PROXY: Final[str] = "https://proxy.golang.org"
 def provider_packages() -> Mapping[str, tuple[tuple[str, str], ...]]:
     """Provider slug -> the `(ecosystem, name)` pairs it publishes."""
     return {
-        descriptor.provider_id: descriptor.package_refs()
-        for descriptor in registry.descriptors()
+        descriptor.provider_id: descriptor.package_refs() for descriptor in registry.descriptors()
     }
 
 
@@ -78,6 +77,7 @@ def package_service_hosts() -> Mapping[str, tuple[str, ...]]:
     for descriptor in registry.descriptors():
         hosts.update(descriptor.service_hosts())
     return hosts
+
 
 _MAJOR: Final[re.Pattern[str]] = re.compile(r"(\d+)")
 
@@ -143,8 +143,7 @@ def watched_packages(provider: str) -> tuple[str, ...]:
     fail-closed reads are the ones that decide whether a repository is affected.
     """
     return tuple(
-        sdk_identifier(ecosystem, name)
-        for ecosystem, name in provider_packages().get(provider, ())
+        sdk_identifier(ecosystem, name) for ecosystem, name in provider_packages().get(provider, ())
     )
 
 
@@ -221,9 +220,7 @@ _READERS: Final[Mapping[str, Any]] = {NPM: _npm_release, PYPI: _pypi_release, GO
 _URLS: Final[Mapping[str, Any]] = {NPM: npm_url, PYPI: pypi_url, GO: go_url}
 
 
-async def fetch_package(
-    client: httpx.AsyncClient, ecosystem: str, name: str
-) -> PackageRelease:
+async def fetch_package(client: httpx.AsyncClient, ecosystem: str, name: str) -> PackageRelease:
     """Ask one registry about one package.
 
     Raises `RegistryUnavailableError` when the answer is not trustworthy, which

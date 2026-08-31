@@ -65,9 +65,7 @@ def provider_patterns() -> Mapping[str, tuple[str, ...]]:
     A live read of the registry: a descriptor loaded from Postgres widens what
     an index is asked for without a redeploy.
     """
-    return {
-        descriptor.provider_id: descriptor.patterns() for descriptor in registry.descriptors()
-    }
+    return {descriptor.provider_id: descriptor.patterns() for descriptor in registry.descriptors()}
 
 
 def patterns_for(provider: str, identifiers: Sequence[str] | None = None) -> tuple[str, ...]:

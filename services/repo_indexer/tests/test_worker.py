@@ -355,9 +355,7 @@ def already_scanned(
 ) -> None:
     """Record that `providers` have each had a full scan of the target at `sha`."""
     for provider in providers:
-        fake_store.provider_states[(REPOSITORY, BRANCH, provider)] = provider_state(
-            provider, sha
-        )
+        fake_store.provider_states[(REPOSITORY, BRANCH, provider)] = provider_state(provider, sha)
 
 
 def push_event(*, before: str = BEFORE_SHA, after: str = AFTER_SHA, branch: str = BRANCH):
@@ -978,9 +976,7 @@ async def test_a_retirement_reclassifies_and_announces_the_normalized_change(
 
     assert result.action == worker.ACTION_PROVIDER_APPLIED
     assert applied == [(IDENTIFIER, "retired")]
-    assert [EventType(item.event_type) for item in world.published] == [
-        EventType.CHANGE_NORMALIZED
-    ]
+    assert [EventType(item.event_type) for item in world.published] == [EventType.CHANGE_NORMALIZED]
     payload = world.published[0].payload
     assert payload["external_id"] == "imagen4-retirement-2026-08-17"
     assert payload["origin"] == "deterministic"

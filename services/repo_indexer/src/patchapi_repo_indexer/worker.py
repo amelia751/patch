@@ -373,9 +373,7 @@ async def _providers_for(conn: asyncpg.Connection, repository: str, branch: str)
     return wanted or registry.known_providers()
 
 
-def _provider_is_current(
-    state: store.ProviderIndexState | None, *, sha: str, intent: str
-) -> bool:
+def _provider_is_current(state: store.ProviderIndexState | None, *, sha: str, intent: str) -> bool:
     """True when a stored scan for one provider still answers today's question.
 
     Four things have to hold, and each of them changes what a scan would find:
@@ -407,9 +405,7 @@ async def _stale_providers(
     return tuple(
         provider
         for provider in providers
-        if not _provider_is_current(
-            states.get(provider), sha=sha, intent=_search_intent(provider)
-        )
+        if not _provider_is_current(states.get(provider), sha=sha, intent=_search_intent(provider))
     )
 
 
@@ -441,8 +437,10 @@ async def _index(
     first one had just written.
     """
     full = changed is None
-    wanted = tuple(providers) if providers is not None else await _providers_for(
-        conn, repository, branch
+    wanted = (
+        tuple(providers)
+        if providers is not None
+        else await _providers_for(conn, repository, branch)
     )
     await store.set_index_progress(
         conn, repository, branch, status="indexing", progress_percent=PROGRESS_START
@@ -569,9 +567,7 @@ async def handle_repo_added(
 
     stale: tuple[str, ...] = wanted
     if previous is not None and previous.indexed_sha and _extractors_match(previous):
-        stale = await _stale_providers(
-            conn, repository, branch, wanted, sha=previous.indexed_sha
-        )
+        stale = await _stale_providers(conn, repository, branch, wanted, sha=previous.indexed_sha)
         if not stale:
             notified = await _fan_out(conn, repository, branch, previous.indexed_sha, effects)
             # Import may have flipped the row to `indexing` for the banner. Put
