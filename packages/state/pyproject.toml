@@ -103,3 +103,4 @@ only-include = ["__init__.py"]
 "organization_routes.py" = "packages/state/organization_routes.py"
 "data/google_services.json" = "packages/state/data/google_services.json"
 "data/google_models.json" = "packages/state/data/google_models.json"
+"data/google_release_notes.json" = "packages/state/data/google_release_notes.json"
