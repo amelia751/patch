@@ -126,7 +126,8 @@ def test_filter_notes_respects_published_window() -> None:
 
 
 def test_filter_notes_matches_kind_and_query() -> None:
-    snapshot = load_google_release_notes()
+    fixture = Path(__file__).resolve().parent / "fixtures" / "google_release_notes.min.json"
+    snapshot = load_google_release_notes(path=fixture)
     page, total = filter_notes(snapshot.notes, kind="deprecation", limit=20, offset=0)
     assert total >= 1
     assert all(note.kind == "deprecation" for note in page)

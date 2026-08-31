@@ -23,7 +23,7 @@ in `db/migrations/`.
 | `secret_manager.py` | Secret Manager create / rotate / delete / reveal |
 | `data/google_services.json` | Committed Service Usage snapshot (stand-in for Postgres) |
 | `data/google_models.json` | Committed Gemini / Vertex lifecycle snapshot |
-| `data/google_release_notes.json` | Committed last-year release notes |
+| `data/google_release_notes.json` | Local/bootstrap cache (gitignored; `scripts/fetch_google_release_notes.py`) |
 
 How those files are downloaded: root [`README.md`](../../README.md) § Provider catalog snapshots.
 

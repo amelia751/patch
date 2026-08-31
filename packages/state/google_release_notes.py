@@ -1,8 +1,9 @@
 """Google Cloud release notes snapshot (last 365 days).
 
 This is not Service Usage. The public BigQuery table is one job, not a 1 QPS
-list, and a year of notes is thousands of rows. Serving reads the committed
-JSON. Refresh runs the query and rewrites the file. Provider text is untrusted.
+list, and a year of notes is thousands of rows. Serving reads Postgres after
+Connect. The JSON under data/ is a local/bootstrap cache, not git source.
+Provider text is untrusted.
 """
 
 from __future__ import annotations
@@ -237,6 +238,16 @@ def notes_to_changes(notes: tuple[ReleaseNote, ...]) -> list[dict[str, Any]]:
         }
         for note in notes
     ]
+
+
+def write_google_release_notes(
+    snapshot: ReleaseNotesSnapshot, *, path: Path | None = None
+) -> Path:
+    """Write the local cache. Serving still reads Postgres after Connect."""
+    dest = path or notes_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(snapshot_to_payload(snapshot), indent=2) + "\n", encoding="utf-8")
+    return dest
 
 
 def snapshot_to_payload(snapshot: ReleaseNotesSnapshot) -> dict[str, Any]:

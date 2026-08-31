@@ -56,3 +56,16 @@ SELECT slug || '|' || name || '|' ||
        CASE WHEN verified THEN 'verified' ELSE 'unverified' END
 FROM providers WHERE slug = 'google';
 " | tee /dev/stderr | grep -qx 'google|Google Cloud|unowned|verified'
+
+# Local cache for load_google_release_notes. Serving still reads Postgres.
+NOTES="$ROOT/packages/state/data/google_release_notes.json"
+if [[ ! -f "$NOTES" ]]; then
+  if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" || -f "$ROOT/.secrets/gcp-service-account.json" ]]; then
+    if [[ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" && -f "$ROOT/.secrets/gcp-service-account.json" ]]; then
+      export GOOGLE_APPLICATION_CREDENTIALS="$ROOT/.secrets/gcp-service-account.json"
+    fi
+    uv run --all-packages python "$ROOT/scripts/fetch_google_release_notes.py" || printf 'WARN: could not fetch google_release_notes.json\n' >&2
+  else
+    printf 'WARN: google_release_notes.json missing and no GCP credentials to fetch it\n' >&2
+  fi
+fi

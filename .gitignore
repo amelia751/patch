@@ -8,6 +8,7 @@
 .codex/
 /fleet
 .local/
+.runs/
 CLAUDE.local.md
 AGENTS.local.md
 GEMINI.local.md
@@ -73,6 +74,11 @@ crash.log
 .vscode/
 *.swp
 *~
+
+# ---------------------------------------------------------------------------
+# Generated provider snapshots (fetched by bootstrap / refresh)
+# ---------------------------------------------------------------------------
+packages/state/data/google_release_notes.json
 
 # ---------------------------------------------------------------------------
 # Demo / sandbox artifacts (generated; not source)
