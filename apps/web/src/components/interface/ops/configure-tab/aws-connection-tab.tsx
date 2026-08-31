@@ -8,7 +8,7 @@ import { CheckCircle2, XCircle, Copy, Check, ChevronRight, ChevronDown, ChevronU
 import { Spinner } from "@/components/ui/spinner";
 import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
-import { AddEnvironmentDialog } from "@/components/interface/ux-ui/add-environment-dialog";
+import { AddEnvironmentDialog } from "@/components/interface/ops/configure-tab/add-environment-dialog";
 
 interface PolicyStatement {
   Effect: string;

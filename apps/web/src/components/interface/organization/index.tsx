@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
-import mockInfo from "../shared/mock-aws/mock-info.json";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,9 +52,6 @@ interface Member {
   role: string;
   joined_at: string;
 }
-
-// Mock members for demo/unauthenticated state
-const mockMembers: Member[] = mockInfo.mockMembers as Member[];
 
 // ============================================================================
 // Create Team Dialog
@@ -388,7 +384,7 @@ export function OrganizationSettingsDialog({ open, onOpenChange, organization, o
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Members state
-  const [members, setMembers] = useState<Member[]>(mockMembers);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
   // Delete state
@@ -400,7 +396,7 @@ export function OrganizationSettingsDialog({ open, onOpenChange, organization, o
   // Fetch real members when dialog opens and org exists
   useEffect(() => {
     if (!open || !organization.id) {
-      setMembers(mockMembers);
+      setMembers([]);
       return;
     }
 
@@ -414,11 +410,13 @@ export function OrganizationSettingsDialog({ open, onOpenChange, organization, o
 
         if (response.ok) {
           const data = await response.json();
-          setMembers(data.length > 0 ? data : mockMembers);
+          setMembers(data.length > 0 ? data : []);
+        } else {
+          setMembers([]);
         }
       } catch (error) {
         console.error("Failed to fetch members:", error);
-        setMembers(mockMembers);
+        setMembers([]);
       } finally {
         setLoadingMembers(false);
       }

@@ -110,7 +110,7 @@ const Sidebar = ({ onWidthChange }: SidebarProps) => {
       style={{ width: `${sidebarWidth}px` }}
     >
       <div className="px-2 py-3 border-b border-[var(--border-color)]">
-        <Link href="/hub">
+        <Link href="/">
           <div className="flex items-center justify-center p-3 rounded-md bg-primary text-primary-foreground cursor-pointer transition-all duration-200 hover:bg-primary-hover hover:scale-105 active:scale-95">
             <Waypoints className="h-6 w-6" />
           </div>

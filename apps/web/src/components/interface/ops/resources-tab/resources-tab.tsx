@@ -32,13 +32,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getGCPServiceIcon, getGCPCategoryIcon } from "@/lib/gcp-icons";
-import { getServiceIcon as getAWSServiceIcon, getCategoryIconByName as getAWSCategoryIcon } from "@/lib/aws-icons";
 import Image from "next/image";
 
-// Helper to get the appropriate service icon based on cloud provider
+const AWS_ICON = "/aws-dark.svg";
+
 function getServiceIcon(resourceType: string, cloudProvider?: string): string {
   if (cloudProvider === "aws") {
-    return getAWSServiceIcon(resourceType);
+    return AWS_ICON;
   }
   return getGCPServiceIcon(resourceType);
 }
@@ -710,7 +710,7 @@ export function DeployTab({ hasProject = true, projectId, mockResources, cloudPr
                     {/* Category Icon (AWS or GCP based on cloud provider) */}
                     <div className="flex-shrink-0">
                       <Image
-                        src={cloudProvider === "aws" ? getAWSCategoryIcon(category) : getGCPCategoryIcon(category)}
+                        src={cloudProvider === "aws" ? AWS_ICON : getGCPCategoryIcon(category)}
                         alt={categoryLabels[category as ResourceType] || category}
                         width={20}
                         height={20}

@@ -37,10 +37,10 @@ import {
   LaptopMinimalCheck,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  isMockNotificationId,
-  // mockReleaseNotifications,
-} from "@/components/interface/shared/mock-release-notifications";
+
+function isMockNotificationId(id: string): boolean {
+  return id.startsWith("mock-release-");
+}
 
 type NotificationType = "success" | "pending" | "question" | "info" | "error";
 
@@ -90,51 +90,21 @@ function openConfigure(section: "connection" | "secrets", modal: "gcp" | "secret
   );
 }
 
-function useNotifications(projectId: string | null, isAuthenticated: boolean, demoProject?: string, isDemoMode?: boolean, onDevOpsStarted?: (threadId: string) => void) {
+function useNotifications(projectId: string | null, isAuthenticated: boolean, demoProject?: string, onDevOpsStarted?: (threadId: string) => void) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [dismissedMockIds, setDismissedMockIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Temporary: fixtures stay off the bell while the inbox is forced empty.
-  // const mockedReleases = useCallback((): Notification[] => {
-  //   return mockReleaseNotifications()
-  //     .filter((item) => !dismissedMockIds.includes(item.id))
-  //     .map((item) => item as Notification);
-  // }, [dismissedMockIds]);
-
   const applyList = useCallback(
     (_items: Notification[]) => {
-      // Temporary: keep the bell, show an empty inbox. Restore the block
-      // below to put live (and fixture) cards back in the dropdown.
       setNotifications([]);
-      // if (isAuthenticated && !isDemoMode) {
-      //   setNotifications(_items);
-      //   return;
-      // }
-      // setNotifications(_items.length > 0 ? _items : mockedReleases());
     },
     [],
-    // [isAuthenticated, isDemoMode, mockedReleases],
   );
-  
-  useEffect(() => {
-    const clear = () => setNotifications([]);
-    window.addEventListener("demoImportProject", clear);
-    window.addEventListener("demoImportLiveProject", clear);
-    return () => {
-      window.removeEventListener("demoImportProject", clear);
-      window.removeEventListener("demoImportLiveProject", clear);
-    };
-  }, []);
-  
-  const fetchNotifications = useCallback(async () => {
-    if (isDemoMode || !isAuthenticated) {
-      applyList([]);
-      return;
-    }
 
-    if (!projectId) {
+  const fetchNotifications = useCallback(async () => {
+    if (!isAuthenticated || !projectId) {
       setNotifications([]);
       return;
     }
@@ -161,20 +131,19 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
     } finally {
       setLoading(false);
     }
-  }, [applyList, projectId, isAuthenticated, isDemoMode]);
+  }, [applyList, projectId, isAuthenticated]);
   
   const consoleEvents = useConsoleEvents();
 
   // Live stream owns the bell for an authenticated project.
   useEffect(() => {
-    if (isDemoMode || !isAuthenticated) return;
+    if (!isAuthenticated) return;
     if (consoleEvents.projectId !== projectId) return;
     if (consoleEvents.notifications == null) return;
     applyList(consoleEvents.notifications as Notification[]);
     setLoading(false);
     setError(null);
   }, [
-    isDemoMode,
     isAuthenticated,
     projectId,
     consoleEvents.projectId,
@@ -182,13 +151,9 @@ function useNotifications(projectId: string | null, isAuthenticated: boolean, de
     applyList,
   ]);
 
-  // Initial fetch for demo / signed-out. Authenticated users wait for the
-  // console snapshot (and poll only if that stream drops). An empty live
-  // list is a real answer — fixtures stay off the signed-in bell.
   useEffect(() => {
-    if (isAuthenticated && !isDemoMode) return;
     fetchNotifications();
-  }, [fetchNotifications, isAuthenticated, isDemoMode]);
+  }, [fetchNotifications]);
 
   const navigateFromAction = (actionType: string) => {
     if (actionType === "view_changes" || actionType === "view_release" || actionType === "view_ops") {
@@ -590,54 +555,9 @@ function NotificationItem({ notification, onAction, onDismiss }: NotificationIte
 
 export function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false);
-  const [demoProject, setDemoProject] = useState<string | undefined>();
-  const [isDemoMode, setIsDemoMode] = useState(false);
   const { currentProject } = useProject();
   const { isAuthenticated } = useAuth();
   const { focusThread } = useConsolePanel();
-
-  // Listen for demo project changes and demo mode state
-  useEffect(() => {
-    // Check URL for demo project
-    const params = new URLSearchParams(window.location.search);
-    const urlDemoProject = params.get("demoProject");
-    if (urlDemoProject) {
-      setDemoProject(urlDemoProject);
-    } else {
-      // Default to ecommerce for unauthenticated demo users
-      setDemoProject("ecommerce");
-    }
-
-    // Listen for custom event when demo project changes
-    const handleDemoChange = (e: CustomEvent) => {
-      setDemoProject(e.detail?.slug || "ecommerce");
-    };
-    window.addEventListener("demoProjectChanged", handleDemoChange as EventListener);
-    
-    // Listen for demo mode start (clears notifications) - BOTH replay and live modes
-    const handleDemoImport = () => {
-      console.log("[NotificationCenter] Demo import detected - setting isDemoMode=true");
-      setIsDemoMode(true);
-    };
-    window.addEventListener("demoImportProject", handleDemoImport as EventListener);
-    window.addEventListener("demoImportLiveProject", handleDemoImport as EventListener);
-    
-    // Listen for demo reset
-    const handleDemoReset = () => {
-      setIsDemoMode(false);
-    };
-    window.addEventListener("demoReset", handleDemoReset as EventListener);
-    
-    return () => {
-      window.removeEventListener("demoProjectChanged", handleDemoChange as EventListener);
-      window.removeEventListener("demoImportProject", handleDemoImport as EventListener);
-      window.removeEventListener("demoImportLiveProject", handleDemoImport as EventListener);
-      window.removeEventListener("demoReset", handleDemoReset as EventListener);
-    };
-  }, []);
-
-  // Use demoProject for unauthenticated users, undefined for authenticated
-  const effectiveDemoProject = !isAuthenticated ? demoProject : undefined;
 
   const {
     notifications,
@@ -646,7 +566,7 @@ export function NotificationCenter() {
     refresh,
     handleAction,
     dismissNotification,
-  } = useNotifications(currentProject?.id || null, isAuthenticated, effectiveDemoProject, isDemoMode, focusThread);
+  } = useNotifications(currentProject?.id || null, isAuthenticated, undefined, focusThread);
 
   // Count notifications needing action
   const actionCount = notifications.filter(

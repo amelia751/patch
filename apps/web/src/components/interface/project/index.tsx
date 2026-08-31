@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useContext, createContext, useEffect } from "react";
+import React, { useState, useContext, createContext, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
 import { useAuth } from "@/lib/auth-context";
@@ -21,7 +21,7 @@ const ProjectContext = createContext<ProjectContextType | null>(null);
 export function useProjects() {
   const context = useContext(ProjectContext);
   if (!context) {
-    // Return mock context when not wrapped in provider
+    // Return empty context when not wrapped in provider
     return {
       projects: [],
       currentProject: null,
@@ -32,7 +32,6 @@ export function useProjects() {
   }
   return context;
 }
-import mockInfo from "../shared/mock-aws/mock-info.json";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,10 +84,6 @@ import {
   MonitorCloud,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-
-// Import mock data
-const mockProjects = mockInfo.mockProjects;
-const mockGitHubRepos = mockInfo.mockGitHubRepos;
 
 // ============================================================================
 // Project Settings Dialog
@@ -313,7 +308,7 @@ export function ProjectSettingsDialog({
                       </div>
                       <div>
                         <p className="text-xs font-medium text-[var(--text-primary)]">GitHub</p>
-                        <p className="text-[10px] text-[var(--text-secondary)]">Connected to {mockInfo.githubIntegration.connectedTo}</p>
+                        <p className="text-[10px] text-[var(--text-secondary)]">Connected via GitHub App</p>
                       </div>
                     </div>
                     <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#10b981]/10 text-[#10b981] font-medium">Connected</span>
@@ -790,9 +785,6 @@ export function GitHubImportDialog({
   // Note: github_id/github_username is just OAuth login, github_app_installed means we can access repos
   const isGitHubLinked = user?.github_app_installed ?? false;
 
-  // Demo mode: show mock repos when not signed in
-  const isDemoMode = !isAuthenticated;
-
   // Fetch real repos when dialog opens and user is authenticated with GitHub linked
   React.useEffect(() => {
     if (open && isAuthenticated && isGitHubLinked) {
@@ -850,17 +842,7 @@ export function GitHubImportDialog({
     }
     if (!selectedRepo) return;
 
-    const reposToCheck = isDemoMode
-      ? mockGitHubRepos.map(repo => ({
-          id: repo.id,
-          name: repo.name,
-          fullName: repo.full_name,
-          language: repo.language || "Unknown",
-          stars: repo.stars,
-          updated: repo.updated,
-          private: repo.private,
-        }))
-      : realRepos.map(repo => ({
+    const reposToCheck = realRepos.map(repo => ({
           id: repo.id,
           name: repo.name,
           fullName: repo.full_name,
@@ -875,30 +857,6 @@ export function GitHubImportDialog({
 
     const currentPathStr = currentPath.join('/');
     const controller = new AbortController();
-
-    if (isDemoMode) {
-      setIsLoadingFolders(true);
-      setFoldersFetchError(null);
-      const timer = window.setTimeout(() => {
-        if (controller.signal.aborted) return;
-        if (currentPath.length === 0) {
-          setFolders(['backend', 'frontend', 'apps', 'packages', 'src', 'docs']);
-        } else if (currentPath[0] === 'apps') {
-          setFolders(['api', 'web', 'mobile']);
-        } else if (currentPath[0] === 'packages') {
-          setFolders(['backend', 'frontend', 'shared']);
-        } else if (currentPath[0] === 'src') {
-          setFolders(['server', 'client', 'shared']);
-        } else {
-          setFolders([]);
-        }
-        setIsLoadingFolders(false);
-      }, 300);
-      return () => {
-        controller.abort();
-        window.clearTimeout(timer);
-      };
-    }
 
     const fetchFoldersAtPath = async (path: string) => {
       setIsLoadingFolders(true);
@@ -958,7 +916,7 @@ export function GitHubImportDialog({
 
     fetchFoldersAtPath(currentPathStr);
     return () => controller.abort();
-  }, [currentPath.join('/'), selectedRepo, isDemoMode, realRepos, foldersFetchRetryKey]);
+  }, [currentPath.join('/'), selectedRepo, realRepos, foldersFetchRetryKey]);
 
   // Reset state when dialog closes
   React.useEffect(() => {
@@ -987,22 +945,10 @@ export function GitHubImportDialog({
     setBackendFolderPath(next.join('/'));
   };
 
-  // Use real repos when authenticated, mock repos for demo mode
-  // Normalize both to have consistent property names
-  const reposToShow = isDemoMode 
-    ? mockGitHubRepos.map(repo => ({
+  const reposToShow = realRepos.map(repo => ({
         id: repo.id,
         name: repo.name,
-        fullName: repo.full_name,  // Normalize from full_name to fullName
-        language: repo.language || "Unknown",
-        stars: repo.stars,
-        updated: repo.updated,
-        private: repo.private,
-      }))
-    : realRepos.map(repo => ({
-        id: repo.id,
-        name: repo.name,
-        fullName: repo.full_name,  // Keep full name for API calls
+        fullName: repo.full_name,
         language: repo.language || "Unknown",
         stars: repo.stargazers_count,
         updated: new Date(repo.updated_at).toLocaleDateString(),
@@ -1016,17 +962,6 @@ export function GitHubImportDialog({
   // Get selected repo details
   const selectedRepoDetails = reposToShow.find(repo => repo.id === selectedRepo);
   const isFrontendBeta = defaultSourceRepoType === "frontend";
-
-  // Demo projects available for live demo
-  const liveDemoProjects = [
-    "ecommerce-clone",  // E-commerce: products, cart, orders
-    "netflix-clone",    // Media: streaming, profiles
-    "twitter-clone",    // Social: posts, follows, likes
-    "notion-clone",     // Productivity: docs, collaboration
-  ];
-  
-  // Pre-recorded demo projects (fallback if live fails)
-  const preRecordedDemoProjects = ["ecommerce-clone"];
 
   // Handle import click - open project details / setup flow
   const handleImportClick = () => {
@@ -1055,9 +990,7 @@ export function GitHubImportDialog({
     }
   }, [open, isAuthenticated, isGitHubLinked, onOpenChange]);
 
-  // Determine if we should show the repo picker
-  // Show if: demo mode OR (authenticated AND GitHub linked)
-  const shouldShowRepoPicker = isDemoMode || (isAuthenticated && isGitHubLinked);
+  const shouldShowRepoPicker = isAuthenticated && isGitHubLinked;
 
   return (
     <>
@@ -1066,24 +999,15 @@ export function GitHubImportDialog({
         <div className="shrink-0 px-6 pt-6 pb-3 space-y-3 border-b border-[var(--border-color)]">
           <DialogHeader className="space-y-0">
             <div className="flex items-center gap-3">
-              <div className={cn(
-                "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
-                isDemoMode 
-                  ? "bg-[var(--bg-tertiary)]" 
-                  : "bg-[#10b981]/10 border border-[#10b981]/30"
-              )}>
-                <Github className={cn("h-5 w-5", isDemoMode ? "text-[var(--text-primary)]" : "text-[#10b981]")} />
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-[#10b981]/10 border border-[#10b981]/30">
+                <Github className="h-5 w-5 text-[#10b981]" />
               </div>
               <div className="min-w-0">
                 <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
                   {isFrontendBeta ? "Import Frontend Repository" : "Import Project"}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-[var(--text-secondary)]">
-                  {isDemoMode ? (
-                    <span>Preview mode - <span className="text-amber-500">sign in to import real repos</span></span>
-                  ) : (
-                    <>Connected as <span className="text-[#10b981] font-medium">@{user?.github_username}</span></>
-                  )}
+                  Connected as <span className="text-[#10b981] font-medium">@{user?.github_username}</span>
                 </DialogDescription>
               </div>
             </div>
@@ -1098,20 +1022,9 @@ export function GitHubImportDialog({
             </div>
           )}
 
-          {/* Demo mode banner */}
-          {isDemoMode && (
-            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <p className="text-[10px] text-amber-700 dark:text-amber-300 leading-relaxed">
-                <strong>Demo Mode:</strong> These are sample repositories. Sign in to import your own GitHub repos.
-              </p>
-            </div>
-          )}
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-3">
-          {/* Note: Demo projects like ecommerce-clone are in mockGitHubRepos.
-              When imported, they trigger the demo flow automatically. */}
-
           <div className="space-y-4">
             <div className="relative">
               <Input
@@ -1308,7 +1221,7 @@ export function GitHubImportDialog({
             onClick={handleImportClick}
             className="bg-primary hover:bg-primary-hover text-primary-foreground text-xs shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isDemoMode ? "Continue (Demo)" : "Continue"}
+            Continue
           </Button>
         </div>
         </DialogContent>
@@ -1324,7 +1237,6 @@ export function GitHubImportDialog({
         onProjectCreated={onProjectCreated}
         onGoToProject={onGoToProject}
         sourceRepo={savedSourceRepo}
-        isDemoMode={isDemoMode}
         defaultSourceRepoType={defaultSourceRepoType}
       />
     </>
@@ -1577,7 +1489,6 @@ export function ProjectDetailsDialog({
   onProjectCreated,
   onGoToProject,
   sourceRepo,
-  isDemoMode = false,
   defaultSourceRepoType = "backend",
 }: {
   open: boolean;
@@ -1591,7 +1502,6 @@ export function ProjectDetailsDialog({
     private?: boolean;
     backendFolderPath?: string;
   };
-  isDemoMode?: boolean;
   defaultSourceRepoType?: SourceRepoType;
 }) {
   const [projectName, setProjectName] = useState("");
@@ -1619,17 +1529,6 @@ export function ProjectDetailsDialog({
 
   const handleSaveChanges = async () => {
     if (!sourceRepo) return;
-
-    if (isDemoMode) {
-      setIsSaving(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setIsSaving(false);
-      const demoProject = { id: projectId, name: projectName, status: "draft" };
-      setCreatedProject(demoProject);
-      onOpenChange(false);
-      if (onGoToProject) onGoToProject(demoProject);
-      return;
-    }
 
     setIsSaving(true);
     setError(null);
@@ -2042,7 +1941,6 @@ export function CreateBackendRepoDialog({
   onOpenChange,
   project,
   frontendRepoName,
-  isDemoMode = false,
   onProjectCreated,
   onGoToProject,
 }: {
@@ -2050,7 +1948,6 @@ export function CreateBackendRepoDialog({
   onOpenChange: (open: boolean) => void;
   project?: { id: string; name: string; status?: string } | null;
   frontendRepoName?: string;
-  isDemoMode?: boolean;
   onProjectCreated?: () => void;
   onGoToProject?: (project: { id: string; name: string; status: string }) => void;
 }) {
@@ -2089,7 +1986,7 @@ export function CreateBackendRepoDialog({
 
   // Debounced backend repo name validation (check if it exists on GitHub)
   React.useEffect(() => {
-    if (!backendRepoName || isDemoMode) {
+    if (!backendRepoName) {
       setRepoNameError(null);
       setRepoNameAvailable(null);
       return;
@@ -2143,19 +2040,9 @@ export function CreateBackendRepoDialog({
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [backendRepoName, isDemoMode]);
+  }, [backendRepoName]);
 
   const handleCreateBackendRepo = async () => {
-    if (isDemoMode) {
-      setIsCreating(true);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setIsCreating(false);
-      // Show cloud provider selection instead of success
-      setShowCloudSelection(true);
-      onOpenChange(false); // Close backend repo dialog
-      return;
-    }
-
     if (!project?.id) {
       setError("No project found");
       return;
@@ -2205,22 +2092,6 @@ export function CreateBackendRepoDialog({
 
   const handleCloudProviderSelected = async (provider: "aws" | "gcp") => {
     setSelectedCloudProvider(provider);
-    
-    // For demo mode, trigger the live demo with the selected cloud provider
-    if (isDemoMode && project?.id) {
-      setShowCloudSelection(false);
-      setSuccess(true);
-      
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('demoImportLiveProject', { 
-          detail: { 
-            id: project.id, 
-            cloudProvider: provider,
-          } 
-        }));
-      }, 500);
-      return;
-    }
     
     if (project?.id) {
       try {
@@ -2476,7 +2347,7 @@ export function CreateBackendRepoDialog({
               <Button
                 size="sm"
                 onClick={handleCreateBackendRepo}
-                disabled={!backendRepoName || isCreating || repoNameChecking || !!repoNameError || (!isDemoMode && !repoNameAvailable)}
+                disabled={!backendRepoName || isCreating || repoNameChecking || !!repoNameError || !repoNameAvailable}
                 className="text-xs bg-primary hover:bg-primary-hover text-primary-foreground shadow-sm disabled:opacity-50"
               >
                 {isCreating ? (
@@ -2530,14 +2401,10 @@ type DisplayProject = {
 // Project Switcher Component - Uses global ProjectContext
 // ============================================================================
 import { useProject } from "@/lib/project-context";
-import { useDemoOptional } from "@/lib/demo-context";
 
 export function ProjectSwitcher() {
   const { isAuthenticated, user } = useAuth();
-  // Use the global project context instead of local state
   const { projects, currentProject, isLoading: isLoadingProjects, setCurrentProject, refreshProjects } = useProject();
-  // Use demo context to show active demo project
-  const demo = useDemoOptional();
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showGitHubImport, setShowGitHubImport] = useState(false);
@@ -2550,85 +2417,21 @@ export function ProjectSwitcher() {
     setMounted(true);
   }, []);
 
-  // Demo project selection state for non-authenticated users
-  // Initialize to 0 (must match server render to avoid hydration mismatch),
-  // then restore from localStorage after mount.
-  const [demoProjectIndex, setDemoProjectIndex] = useState(0);
-  // Track if current demo is from API (imported) vs static mock
-  const [isApiDemo, setIsApiDemo] = useState(false);
   const isGitHubLinked = user?.github_app_installed ?? false;
 
-  // Restore persisted demo project index from localStorage after mount
-  useEffect(() => {
-    if (!isAuthenticated) {
-      const saved = localStorage.getItem('demo-project-index');
-      if (saved) {
-        const idx = parseInt(saved, 10);
-        if (!isNaN(idx) && idx !== 0) {
-          setDemoProjectIndex(idx);
-        }
-      }
-    }
-  }, [isAuthenticated]);
-
-  // Persist demo project index to localStorage when it changes
-  useEffect(() => {
-    if (!isAuthenticated && mounted) {
-      localStorage.setItem('demo-project-index', demoProjectIndex.toString());
-    }
-  }, [demoProjectIndex, isAuthenticated, mounted]);
-  
-  // Display projects - real when authenticated, static mock when not signed in
-  // IMPORTANT: When signed in with no projects, show empty state (not mock)
-  const displayProjects = isAuthenticated 
+  const displayProjects = isAuthenticated
     ? projects.map(p => ({ id: p.id, name: p.name, status: p.status }))
-    : mockProjects; // Default to static mock projects
+    : [];
 
-  // For signed-in users: show their project or null if none
-  // For non-signed-in users: check if there's an active demo project from context
-  const demoProject = demo?.project;
-  const displayCurrentProject = isAuthenticated 
-    ? currentProject 
-    : demoProject 
-      ? { id: `demo-${demoProject.slug}`, name: demoProject.name, status: demo.phase === "idle" ? "draft" : "analyzing" }
-      : mockProjects[demoProjectIndex];
+  const displayCurrentProject = isAuthenticated ? currentProject : null;
 
   const handleSwitchProject = async (project: DisplayProject) => {
     setIsLoading(true);
     await new Promise(resolve => setTimeout(resolve, 300));
-
-    if (!isAuthenticated) {
-      // For demo mode, find the index of the selected mock project
-      const index = mockProjects.findIndex((p: any) => p.id === project.id);
-      if (index >= 0) {
-        setDemoProjectIndex(index);
-        setIsApiDemo(false); // Switching to static mock
-        // Dispatch custom event for page.tsx to pick up (static mock, not from API)
-        const slug = mockProjects[index].slug;
-        // Also persist slug in localStorage
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('demo-project-slug', slug);
-        }
-        window.dispatchEvent(new CustomEvent('demoProjectChanged', {
-          detail: { slug, isDemo: true, fromApi: false }
-        }));
-      }
-    } else {
-      // Find the full project if it's a real project
-      const fullProject = projects.find(p => p.id === project.id);
-      setCurrentProject(fullProject || null);
-    }
+    const fullProject = projects.find(p => p.id === project.id);
+    setCurrentProject(fullProject || null);
     setIsLoading(false);
   };
-  
-  // Handler for importing a demo project from API (called from GitHub import dialog)
-  const handleImportDemoProject = useCallback((demoProject: { slug: string; name: string }) => {
-    setIsApiDemo(true);
-    // Dispatch event to switch to API demo mode
-    window.dispatchEvent(new CustomEvent('demoProjectChanged', { 
-      detail: { slug: demoProject.slug, isDemo: true, fromApi: true } 
-    }));
-  }, []);
 
   return (
     <>
@@ -2742,15 +2545,6 @@ export function ProjectSwitcher() {
             <div className="flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-[var(--text-primary)]">Import Project</span>
-                {!isAuthenticated && (
-                  <span className={cn(
-                    "text-[10px] px-2 py-0.5 rounded font-medium",
-                    theme === "dark" && "bg-transparent text-amber-500 border border-amber-500/30",
-                    theme === "light" && "bg-amber-500 text-white"
-                  )}>
-                    Demo Mode
-                  </span>
-                )}
               </div>
               <div className="text-[10px] text-[var(--text-secondary)]">Import from GitHub</div>
             </div>

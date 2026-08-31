@@ -34,7 +34,7 @@ export function useConsolePanel() {
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const isStandalonePage = pathname === "/hub" || pathname.startsWith("/auth/");
+  const isStandalonePage = pathname.startsWith("/auth/");
 
   // Threads are hidden. Runs owns the live agent log. Keep the context
   // so existing callers (notifications, workspace) do not break.

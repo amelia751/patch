@@ -6,7 +6,6 @@ import { useTheme } from "@/lib/theme-context";
 import { useAuth } from "@/lib/auth-context";
 import { organizationNameFromUser } from "@/lib/organization-name";
 import { UserAvatar } from "@/components/interface/shared/user-avatar";
-import mockInfo from "./mock-aws/mock-info.json";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -199,11 +198,13 @@ function DisconnectGitHubModal({
   );
 }
 
-// Import mock data from JSON
-const mockUser = mockInfo.mockUser;
-const defaultOrganization: OrganizationData = mockInfo.defaultOrganization as OrganizationData;
-const mockProjects = mockInfo.mockProjects;
-const mockGitHubRepos = mockInfo.mockGitHubRepos;
+const defaultOrganization: OrganizationData = {
+  id: "",
+  name: "",
+  slug: "",
+  type: "personal",
+  role: "owner",
+};
 
 // ============================================================================
 // Organization Switcher Component (Left Breadcrumb)
@@ -366,8 +367,8 @@ function UserAccountMenu() {
   };
 
   // Get display info from user or fallback
-  const displayName = user?.display_name || mockUser.name;
-  const displayEmail = user?.email || mockUser.email;
+  const displayName = user?.display_name || "";
+  const displayEmail = user?.email || "";
   const avatarUrl = user?.avatar_url;
 
   if (!isAuthenticated) {

@@ -22,22 +22,6 @@ import { useProject } from "@/lib/project-context";
 import { useConsolePanel } from "@/components/layout/app-layout";
 import { GitHubImportDialog, LinkGitHubDialog, CloudProviderSelectionDialog, AddRepositoryDialog } from "@/components/interface/project";
 import { useProjectStream } from "@/hooks/useProjectStream";
-import { useDemoOptional } from "@/lib/demo-context";
-import MOCK_AI_STUDIO_CODEBASE from "@/components/interface/shared/mock-gcp-ai/mock-codebase.json";
-import MOCK_ECOMMERCE_CODEBASE from "@/components/interface/shared/mock-aws/mock-codebase.json";
-import awsOpsData from "@/components/interface/shared/mock-aws/mock-ops.json";
-import gcpAiOpsData from "@/components/interface/shared/mock-gcp-ai/mock-ops.json";
-const DEMO_OPS_DATA: Record<string, any> = {
-  "ecommerce": awsOpsData,
-  "ai-content-studio": gcpAiOpsData,
-  "default": awsOpsData,
-};
-
-const DEMO_CODEBASES: Record<string, any> = {
-  "ecommerce": MOCK_ECOMMERCE_CODEBASE,
-  "ai-content-studio": MOCK_AI_STUDIO_CODEBASE,
-  "default": MOCK_ECOMMERCE_CODEBASE,
-};
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -76,7 +60,6 @@ function SystemPageContent() {
   const { isAuthenticated, user } = useAuth();
   const { currentProject, isLoading: isLoadingProject, setCurrentProject } = useProject();
   const { activeThreadId } = useConsolePanel();
-  const demo = useDemoOptional();
 
   const configureSectionParam = searchParams.get("configureSection");
   const initialConfigureSection =
@@ -193,32 +176,6 @@ function SystemPageContent() {
   const [showAddRepository, setShowAddRepository] = useState(false);
   const isGitHubLinked = user?.github_app_installed ?? false;
 
-  // Demo state
-  const [demoProjectSlug, setDemoProjectSlug] = useState("ecommerce");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("demo-project-slug");
-      if (saved) setDemoProjectSlug(saved);
-    }
-  }, []);
-
-  // Listen for demo project changes
-  useEffect(() => {
-    const handleDemoProjectChange = (e: CustomEvent<{ slug: string; fromApi?: boolean }>) => {
-      setDemoProjectSlug(e.detail.slug);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("demo-project-slug", e.detail.slug);
-      }
-    };
-    window.addEventListener("demoProjectChanged", handleDemoProjectChange as unknown as EventListener);
-    return () => {
-      window.removeEventListener("demoProjectChanged", handleDemoProjectChange as unknown as EventListener);
-    };
-  }, []);
-
   // Deep-link: /?configureSection=secrets|auth|connection → Configure tab + sidebar section
   useEffect(() => {
     if (initialConfigureSection) setActiveTab("configure");
@@ -232,14 +189,8 @@ function SystemPageContent() {
     if (initialOpenCredentialModal === "secret") setNavConfigureSection("secrets");
     if (initialOpenCredentialModal === "gcp") {
       setNavConfigureSection("connection");
-      if (!isAuthenticated) {
-        setDemoProjectSlug("ai-content-studio");
-        if (typeof window !== "undefined") {
-          localStorage.setItem("demo-project-slug", "ai-content-studio");
-        }
-      }
     }
-  }, [initialOpenCredentialModal, isAuthenticated]);
+  }, [initialOpenCredentialModal]);
 
   // Listen for tab switch events from the thread (optional configureSection for Configure sidebar)
   useEffect(() => {
@@ -269,46 +220,12 @@ function SystemPageContent() {
     };
   }, [setMainWorkspaceTab]);
 
-  // Mock ops for guests — must exist before cloudProvider (same bundle as /ops).
-  const effectiveDemoKey = !isAuthenticated ? demoProjectSlug : "default";
-  const opsData = DEMO_OPS_DATA[effectiveDemoKey] || DEMO_OPS_DATA["default"];
-
-  /** Synthetic project so Configure (secrets mocks, connection mocks) works when logged out.
-   *  cloud_provider is always derived from demoProjectSlug (the source of truth for which
-   *  demo is selected) so that switching demos via demoProjectChanged immediately updates
-   *  the cloud provider even when the DemoContext project hasn't caught up yet. */
-  const demoCloudProvider: "aws" | "gcp" = demoProjectSlug === "ai-content-studio" ? "gcp" : "aws";
-  const guestConfigureProject: {
-    id: string;
-    name: string;
-    status: string;
-    cloud_provider: "aws" | "gcp";
-  } | null =
-    !isAuthenticated && opsData?.project
-      ? demo?.project
-        ? {
-            id: `demo-${demo.project.slug}`,
-            name: demo.project.name,
-            status: "analyzing",
-            cloud_provider: demoCloudProvider,
-          }
-        : {
-            id: String((opsData.project as { id?: string }).id ?? `guest-${demoProjectSlug}`),
-            name: String((opsData.project as { name?: string }).name ?? "Demo project"),
-            status: "active",
-            cloud_provider: demoCloudProvider,
-          }
-      : null;
-
-  const configureProject = isAuthenticated ? currentProject : guestConfigureProject;
+  const configureProject = currentProject;
 
   // Cloud provider from project: only "aws" / "gcp" count as chosen; anything else → null
-  const projectCloudProvider = isAuthenticated
-    ? currentProject?.cloud_provider === "aws" || currentProject?.cloud_provider === "gcp"
+  const projectCloudProvider =
+    currentProject?.cloud_provider === "aws" || currentProject?.cloud_provider === "gcp"
       ? currentProject.cloud_provider
-      : null
-    : configureProject?.cloud_provider === "aws" || configureProject?.cloud_provider === "gcp"
-      ? configureProject.cloud_provider
       : null;
   // Connecting from a run writes gcp_connections without setting this column.
   // Treat a stored key as the choice so Configure is not stuck on "Choose provider".
@@ -575,11 +492,8 @@ function SystemPageContent() {
     }
   };
 
-  const codebaseMockData = !isAuthenticated ? DEMO_CODEBASES[demoProjectSlug] : undefined;
-
   // Build connection data for ConfigureTab
   const buildConnectionData = () => {
-    const { aws_connection, gcp_connection } = opsData;
     const defaultConn = {
       status: "not_connected",
       region: cloudProvider === "aws" ? "us-east-1" : "us-central1",
@@ -588,39 +502,29 @@ function SystemPageContent() {
 
     if (cloudProvider === "aws" && awsStatus?.connected && awsStatus.account_id) {
       return {
-        ...(aws_connection || defaultConn),
+        ...defaultConn,
         account_id: awsStatus.account_id,
         role_arn: awsStatus.role_arn,
         region: awsStatus.region || "us-east-1",
         status: "connected",
         connected_at: awsStatus.last_validated || new Date().toISOString(),
-        required_policies: (aws_connection?.required_policies || []).map((p: any) => ({ ...p, validated: true })),
       };
     }
     if (cloudProvider === "gcp" && gcpStatus?.connected && gcpStatus.project_id) {
       return {
-        ...(gcp_connection || defaultConn),
+        ...defaultConn,
         project_id: gcpStatus.project_id,
         project_number: gcpStatus.project_number,
         service_account_email: gcpStatus.service_account_email,
         region: gcpStatus.region || "us-central1",
         status: "connected",
         connected_at: gcpStatus.last_validated || new Date().toISOString(),
-        required_apis: (gcp_connection?.required_apis || []).map((api: any) => ({ ...api, validated: true })),
       };
     }
-    // Authenticated users who disconnected should not see mock data
-    if (isAuthenticated) return defaultConn;
-    return aws_connection || gcp_connection || defaultConn;
+    return defaultConn;
   };
 
-  const workspacesFromOpsMock = useMemo(() => {
-    const w = (opsData as { workspaces?: { id: string; name: string }[] }).workspaces;
-    return Array.isArray(w) ? w : [];
-  }, [opsData]);
-
   const secretsData = useMemo(() => {
-    if (!isAuthenticated) return opsData.secrets;
     const apiConfigured = storedSecrets.map((s) => ({
       id: s.id,
       name: s.secret_name,
@@ -645,19 +549,15 @@ function SystemPageContent() {
         workspace_id: r.workspace_id ?? null,
         workspace_name: r.workspace_name ?? null,
       }));
-    const hasApiActivity = apiConfigured.length > 0 || apiPending.length > 0;
-    if (hasApiActivity) {
-      return { configured: apiConfigured, pending: apiPending };
-    }
-    return { configured: [], pending: [] };
-  }, [isAuthenticated, storedSecrets, requirements, opsData]);
+    return { configured: apiConfigured, pending: apiPending };
+  }, [storedSecrets, requirements]);
 
   const workspacesForSecrets: {
     id: string;
     name: string;
     workspace_path?: string | null;
     repo_url?: string | null;
-  }[] = isAuthenticated ? projectWorkspaces : workspacesFromOpsMock;
+  }[] = projectWorkspaces;
 
   const secretsRepo = useMemo(() => {
     const r = projectRepos.find((x) => x.type === "backend") || projectRepos[0];
@@ -690,8 +590,7 @@ function SystemPageContent() {
   // Badge counts
   const connectionData = buildConnectionData();
   const pendingSecretsCount = secretsData?.pending?.length || 0;
-  const missingPoliciesCount = connectionData?.required_policies?.filter((p: any) => !p.validated).length || 0;
-  const configBadgeCount = missingPoliciesCount + pendingSecretsCount;
+  const configBadgeCount = pendingSecretsCount;
 
   const changesBadgeCount = 0;
 
@@ -825,7 +724,6 @@ function SystemPageContent() {
           <CodebaseTab
             projectId={configureProject?.id || ""}
             threadId={activeThreadId}
-            mockData={codebaseMockData}
             hasProject={!!configureProject || !isAuthenticated}
             onAddRepository={isAuthenticated ? () => {
               if (!isGitHubLinked) { setShowLinkGitHub(true); return; }
@@ -843,11 +741,7 @@ function SystemPageContent() {
           <ConfigureTab
             connection={connectionData}
             environmentConnections={
-              cloudProvider === "gcp"
-                ? (isAuthenticated && Object.keys(gcpEnvironmentConnections).length > 0
-                    ? gcpEnvironmentConnections
-                    : opsData.environment_connections)
-                : undefined
+              cloudProvider === "gcp" ? gcpEnvironmentConnections : undefined
             }
             gcpConnections={isAuthenticated ? gcpConnections : []}
             secrets={secretsData}
@@ -859,7 +753,7 @@ function SystemPageContent() {
             repoFullName={isAuthenticated ? secretsRepo.fullName : null}
             repoDefaultBranch={isAuthenticated ? secretsRepo.defaultBranch : null}
             repos={isAuthenticated ? secretsRepos : []}
-            secretsPreviewMode={!isAuthenticated}
+            secretsPreviewMode={false}
             secretsUseMockFallback={secretsUseMockFallback}
             cloudAccountConnected={!shouldShowCloudConnectionEmptyState}
             onCloudConnect={handleCloudConnect}
@@ -892,7 +786,7 @@ function SystemPageContent() {
             userId={user?.id || "default"}
             workspaces={workspacesForSecrets}
             repos={isAuthenticated ? secretsRepos : []}
-            secretsPreviewMode={!isAuthenticated}
+            secretsPreviewMode={false}
             onGcpConnected={() => {
               setGcpRefreshTick((tick) => tick + 1);
               // Storing a key *is* choosing a provider. Without this the

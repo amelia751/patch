@@ -157,7 +157,6 @@ interface CodebaseResponse {
 interface CodebaseTabProps {
   projectId: string;
   threadId?: string | null;
-  mockData?: any;
   hasProject?: boolean;
   onAddRepository?: () => void;
 }
@@ -868,7 +867,7 @@ function CodebaseTabSkeleton() {
 // Main Component
 // ============================================================================
 
-export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, onAddRepository }: CodebaseTabProps) {
+export function CodebaseTab({ projectId, threadId, hasProject = true, onAddRepository }: CodebaseTabProps) {
   const { prismTheme } = useSyntaxTheme();
   const indexing = useConsoleIndexing(projectId, hasProject);
   const [searchQuery, setSearchQuery] = useState("");
@@ -980,12 +979,6 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
     []
   );
 
-  // Demo thread branch mapping (unauthenticated mode)
-  const DEMO_THREAD_BRANCHES: Record<string, string> = {
-    "1": "patchapi/fix-intake-ws",
-    "2": "patchapi/debug-ws-events",
-  };
-
   // Fetch codebase: thread context → default branch
   // When a thread is selected, show its branch; otherwise show the imported branch.
   // Uses AbortController so that rapid thread switches cancel stale in-flight fetches
@@ -995,21 +988,6 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
     const { signal } = abortCtrl;
 
     const fetchCodebase = async () => {
-      if (mockData) {
-        pendingTabRefetchRef.current = false;
-        const baseBranch = mockData.branch || mockData.current_version || "main";
-        setCodebaseData(
-          refreshKey > 0 ? (structuredClone(mockData) as CodebaseResponse) : mockData
-        );
-        setCodebaseSource("github");
-        setDefaultBranch(baseBranch);
-
-        const demoBranch = threadId && !forceDefaultView ? DEMO_THREAD_BRANCHES[threadId] : null;
-        setThreadBranch(demoBranch || null);
-        setIsLoading(false);
-        return;
-      }
-
       if (!projectId) {
         pendingTabRefetchRef.current = false;
         setIsLoading(false);
@@ -1111,7 +1089,7 @@ export function CodebaseTab({ projectId, threadId, mockData, hasProject = true, 
 
     fetchCodebase();
     return () => abortCtrl.abort();
-  }, [projectId, threadId, mockData, refreshKey, fetchGitHubTree, forceDefaultView, refetchOpenTabContents]);
+  }, [projectId, threadId, refreshKey, fetchGitHubTree, forceDefaultView, refetchOpenTabContents]);
 
   // Open file from thread (Write/Edit row or diff header) — scroll to edited line like Cursor
   useEffect(() => {
