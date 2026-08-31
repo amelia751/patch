@@ -13,6 +13,7 @@ import pytest
 from agents.adk import PREAMBLE, adk_unavailable_reason
 from agents.config import (
     DETERMINISTIC_STAGES,
+    MODEL_RETRY_ATTEMPTS,
     MODEL_TEMPERATURE,
     REASONING_MODEL,
     SPECIALISTS,
@@ -47,7 +48,23 @@ def test_policy_and_pr_are_stage_names_not_llm_agents():
 
 def test_every_agent_runs_the_pinned_model(fleet):
     for agent in fleet.values():
-        assert agent.model == REASONING_MODEL
+        assert agent.model.model == REASONING_MODEL
+
+
+def test_every_agent_rides_out_a_busy_region(fleet):
+    """A 503 from one overloaded call must not end a run mid-migration.
+
+    ADK's default is no retry at all, and two hosted runs died on a transient
+    503 after staging a sandbox and reading the repository.
+    """
+    for agent in fleet.values():
+        retry = agent.model.retry_options
+
+        assert retry is not None
+        assert retry.attempts == MODEL_RETRY_ATTEMPTS
+        assert 503 in (retry.http_status_codes or [])
+        # A 400 or a 403 is a request no amount of waiting fixes.
+        assert not {code for code in retry.http_status_codes or [] if code < 429}
 
 
 def test_no_specialist_can_hand_work_to_another(fleet):

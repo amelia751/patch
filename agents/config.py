@@ -269,6 +269,16 @@ MODEL_TEMPERATURE: Final[float] = 1.0
 # call, so a small cap yields an empty turn rather than a short one.
 MAX_OUTPUT_TOKENS: Final[int] = 4096
 
+# ADK leaves the model client's retry off, so one 503 from a busy region ends a
+# run that has already staged a sandbox, read a dozen files and run a baseline.
+# Retrying the HTTP request is safe in a way that retrying the turn is not: the
+# call never reached the model, so no tool runs twice.
+MODEL_RETRY_ATTEMPTS: Final[int] = 5
+MODEL_RETRY_INITIAL_DELAY_SECONDS: Final[float] = 2.0
+MODEL_RETRY_MAX_DELAY_SECONDS: Final[float] = 30.0
+# 429 and 5xx only. A 400 or a 403 is a request this run will never get right.
+MODEL_RETRY_STATUS_CODES: Final[tuple[int, ...]] = (429, 500, 502, 503, 504)
+
 # A turn that has not converged by here is stuck. The orchestrator fails closed
 # rather than letting an agent loop on a tool it cannot satisfy. The Patch
 # debug loop (inspect → edit → run) needs more than a single-shot confirm, and a

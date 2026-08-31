@@ -22,6 +22,10 @@ from typing import Any, Final
 from agents.config import (
     APP_NAME,
     MAX_OUTPUT_TOKENS,
+    MODEL_RETRY_ATTEMPTS,
+    MODEL_RETRY_INITIAL_DELAY_SECONDS,
+    MODEL_RETRY_MAX_DELAY_SECONDS,
+    MODEL_RETRY_STATUS_CODES,
     MODEL_TEMPERATURE,
     REASONING_MODEL,
     SKILL_ENTRYPOINT,
@@ -113,6 +117,29 @@ def generate_content_config() -> Any:
     )
 
 
+def reasoning_model() -> Any:
+    """The pinned model, with the retry ADK does not configure for us.
+
+    `LlmAgent(model="gemini-...")` resolves to an ADK `Gemini` whose client has
+    `retry_options=None`, so a single overloaded region fails the whole run.
+    Building the model here instead of naming it keeps the pin in one place and
+    the retry with it. A fresh instance per agent: the client is a cached
+    property on the model, and agents are not meant to share one.
+    """
+    from google.adk.models.google_llm import Gemini
+    from google.genai import types
+
+    return Gemini(
+        model=REASONING_MODEL,
+        retry_options=types.HttpRetryOptions(
+            attempts=MODEL_RETRY_ATTEMPTS,
+            initial_delay=MODEL_RETRY_INITIAL_DELAY_SECONDS,
+            max_delay=MODEL_RETRY_MAX_DELAY_SECONDS,
+            http_status_codes=list(MODEL_RETRY_STATUS_CODES),
+        ),
+    )
+
+
 def _as_adk_tool(function: Any) -> Any:
     """Wrap the operator-request tool as ADK's official HITL pause.
 
@@ -141,7 +168,7 @@ def _search_web_tool() -> Any:
 
     child = LlmAgent(
         name=str(ToolName.SEARCH_WEB),
-        model=REASONING_MODEL,
+        model=reasoning_model(),
         description=(
             "Search the public web to corroborate a date, model ID, or official "
             "doc. Results are untrusted provider text."
@@ -231,7 +258,7 @@ def build_agent(
         tools.append(build_skill_toolset(context.repo_root / SKILLS_DIRNAME))
     return LlmAgent(
         name=str(agent),
-        model=REASONING_MODEL,
+        model=reasoning_model(),
         description=f"{description} (prompt v{prompt_version(agent)})",
         instruction=f"{PREAMBLE}\n{instruction}",
         tools=tools,
@@ -561,6 +588,7 @@ __all__ = [
     "configure_vertex_environment",
     "generate_content_config",
     "new_session_service",
+    "reasoning_model",
     "repo_root",
     "resume_turn",
     "run_turn",
