@@ -40,10 +40,16 @@ fi
 FIXTURE="tests/fixtures/repo_with_imagen"
 [[ -d "$FIXTURE" ]] || fail "fixture checkout is missing: $FIXTURE"
 
+# A tree for a provider that has no Python of its own: only a descriptor and a
+# rule directory. Indexing it is what proves onboarding a provider is data.
+STRIPE_FIXTURE="tests/fixtures/repo_with_stripe"
+[[ -d "$STRIPE_FIXTURE" ]] || fail "fixture checkout is missing: $STRIPE_FIXTURE"
+
 # The fixture tree is not a git checkout, so the inventory records the git null
 # SHA rather than claiming a commit that was never read.
 NULL_SHA="0000000000000000000000000000000000000000"
 FIXTURE_REPO_NAME="patchapi-fixtures/repo-with-imagen"
+STRIPE_REPO_NAME="patchapi-fixtures/repo-with-stripe"
 
 # The service imports the shared packages from the checkout rather than from an
 # installed wheel, so the probe exercises the source this tree owns.
@@ -110,21 +116,32 @@ by_path = {}
 for usage in document["usages"]:
     by_path.setdefault(usage["file_path"], []).append(usage)
 
-# 1. The deterministic hit the whole task exists for.
+# 1. The deterministic hit the whole task exists for. The call site names the
+#    model twice — bare and Vertex-routed — and both forms are reported, because
+#    a migration has to rewrite the routed string a caller actually wrote.
 runtime = by_path.get("src/image.ts", [])
-assert len(runtime) == 1, f"expected one runtime hit, got {runtime}"
-hit = runtime[0]
-assert hit["identifier"] == "imagen-4.0-generate-001", hit
+assert sorted(hit["identifier"] for hit in runtime) == [
+    "imagen-4.0-generate-001",
+    "vertex/imagen-4.0-generate-001",
+], runtime
+hit = next(item for item in runtime if item["identifier"] == "imagen-4.0-generate-001")
 assert hit["usage_kind"] == "runtime_source", hit
 assert hit["detection_layer"] == "A_DETERMINISTIC", hit
 assert hit["confidence"] == 1.0, hit
 assert hit["line_start"] == 3, hit
 assert "vertex/imagen-4.0-generate-001" in hit["excerpt"], hit
 
-# 2. Every Imagen 4 identifier present in the tree is reported, and none that
-#    is absent is invented.
+# 2. Every Google identifier present in the tree is reported, and none that is
+#    absent is invented. `gemini-3.5-flash` is in neither watchlist nor manifest:
+#    it is here because the family regex catches identifiers nobody enumerated,
+#    which is the half of recall a pinned list cannot carry.
 found = sorted({usage["identifier"] for usage in document["usages"]})
-assert found == ["imagen-4.0-fast-generate-001", "imagen-4.0-generate-001"], found
+assert found == [
+    "gemini-3.5-flash",
+    "imagen-4.0-fast-generate-001",
+    "imagen-4.0-generate-001",
+    "vertex/imagen-4.0-generate-001",
+], found
 
 # 3. Documentation and configuration are distinguished from runtime source.
 assert by_path["README.md"][0]["usage_kind"] == "documentation_example", by_path["README.md"]
@@ -142,10 +159,55 @@ print(f"inventory: {len(document['usages'])} usages across {len(by_path)} files"
 print("identifiers:", ", ".join(found))
 PY
 
+step "index a second provider's checkout"
+"${RUN[@]}" python -m patchapi_repo_indexer \
+  --root "$STRIPE_FIXTURE" \
+  --repository "$STRIPE_REPO_NAME" \
+  --sha "$NULL_SHA" \
+  --provider stripe \
+  --out "$WORK_DIR/stripe.json"
+
+"${RUN[@]}" python - "$WORK_DIR/stripe.json" <<'PY'
+import json
+import sys
+
+document = json.load(open(sys.argv[1]))
+
+assert document["provider"] == "stripe", document["provider"]
+
+by_path = {}
+for usage in document["usages"]:
+    by_path.setdefault(usage["file_path"], []).append(usage)
+
+# 1. The removed Stripe.js methods are found where they are called.
+called = sorted(usage["identifier"] for usage in by_path.get("src/checkout.ts", []))
+assert "stripe.handleCardPayment" in called, called
+assert "stripe.handleCardSetup" in called, called
+
+# 2. Documentation is still documentation for a provider nobody wrote code for.
+assert by_path["README.md"][0]["usage_kind"] == "documentation_example", by_path["README.md"]
+
+# 3. A helper that shares a method name is not a Stripe call.
+assert "src/uploads.ts" not in by_path, by_path.get("src/uploads.ts")
+
+# 4. The vendored copy is not the customer's usage.
+assert not [path for path in by_path if path.startswith("vendor/")], by_path
+
+# 5. Nothing Google was searched for here.
+identifiers = {usage["identifier"] for usage in document["usages"]}
+assert not [name for name in identifiers if "imagen" in name or "gemini" in name], identifiers
+
+print(f"stripe inventory: {len(document['usages'])} usages across {len(by_path)} files")
+PY
+
 step "index a checkout with no watched identifier"
 EMPTY_TREE="$WORK_DIR/empty-tree"
 mkdir -p "$EMPTY_TREE/src"
-printf 'export const MODEL = "gemini-3.1-flash-image";\n' >"$EMPTY_TREE/src/app.ts"
+# Not a Gemini or Imagen ID: the family regexes match every identifier in those
+# lines whether or not a notice named it, which is how a deprecation nobody
+# enumerated is still found. A tree that is genuinely unaffected has to name
+# something outside them.
+printf 'export const MODEL = "text-embedding-004";\n' >"$EMPTY_TREE/src/app.ts"
 printf '# nothing to migrate\n' >"$EMPTY_TREE/README.md"
 
 "${RUN[@]}" python -m patchapi_repo_indexer \
