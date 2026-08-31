@@ -587,7 +587,7 @@ patchapi/
 │
 └── docs/
     ├── architecture.md
-    ├── security.md
+    ├── architecture.png
     ├── threat-model.md
     ├── data-model.md
     ├── agent-contracts.md
@@ -2154,7 +2154,7 @@ Docs:
 > gateway is documented as incompatible with revisions
 > (`docs/research/gemini-enterprise-agent-registry.md`). Nothing below is in the
 > request path. Read "what the gateway enforces that a prompt cannot" as the
-> requirement, and `docs/security.md` for the layers PatchAPI holds it with
+> requirement, and `docs/architecture.md` for the layers PatchAPI holds it with
 > instead — chiefly that `merge_pull_request` is absent from the tool service
 > rather than denied on the wire.
 
@@ -2317,7 +2317,7 @@ span attribute deliberately rather than turning on blanket content capture.
 > the run's own instructions. Reasoning-chain visibility comes from the stage
 > spans instead, which is what the table's last line asked for. Redaction is
 > enforced by shape in `agents/observe.py`: only pinned keys, only
-> identifier-shaped values. See `docs/security.md`.
+> identifier-shaped values. See `docs/architecture.md`.
 
 ### Spans
 

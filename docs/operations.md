@@ -210,7 +210,7 @@ fails it stops, persists the terminal state, retains evidence, and surfaces to a
 human. The response to *any* uncertainty — missing provider evidence, ambiguous
 migration, failing tests, unavailable live verification, verifier disagreement —
 is no pull request. See [`roadmap.md` §22](../roadmap.md#22-failure-handling)
-and [`security.md`](./security.md).
+and [`architecture.md`](./architecture.md).
 
 To stop all automation, revoke the GitHub App installation — that removes the
 write path entirely — and scale the agent lane to zero. Provider polling on

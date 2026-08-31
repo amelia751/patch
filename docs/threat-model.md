@@ -3,7 +3,7 @@
 **Status:** Revised 2026-08-30 — enumerates the threats PatchAPI's design
 answers and names the control that answers each. Mitigations marked *designed*
 are not yet enforced by running code; see the reality table in
-[`security.md`](./security.md). Related:
+[`architecture.md`](./architecture.md). Related:
 [`architecture.md`](./architecture.md),
 [`roadmap.md` §16](../roadmap.md#16-security-demo),
 [`roadmap.md` §22](../roadmap.md#22-failure-handling).
@@ -181,7 +181,7 @@ only the keys pinned in `packages/observability/config.py` and only
 identifier-shaped values — no whitespace, one line, bounded length — because
 every untrusted document here is prose and prose does not survive that pattern
 (`agents/observe.py`). Span events carry a name and no payload. Detail:
-[`security.md`](./security.md#traces-leave-the-trust-boundary).
+[`architecture.md`](./architecture.md).
 
 **Residual risk.** The safe posture is set in code rather than in the
 deployment, which is stronger against forgetting and weaker against a future

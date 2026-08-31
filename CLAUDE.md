@@ -62,7 +62,7 @@ sandbox/                 Sandbox runner image + GKE templates
 db/                      Migrations and seeds
 infra/terraform/         GCP provisioning
 demo/                    Egaki baseline, fixtures, adversarial cases, demo script
-docs/                    Architecture, security, data model, operations
+docs/                    Architecture, data model, operations
 tests/                   Unit, integration, agent eval, adversarial
 ```
 

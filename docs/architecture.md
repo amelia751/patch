@@ -18,7 +18,7 @@ environment, and opens an evidence-backed pull request for normal human review.
 
 Then it stops. It does not merge, deploy, edit branch protection, rotate
 secrets, or bypass CODEOWNERS and CI. That boundary is a product feature, not a
-limitation — see [`security.md`](./security.md).
+limitation — see [`threat-model.md`](./threat-model.md).
 
 ## Shape of the system
 

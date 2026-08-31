@@ -13,7 +13,6 @@ cd "$ROOT"
 
 REQUIRED_DOCS="
 docs/architecture.md
-docs/security.md
 docs/threat-model.md
 docs/data-model.md
 docs/agent-contracts.md

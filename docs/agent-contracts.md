@@ -69,8 +69,8 @@ Emits risk tier, allowed actions, forbidden actions, mandatory verification, and
 whether human review is required: `risk`, `auto_patch`, `auto_pr`, `auto_merge`
 (**always false**), `forbidden_globs[]`, `required_checks[]`, `reason`.
 
-The enforcement hierarchy in [`security.md`](./security.md) is what actually
-stops a bad action.
+The GitHub App permission surface and the tool service's own allowlist are
+what actually stop a bad action.
 
 ## 4. Patch Agent
 

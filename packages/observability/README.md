@@ -85,7 +85,7 @@ Attribute keys are prefixed `patchapi.` so they cannot collide with
 OpenTelemetry semantic conventions, and `agents/observe.py` accepts only those
 keys and only identifier-shaped values. A trace leaves the trust boundary, so
 what may ride on one is deliberately narrow — see
-`docs/security.md`.
+[`docs/architecture.md`](../../docs/architecture.md).
 
 ## Failure posture
 

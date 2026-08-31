@@ -113,7 +113,7 @@ patchapi/
 │
 ├── docs/
 │   ├── architecture.md
-│   ├── security.md
+│   ├── architecture.png
 │   ├── threat-model.md
 │   ├── data-model.md
 │   ├── agent-contracts.md
