@@ -417,18 +417,29 @@ async def append_trace(
     tool_use_id: str = "",
     file_path: str = "",
 ) -> None:
-    """Record one line of the agent worklog."""
-    await connection.execute(
-        _TRACE_SQL,
-        _uuid(run_id),
-        str(state),
-        kind,
-        verb,
-        body.strip()[:MAX_TRACE_BODY_CHARS],
-        tool_type,
-        tool_use_id,
-        file_path,
-    )
+    """Record one line of the agent worklog.
+
+    The sequence is allocated under the run's row lock — the same one `advance`
+    takes — because `max(sequence) + 1` read outside one is a race. Two writers
+    for a single run are ordinary here: the runner's recorder pumps on a timer
+    while the console appends a line of its own when an operator answers a
+    hold. Both would read the same maximum and collide on the primary key,
+    which ends a healthy migration over a line of worklog.
+    """
+    identifier = _uuid(run_id)
+    async with connection.transaction():
+        await connection.execute(_LOCK_SQL, identifier)
+        await connection.execute(
+            _TRACE_SQL,
+            identifier,
+            str(state),
+            kind,
+            verb,
+            body.strip()[:MAX_TRACE_BODY_CHARS],
+            tool_type,
+            tool_use_id,
+            file_path,
+        )
 
 
 async def explain(connection: asyncpg.Connection, run_id: UUID | str, reason: str) -> None:

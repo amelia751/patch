@@ -64,6 +64,7 @@ class RunRecorder:
     _narration: list[tuple[RunState, str]] = field(default_factory=list)
     _task: asyncio.Task[None] | None = None
     _stop: asyncio.Event = field(default_factory=asyncio.Event)
+    _flushing: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def narrate(self, state: RunState, line: str) -> None:
         """Add a sentence the console should show that no tool call produced."""
@@ -77,8 +78,14 @@ class RunRecorder:
         return self.journal.changes[-1].to_state
 
     async def flush(self) -> None:
-        """Write everything recorded since the last call."""
-        async with self.pool.acquire() as connection:
+        """Write everything recorded since the last call.
+
+        One at a time. The pump ticks on a timer while the job also flushes at
+        its stage boundaries, and the pending slice is only marked written once
+        every row in it has been. Two flushes in flight therefore read the same
+        slice and write every line in it twice.
+        """
+        async with self._flushing, self.pool.acquire() as connection:
             await self._flush_states(connection)
             await self._flush_trace(connection)
             await self._flush_narration(connection)

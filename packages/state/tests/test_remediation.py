@@ -9,6 +9,7 @@ connection would agree with whatever the code did.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -323,6 +324,54 @@ async def test_the_worklog_keeps_the_order_it_was_written_in(conn: Any) -> None:
     )
     assert [row["sequence"] for row in rows] == [1, 2, 3]
     assert rows[0]["body"] == "reading the notice"
+
+
+async def test_two_writers_on_one_run_do_not_collide_on_the_worklog() -> None:
+    """The runner's recorder and the console both append while a run is live.
+
+    Committed rather than rolled back, because the point is two connections
+    seeing each other. `max(sequence) + 1` read outside the run's row lock let
+    both pick the same number, and the primary key then failed the run.
+    """
+    setup = await asyncpg.connect(DSN)
+    await configure_connection(setup)
+    project = handle = None
+    try:
+        project, change = await seed(setup)
+        handle = await remediation.open_run(
+            setup, change_event_id=change, project_id=project, repository=REPO, base_sha=SHA_A
+        )
+
+        writers = [await asyncpg.connect(DSN) for _ in range(4)]
+        try:
+            for writer in writers:
+                await configure_connection(writer)
+            await asyncio.gather(
+                *(
+                    remediation.append_trace(
+                        writer,
+                        handle.run_id,
+                        state=RunState.PATCHING,
+                        kind="action",
+                        verb=f"tool-{index}",
+                        body="concurrent",
+                    )
+                    for index, writer in enumerate(writers)
+                )
+            )
+        finally:
+            for writer in writers:
+                await writer.close()
+
+        rows = await setup.fetch(
+            "SELECT sequence FROM run_trace_events WHERE run_id = $1 ORDER BY sequence",
+            remediation._uuid(handle.run_id),
+        )
+        assert [row["sequence"] for row in rows] == [1, 2, 3, 4]
+    finally:
+        if project is not None:
+            await setup.execute("DELETE FROM projects WHERE id = $1", remediation._uuid(project))
+        await setup.close()
 
 
 async def test_policy_cannot_record_an_auto_merge(conn: Any) -> None:
