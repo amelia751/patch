@@ -461,7 +461,7 @@ async def get_owned_project(request: Request, project_id: UUID) -> JSONResponse:
 
 @router.patch("/{project_id}/cloud-provider")
 async def update_owned_project_cloud_provider(request: Request, project_id: UUID) -> JSONResponse:
-    """Set or clear `projects.cloud_provider`. Same contract as JetRun."""
+    """Set or clear `projects.cloud_provider`."""
     user_id = _require_user(request)
     if isinstance(user_id, JSONResponse):
         return user_id

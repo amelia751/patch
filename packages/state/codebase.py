@@ -84,7 +84,7 @@ def imported_repo(
 def imported_repos(project: Mapping[str, Any]) -> list[tuple[str, str, str, str]]:
     """`(name, owner, repo, branch)` for every imported GitHub repo, in order.
 
-    The Codebase tab renders one tree. Each import is a JetRun-style repo root
+    The Codebase tab renders one tree. Each import is a repo root
     (`type=directory`, paths prefixed by `owner/repo`) so the tab shows the
     same slug as Releases and Runs.
     """
@@ -181,7 +181,7 @@ def build_file_tree(
 
 
 def repo_root_node(name: str, children: list[dict[str, Any]]) -> dict[str, Any]:
-    """JetRun repo header: GitHub icon, disconnect menu, children underneath."""
+    """Repo header: GitHub icon, disconnect menu, children underneath."""
     label = name.strip()
     return {
         "id": f"repo:{label}",

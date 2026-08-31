@@ -57,8 +57,8 @@ def test_readyz_reports_a_raising_probe_as_not_ready() -> None:
 
 
 def test_cors_preflight_allows_patch() -> None:
-    """Configure → Connection uses PATCH /cloud-provider. JetRun allows all
-    methods; omitting PATCH here makes the browser report Failed to fetch.
+    """Configure → Connection uses PATCH /cloud-provider. Omitting PATCH
+    makes the browser report Failed to fetch.
     """
     from patchapi_control_api.app import create_app
 

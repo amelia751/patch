@@ -45,21 +45,6 @@ GCP project `patch-505223`, region `us-central1`. Push to `main` deploys via
 
 Local: `http://localhost:3000` (console) and `http://localhost:8080` (API).
 
-## Hard boundary
-
-PatchAPI **stops at the pull request**. It does not merge, deploy, edit branch
-protection, rotate secrets, or bypass CODEOWNERS / CI.
-
-- Google ADK only for agent orchestration — no LangChain, LangGraph, or other
-  third-party agent frameworks on the product path.
-- Gemini 3.5 Flash (or newer) for agent reasoning.
-- Generated code runs only in isolation. The patch-producing model does not
-  grade its own work.
-- Postgres is authoritative workflow state. Memory Bank holds institutional
-  context, not run status.
-- Agents never hold GitHub tokens. They call a narrow tool service with no
-  merge, admin, secret, or branch-protection APIs.
-
 ## Layout
 
 ```
